@@ -1,0 +1,3 @@
+ - Use copykitten
+ - Generalize Hotkey Manager -> Separate Hotkey for Rephrasing
+ - Abstract the Clipboard Restoring

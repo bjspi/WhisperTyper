@@ -1,0 +1,7 @@
+PyQt5
+pyaudio
+pynput
+requests
+pyautogui
+pyperclip
+websocket-client>=1.8.0
