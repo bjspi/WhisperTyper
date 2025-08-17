@@ -35,11 +35,11 @@ import logging
 
 # --- Default Prompts ---
 DEFAULT_TRANSCRIPTION_PROMPT = """
-Das Folgende ist eine Transkription einer Spracheingabe auf Deutsch. Die Transkription sollte nahezu perfekt am Original sein, nur Füllwörter und Stille/Leere sollte entfernt werden. Bitte achte auf Rechtschreibung, Groß- und Kleinschreibung sowie eine sinnvolle Zeichensetzung, einschließlich Punkten und Kommas. Achtung, ich verwende dabei auch "eingedeutschte" Englische Begriffe, v.a. aus der Tech und IT Szene, aus Bereichen Gadgets, Smartphones, Automotive, KI und Python Programmierung. Diese bitte auch erkennen.
+The following is a transcription of a voice input. The transcription should be almost perfect to the original, only filler words and silence/emptiness should be removed. Please pay attention to spelling, capitalization, and sensible punctuation, including periods and commas. I also use "Germanized" English terms, especially from the tech and IT scene, from the areas of gadgets, smartphones, automotive, AI, and Python programming. Please recognize these as well.
 """
 
-DEFAULT_REWORDING_PROMPT = """
-Ich gebe Dir im folgenden ein Transkript eines Benutzers. Du sollst den Text entweder im original mit überarbeiteter Formatierung zurückgeben ODER der Aufforderung folgen. Wenn der folgende Text zu Beginn explizit das Wort Prompt enthält, betrachte den Text als Prompt und folge ihm und seinen Anweisungen und schreibe einen Text daraus. Falls du keine Hinweise auf Verwendung als Prompt findest, dann gib mir den TEXT einfach im Original zurück, wobei Du NUR "Neue Zeile" durch einen Zeilenumbruch ersetzt."""
+DEFAULT_REPHRASING_PROMPT = """
+I will give you a transcript from a user. You should either return the text in its original form with revised formatting OR follow the prompt. If the following text explicitly contains the word 'prompt' at the beginning, consider the text as a prompt, follow it and its instructions, and write a text from it. If you do not find any instructions to use it as a prompt, then simply return the TEXT to me in its original form, replacing ONLY "new line" with a line break."""
 
 TRANSCRIPTION_MODEL_OPTIONS = [
     "whisper-1 (openai)",
@@ -50,9 +50,26 @@ TRANSCRIPTION_MODEL_OPTIONS = [
     "Custom"
 ]
 DEFAULT_TRANSCRIPTION_MODEL = "whisper-1 (openai)"
-DEFAULT_REWORDING_MODEL = "gpt-4o-mini"
+DEFAULT_REPHRASING_MODEL = "gpt-4o-mini"
 # Approximate max token length for Whisper initial prompt (variously documented ~224; using 230 for safety margin display)
 WHISPER_PROMPT_TOKEN_LIMIT = 230
+
+# --- Languages ---
+# Map display names to ISO 639-1 codes
+LANGUAGES = {
+    "Detect Language": "",
+    "English": "en", "German": "de", "French": "fr", "Spanish": "es", "Italian": "it", "Dutch": "nl",
+    "Afrikaans": "af", "Arabic": "ar", "Armenian": "hy", "Azerbaijani": "az", "Belarusian": "be",
+    "Bosnian": "bs", "Bulgarian": "bg", "Catalan": "ca", "Chinese": "zh", "Croatian": "hr",
+    "Czech": "cs", "Danish": "da", "Estonian": "et", "Finnish": "fi", "Galician": "gl",
+    "Greek": "el", "Hebrew": "he", "Hindi": "hi", "Hungarian": "hu", "Icelandic": "is",
+    "Indonesian": "id", "Japanese": "ja", "Kannada": "kn", "Kazakh": "kk", "Korean": "ko",
+    "Latvian": "lv", "Lithuanian": "lt", "Macedonian": "mk", "Malay": "ms", "Marathi": "mr",
+    "Maori": "mi", "Nepali": "ne", "Norwegian": "no", "Persian": "fa", "Polish": "pl",
+    "Portuguese": "pt", "Romanian": "ro", "Russian": "ru", "Serbian": "sr", "Slovak": "sk",
+    "Slovenian": "sl", "Swahili": "sw", "Swedish": "sv", "Tagalog": "tl", "Tamil": "ta",
+    "Thai": "th", "Turkish": "tr", "Ukrainian": "uk", "Urdu": "ur", "Vietnamese": "vi", "Welsh": "cy"
+}
 
 # --- Configuration ---
 # Define the application's base directory for both frozen and non-frozen states
@@ -60,6 +77,27 @@ APP_BASE_DIR = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) 
 CONFIG_FILE: str = os.path.join(APP_BASE_DIR, "ressources", "config.json")
 
 DEFAULT_HOTKEY_STR: str = "<f9>"
+
+DEFAULT_CONFIG: Dict[str, Any] = {
+    "api_key": "",
+    "api_endpoint": "https://api.openai.com/v1/audio/transcriptions",
+    "model": DEFAULT_TRANSCRIPTION_MODEL,
+    "prompt": DEFAULT_TRANSCRIPTION_PROMPT,
+    "hotkey": DEFAULT_HOTKEY_STR,
+    "input_language": "EN",
+    "restore_clipboard": True,
+    "debug_logging": True,
+    "file_logging": False,
+    "gain_db": 0,
+    "rephrasing_enabled": True,
+    "rephrase_use_selection_context": True,
+    "rephrasing_prompt": DEFAULT_REPHRASING_PROMPT,
+    "rephrasing_trigger_word": "prompt, liveprompt",
+    "rephrasing_api_url": "https://api.openai.com/v1/chat/completions",
+    "rephrasing_api_key": "",
+    "rephrasing_model": DEFAULT_REPHRASING_MODEL,
+    "post_rephrasing_entries": []
+}
 
 logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(message)s')
 is_MACOS = sys.platform.startswith('darwin')
@@ -209,7 +247,7 @@ class TranscriptionWorker(QObject):
             audio_path (str): The local path to the audio file to be transcribed.
             prompt (str): A prompt to guide the transcription model.
             model (str): The name of the transcription model to use.
-            language (str): The language of the audio in ISO 639-1 format (e.g., "en", "de").
+            language (str): The language of the audio in ISO 639-1 format (e.g., "en", "de"). Can be empty for auto-detection.
         """
         super().__init__()
         self.api_key = api_key
@@ -217,7 +255,7 @@ class TranscriptionWorker(QObject):
         self.audio_path = audio_path
         self.prompt = prompt
         self.model = re.sub(r"\s*\(.*?\)", "", model).strip()
-        self.language = language.lower()
+        self.language = language.lower() if language else ""
 
     def run(self) -> None:
         """
@@ -230,7 +268,11 @@ class TranscriptionWorker(QObject):
                 raise ValueError("API key not found in configuration.")
 
             headers: Dict[str, str] = {"Authorization": f"Bearer {self.api_key}"}
-            data: Dict[str, str] = {"model": self.model, "prompt": self.prompt, "language": self.language}
+            data: Dict[str, str] = {"model": self.model, "prompt": self.prompt}
+            # Only add language if it's not empty (for auto-detection)
+            if self.language:
+                data["language"] = self.language
+
             logging.debug(f"API endpoint: {self.api_endpoint}")
             logging.debug(f"Request data: {data}")
             logging.debug(f"Audio file path: {self.audio_path}")
@@ -330,60 +372,57 @@ class VoiceTranscriberApp(QWidget):
         self.show_tooltip_signal.emit(message, timeout_ms)
 
     def load_config(self) -> None:
-        """Loads the configuration from the JSON file."""
+        """
+        Loads configuration from JSON file.
+        Ensures all default keys are present, and saves back if any were added.
+        """
+        loaded_config = {}
         try:
             with open(CONFIG_FILE, 'r') as f:
-                self.config = json.load(f)
-                self.hotkey_str = self.config.get("hotkey", DEFAULT_HOTKEY_STR)
-                if "restore_clipboard" not in self.config:
-                    self.config["restore_clipboard"] = True
-                if "debug_logging" not in self.config:
-                    self.config["debug_logging"] = True
-                # Set defaults for new rewording fields
-                if "rewording_enabled" not in self.config:
-                    self.config["rewording_enabled"] = True
-                if "rewording_prompt" not in self.config:
-                    self.config["rewording_prompt"] = DEFAULT_REWORDING_PROMPT
-                if "rewording_api_url" not in self.config:
-                    self.config["rewording_api_url"] = "https://api.openai.com/v1/chat/completions"
-                if "rewording_api_key" not in self.config:
-                    self.config["rewording_api_key"] = ""
-                if "rewording_model" not in self.config or not self.config.get("rewording_model"):
-                    self.config["rewording_model"] = DEFAULT_REWORDING_MODEL
-                if "rewording_trigger_word" not in self.config:
-                    self.config["rewording_trigger_word"] = "prompt"
-                if "prompt" not in self.config:
-                    self.config["prompt"] = DEFAULT_TRANSCRIPTION_PROMPT
-                if "file_logging" not in self.config:
-                    self.config["file_logging"] = False
-                if "model" not in self.config or not self.config.get("model"):
-                    self.config["model"] = DEFAULT_TRANSCRIPTION_MODEL
-                if "post_rewording_entries" not in self.config:
-                    self.config["post_rewording_entries"] = []
+                loaded_config = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
-            self.config = {
-                "api_key": "",
-                "api_endpoint": "https://api.openai.com/v1/audio/transcriptions",
-                "model": DEFAULT_TRANSCRIPTION_MODEL,
-                "prompt": DEFAULT_TRANSCRIPTION_PROMPT,
-                "hotkey": DEFAULT_HOTKEY_STR,
-                "language": "DE",
-                "restore_clipboard": True,
-                "debug_logging": True,
-                "rewording_enabled": True,
-                "rewording_prompt": DEFAULT_REWORDING_PROMPT,
-                "rewording_trigger_word": "prompt",
-                "rewording_api_url": "https://api.openai.com/v1/chat/completions",
-                "rewording_api_key": "",
-                "rewording_model": DEFAULT_REWORDING_MODEL,
-                "file_logging": False,
-                "post_rewording_entries": []
-            }
-            self.hotkey_str = DEFAULT_HOTKEY_STR
-        # NOTE: do not set levels here; handled by apply_logging_configuration()
+            # File doesn't exist or is corrupted, will proceed with defaults
+            pass
+
+        config_updated = False
+        # --- Start Migration ---
+        # Migrate old 'language' key to 'input_language'
+        if "language" in loaded_config and "input_language" not in loaded_config:
+            loaded_config["input_language"] = loaded_config.pop("language")
+            config_updated = True
+        # Migrate all "rewording" keys to "rephrasing"
+        migration_map = {
+            "rewording_enabled": "rephrasing_enabled",
+            "rewording_prompt": "rephrasing_prompt",
+            "rewording_trigger_word": "rephrasing_trigger_word",
+            "rewording_api_url": "rephrasing_api_url",
+            "rewording_api_key": "rephrasing_api_key",
+            "rewording_model": "rephrasing_model",
+            "post_rewording_entries": "post_rephrasing_entries"
+        }
+        for old_key, new_key in migration_map.items():
+            if old_key in loaded_config and new_key not in loaded_config:
+                loaded_config[new_key] = loaded_config.pop(old_key)
+                config_updated = True
+        # --- End Migration ---
+
+        # Ensure all default keys exist in the loaded config
+        for key, default_value in DEFAULT_CONFIG.items():
+            if key not in loaded_config:
+                loaded_config[key] = default_value
+                config_updated = True
+
+        self.config = loaded_config
+        self.hotkey_str = self.config["hotkey"]
+
+        # If we added any missing keys, save the file back
+        if config_updated:
+            self.save_config()
 
     def save_config(self) -> None:
         """Saves the current configuration to the JSON file."""
+        # Ensure the ressources directory exists
+        os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
         with open(CONFIG_FILE, 'w') as f:
             json.dump(self.config, f, indent=4)
         logging.info("Configuration saved.")
@@ -402,26 +441,32 @@ class VoiceTranscriberApp(QWidget):
 
         # Create widgets for each tab
         transcription_tab = QWidget()
-        rewording_tab = QWidget()
-        post_rewording_tab = QWidget()
+        rephrasing_tab = QWidget()
+        post_rephrasing_tab = QWidget()
         general_tab = QWidget()
 
         # Add tabs to the tab widget
         tabs.addTab(transcription_tab, "Transcription")
-        tabs.addTab(rewording_tab, "Rewording")
-        tabs.addTab(post_rewording_tab, "Post Rewording")
+        tabs.addTab(rephrasing_tab, "Rephrase / LivePrompt")
+        tabs.addTab(post_rephrasing_tab, "Transformations")
         tabs.addTab(general_tab, "General")
+
+        # --- Add Tooltips to Tabs ---
+        tabs.setTabToolTip(0, "Configure the main transcription service (API, model, language, etc.).")
+        tabs.setTabToolTip(1, "Set up automatic rephrasing or prompting of your transcribed text using a secondary AI model.")
+        tabs.setTabToolTip(2, "Define custom prompts for manual selection-based rephrasing / transfrmations")
+        tabs.setTabToolTip(3, "General application settings like logging options / debugging playing of the sound file.")
 
         # --- Populate Transcription Tab ---
         transcription_layout = QVBoxLayout(transcription_tab)
 
         transcription_layout.addWidget(QLabel("API Key:"))
-        self.api_key_input = QLineEdit(self.config.get("api_key", ""))
+        self.api_key_input = QLineEdit(self.config["api_key"])
         self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         transcription_layout.addWidget(self.api_key_input)
 
         transcription_layout.addWidget(QLabel("API Endpoint:"))
-        self.api_endpoint_input = QLineEdit(self.config.get("api_endpoint", ""))
+        self.api_endpoint_input = QLineEdit(self.config["api_endpoint"])
         transcription_layout.addWidget(self.api_endpoint_input)
 
         api_button_layout = QHBoxLayout()
@@ -444,7 +489,7 @@ class VoiceTranscriberApp(QWidget):
         self.model_input = QLineEdit(placeholderText="Custom model name", visible=False)
         model_layout.addWidget(self.model_input)
         transcription_layout.addLayout(model_layout)
-        model_value = self.config.get("model", DEFAULT_TRANSCRIPTION_MODEL)
+        model_value = self.config["model"]
         if self.model_dropdown.findText(model_value) != -1:
             self.model_dropdown.setCurrentText(model_value)
         else:
@@ -456,19 +501,55 @@ class VoiceTranscriberApp(QWidget):
         self.model_dropdown.currentTextChanged.connect(lambda _t: self._update_prompt_token_counter())
         self.model_input.textChanged.connect(lambda _t: self._update_prompt_token_counter())
 
-        transcription_layout.addWidget(QLabel("Language:"))
-        self.language_input = QComboBox()
-        self.language_input.addItems(["DE", "EN", "FR", "ES", "IT", "NL", "PL", "RU", "TR", "ZH"])
-        self.language_input.setCurrentText(self.config.get("language", "DE"))
-        transcription_layout.addWidget(self.language_input)
+        # --- Hotkey, Language, and Gain Side-by-Side ---
+        controls_layout = QHBoxLayout()
 
-        transcription_layout.addWidget(QLabel("Gain (dB) for WAV (default: 0):"))
-        self.gain_input = QLineEdit(str(self.config.get("gain_db", 0)))
+        # Left side: Hotkey
+        hotkey_v_layout = QVBoxLayout()
+        hotkey_v_layout.addWidget(QLabel("Hotkey:"))
+        hotkey_h_layout = QHBoxLayout()
+        self.hotkey_display = QLineEdit(self.hotkey_str)
+        self.hotkey_display.setReadOnly(True)
+        self.set_hotkey_button = QPushButton("Set New Hotkey")
+        self.set_hotkey_button.clicked.connect(self.start_hotkey_capture)
+        hotkey_h_layout.addWidget(self.hotkey_display)
+        hotkey_h_layout.addWidget(self.set_hotkey_button)
+        hotkey_v_layout.addLayout(hotkey_h_layout)
+        controls_layout.addLayout(hotkey_v_layout)
+
+        # Middle: Language
+        lang_v_layout = QVBoxLayout()
+        lang_v_layout.addWidget(QLabel("Input Language:"))
+        self.language_input = QComboBox()
+        # Create a reverse map from ISO code to display name for easy lookup
+        self.lang_code_to_name = {v: k for k, v in LANGUAGES.items()}
+        self.language_input.addItems(LANGUAGES.keys())
+        # Set current value based on config
+        lang_code = self.config["input_language"].lower()
+        display_name = self.lang_code_to_name.get(lang_code, "English") # Default to English if not found
+        self.language_input.setCurrentText(display_name)
+        lang_v_layout.addWidget(self.language_input)
+        controls_layout.addLayout(lang_v_layout)
+
+        # Right side: Gain
+        gain_v_layout = QVBoxLayout()
+        gain_v_layout.addWidget(QLabel("Volume Gain (dB) for Audio Recording"))
+        # Ensure gain is a float and convert to string for display
+        self.gain_input = QLineEdit(str(self.config["gain_db"]))
         self.gain_input.setPlaceholderText("0")
-        transcription_layout.addWidget(self.gain_input)
+        # Set Tooltip on the Gain Widget:
+        self.gain_input.setToolTip(
+            "Adjust the gain for the recorded WAV file. "
+            "Positive values amplify the sound, negative values reduce it. "
+            "0 dB means no change. You can listen to the recorded audio to find the best setting depending on your hardware!"
+        )
+        gain_v_layout.addWidget(self.gain_input)
+        controls_layout.addLayout(gain_v_layout)
+
+        transcription_layout.addLayout(controls_layout)
 
         transcription_layout.addWidget(QLabel("Transcription Prompt (optional):"))
-        self.prompt_input = QTextEdit(self.config.get("prompt", ""), placeholderText="Enter hints for the AI...")
+        self.prompt_input = QTextEdit(self.config["prompt"], placeholderText="Enter hints for the AI...")
         transcription_layout.addWidget(self.prompt_input)
         # Token count label
         self.prompt_token_label = QLabel("")
@@ -481,42 +562,55 @@ class VoiceTranscriberApp(QWidget):
         transcription_layout.addStretch()  # Pushes widgets to the top
 
         # --- Populate Rewording Tab ---
-        rewording_layout = QVBoxLayout(rewording_tab)
+        rephrasing_layout = QVBoxLayout(rephrasing_tab)
 
-        self.rewording_checkbox = QCheckBox("Enable Rewording/Rephrasing via GPT")
-        self.rewording_checkbox.setChecked(self.config.get("rewording_enabled", False))
-        rewording_layout.addWidget(self.rewording_checkbox)
+        self.rephrasing_checkbox = QCheckBox("Enable Rephrasing / LivePrompt via AI")
+        self.rephrasing_checkbox.setChecked(self.config["rephrasing_enabled"])
+        self.rephrasing_checkbox.setToolTip(
+            "If enabled, the transcribed text can be automatically sent to another AI model\n"
+            "for rephrasing or to follow instructions (LivePrompting)."
+        )
+        rephrasing_layout.addWidget(self.rephrasing_checkbox)
 
-        rewording_layout.addWidget(QLabel("Rewording Trigger Word (leave empty to reword always if enabled):"))
-        self.rewording_trigger_input = QLineEdit(self.config.get("rewording_trigger_word", "prompt"))
-        self.rewording_trigger_input.setPlaceholderText("e.g., prompt, rephrase, correct")
-        rewording_layout.addWidget(self.rewording_trigger_input)
+        rephrasing_layout.addWidget(QLabel("Rephrase Trigger Word(s) (comma-separated):"))
+        self.rephrasing_trigger_word_input = QLineEdit(self.config["rephrasing_trigger_word"])
+        self.rephrasing_trigger_word_input.setToolTip("Enter one or more words separated by a comma.\nLeave empty to rephrase always if enabled.")
+        rephrasing_layout.addWidget(self.rephrasing_trigger_word_input)
 
-        rewording_layout.addWidget(QLabel("Rewording Prompt (optional):"))
-        self.rewording_prompt_input = QTextEdit(self.config.get("rewording_prompt", ""),
+        # New checkbox for context
+        self.rephrase_context_checkbox = QCheckBox("Add selected text as Context when LivePrompting via Triggerword")
+        self.rephrase_context_checkbox.setChecked(self.config["rephrase_use_selection_context"])
+        self.rephrase_context_checkbox.setToolTip(
+            "If checked, any text you have selected on screen will be automatically added\n"
+            "as context to the prompt when a trigger word is used."
+        )
+        rephrasing_layout.addWidget(self.rephrase_context_checkbox)
+
+        rephrasing_layout.addWidget(QLabel("Rephrase / LivePrompt Prompt (optional):"))
+        self.rephrasing_prompt_input = QTextEdit(self.config["rephrasing_prompt"],
                                                 placeholderText="e.g. Rephrase the text more politely...")
-        rewording_layout.addWidget(self.rewording_prompt_input)
+        rephrasing_layout.addWidget(self.rephrasing_prompt_input)
 
-        rewording_layout.addWidget(QLabel("Rewording API URL:"))
-        self.rewording_api_url_input = QLineEdit(self.config.get("rewording_api_url", ""))
-        rewording_layout.addWidget(self.rewording_api_url_input)
+        rephrasing_layout.addWidget(QLabel("Rephrase API URL:"))
+        self.rephrasing_api_url_input = QLineEdit(self.config["rephrasing_api_url"])
+        rephrasing_layout.addWidget(self.rephrasing_api_url_input)
 
-        rewording_layout.addWidget(QLabel("Rewording API Key:"))
-        self.rewording_api_key_input = QLineEdit(self.config.get("rewording_api_key", ""))
-        self.rewording_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        rewording_layout.addWidget(self.rewording_api_key_input)
+        rephrasing_layout.addWidget(QLabel("Rephrase API Key:"))
+        self.rephrasing_api_key_input = QLineEdit(self.config["rephrasing_api_key"])
+        self.rephrasing_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        rephrasing_layout.addWidget(self.rephrasing_api_key_input)
 
-        rewording_layout.addWidget(QLabel("Rewording Model:"))
-        self.rewording_model_input = QLineEdit(self.config.get("rewording_model", DEFAULT_REWORDING_MODEL))
-        rewording_layout.addWidget(self.rewording_model_input)
+        rephrasing_layout.addWidget(QLabel("Rephrase Model:"))
+        self.rephrasing_model_input = QLineEdit(self.config["rephrasing_model"])
+        rephrasing_layout.addWidget(self.rephrasing_model_input)
 
-        rewording_layout.addStretch()  # Pushes widgets to the top
+        rephrasing_layout.addStretch()  # Pushes widgets to the top
 
         # --- Populate Post Rewording Tab ---
         # Re-implemented as split view (list + editor)
-        self.max_post_rewording_entries = 10
-        pr_layout = QVBoxLayout(post_rewording_tab)
-        info_lbl = QLabel(f"Define up to {self.max_post_rewording_entries} rewording Prompts for Post-Processing of Transcriptions.")
+        self.max_post_rephrasing_entries = 10
+        pr_layout = QVBoxLayout(post_rephrasing_tab)
+        info_lbl = QLabel(f"Define up to {self.max_post_rephrasing_entries} rewording Prompts for Post-Processing of Transcriptions.")
         info_lbl.setWordWrap(True)
         pr_layout.addWidget(info_lbl)
 
@@ -525,7 +619,7 @@ class VoiceTranscriberApp(QWidget):
 
         # Left list
         # Replace simple QListWidget with drag-enabled one
-        class _PostRWList(QListWidget):
+        class _PostRPList(QListWidget):
             def __init__(self, outer):
                 super().__init__()
                 self._outer = outer
@@ -538,73 +632,63 @@ class VoiceTranscriberApp(QWidget):
             def dropEvent(self, event):
                 super().dropEvent(event)
                 # After visual reorder, sync underlying data list
-                if hasattr(self._outer, '_sync_post_rw_data_from_list'):
-                    self._outer._sync_post_rw_data_from_list()
+                if hasattr(self._outer, '_sync_post_rp_data_from_list'):
+                    self._outer._sync_post_rp_data_from_list()
 
-        self.post_rw_list = _PostRWList(self)
-        splitter.addWidget(self.post_rw_list)
+        self.post_rp_list = _PostRPList(self)
+        splitter.addWidget(self.post_rp_list)
 
         # Right editor container
-        self.post_rw_editor_container = QWidget()
-        editor_layout = QVBoxLayout(self.post_rw_editor_container)
+        self.post_rp_editor_container = QWidget()
+        editor_layout = QVBoxLayout(self.post_rp_editor_container)
         editor_layout.addWidget(QLabel("Caption:"))
-        self.post_rw_caption_edit = QLineEdit()
-        editor_layout.addWidget(self.post_rw_caption_edit)
+        self.post_rp_caption_edit = QLineEdit()
+        editor_layout.addWidget(self.post_rp_caption_edit)
         editor_layout.addWidget(QLabel("Text:"))
-        self.post_rw_text_edit = QTextEdit()
-        self.post_rw_text_edit.setPlaceholderText("Textbaustein Inhalt...")
-        editor_layout.addWidget(self.post_rw_text_edit, 1)
-        splitter.addWidget(self.post_rw_editor_container)
+        self.post_rp_text_edit = QTextEdit()
+        self.post_rp_text_edit.setPlaceholderText("Textbaustein Inhalt...")
+        editor_layout.addWidget(self.post_rp_text_edit, 1)
+        splitter.addWidget(self.post_rp_editor_container)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
 
         # Buttons row
         btn_row = QHBoxLayout()
-        self.post_rw_add_btn = QPushButton("+")
-        self.post_rw_remove_btn = QPushButton("-")
-        btn_row.addWidget(self.post_rw_add_btn)
-        btn_row.addWidget(self.post_rw_remove_btn)
+        self.post_rp_add_btn = QPushButton("+")
+        self.post_rp_remove_btn = QPushButton("-")
+        btn_row.addWidget(self.post_rp_add_btn)
+        btn_row.addWidget(self.post_rp_remove_btn)
         btn_row.addStretch(1)
         pr_layout.addLayout(btn_row)
 
         # Data list
-        self.post_rewording_data: List[Dict[str, str]] = self.config.get("post_rewording_entries", [])[:self.max_post_rewording_entries]
-        self._post_rw_updating = False
-        self._load_post_rw_entries_into_list()
-        self.post_rw_list.currentRowChanged.connect(self._on_post_rw_selection_changed)
-        self.post_rw_caption_edit.textChanged.connect(self._on_post_rw_caption_changed)
-        self.post_rw_text_edit.textChanged.connect(self._on_post_rw_text_changed)
-        self.post_rw_add_btn.clicked.connect(self._on_post_rw_add_clicked)
-        self.post_rw_remove_btn.clicked.connect(self._on_post_rw_remove_clicked)
-        self._update_post_rw_ui_state()
+        self.post_rephrasing_data: List[Dict[str, str]] = self.config["post_rephrasing_entries"][:self.max_post_rephrasing_entries]
+        self._post_rp_updating = False
+        self._load_post_rp_entries_into_list()
+        self.post_rp_list.currentRowChanged.connect(self._on_post_rp_selection_changed)
+        self.post_rp_caption_edit.textChanged.connect(self._on_post_rp_caption_changed)
+        self.post_rp_text_edit.textChanged.connect(self._on_post_rp_text_changed)
+        self.post_rp_add_btn.clicked.connect(self._on_post_rp_add_clicked)
+        self.post_rp_remove_btn.clicked.connect(self._on_post_rp_remove_clicked)
+        self._update_post_rp_ui_state()
         # Select first by default if exists
-        if self.post_rw_list.count() > 0:
-            self.post_rw_list.setCurrentRow(0)
+        if self.post_rp_list.count() > 0:
+            self.post_rp_list.setCurrentRow(0)
 
         # --- Populate General Tab ---
         general_layout = QVBoxLayout(general_tab)
 
-        general_layout.addWidget(QLabel("Hotkey:"))
-        hotkey_layout = QHBoxLayout()
-        self.hotkey_display = QLineEdit(self.hotkey_str)
-        self.hotkey_display.setReadOnly(True)
-        self.set_hotkey_button = QPushButton("Set New Hotkey")
-        self.set_hotkey_button.clicked.connect(self.start_hotkey_capture)
-        hotkey_layout.addWidget(self.hotkey_display)
-        hotkey_layout.addWidget(self.set_hotkey_button)
-        general_layout.addLayout(hotkey_layout)
-
         self.restore_clipboard_checkbox = QCheckBox("Restore previous clipboard after paste")
-        self.restore_clipboard_checkbox.setChecked(self.config.get("restore_clipboard", True))
+        self.restore_clipboard_checkbox.setChecked(self.config["restore_clipboard"])
         general_layout.addWidget(self.restore_clipboard_checkbox)
 
         self.debug_logging_checkbox = QCheckBox("Activate Debug Logging (more details in log)")
-        self.debug_logging_checkbox.setChecked(self.config.get("debug_logging", False))
+        self.debug_logging_checkbox.setChecked(self.config["debug_logging"])
         general_layout.addWidget(self.debug_logging_checkbox)
 
         # New checkbox for file logging
         self.file_logging_checkbox = QCheckBox("Write log file in application folder (voice_transcriber.log)")
-        self.file_logging_checkbox.setChecked(self.config.get("file_logging", False))
+        self.file_logging_checkbox.setChecked(self.config["file_logging"])
         general_layout.addWidget(self.file_logging_checkbox)
 
         self.play_g_button = QPushButton("Play Last Recording")
@@ -615,8 +699,8 @@ class VoiceTranscriberApp(QWidget):
         general_layout.addStretch()  # Pushes widgets to the top
 
         # --- Save Button (outside tabs) ---
-        self.save_button = QPushButton("Save + Close")
-        self.save_button.clicked.connect(self.save_and_close)
+        self.save_button = QPushButton("Save")
+        self.save_button.clicked.connect(self.save_settings)
         main_layout.addWidget(self.save_button)
 
         # --- FIX ---
@@ -1073,7 +1157,7 @@ class VoiceTranscriberApp(QWidget):
         filepath: str = os.path.join(temp_dir, filename)
         raw_audio = b''.join(self.recorded_frames)
         audio_bytes = bytearray(raw_audio)
-        gain_db = float(self.config.get("gain_db", 0))
+        gain_db = float(self.config["gain_db"])
         if gain_db > 0:
             try:
                 self._apply_gain_inplace(audio_bytes, gain_db)
@@ -1156,10 +1240,18 @@ class VoiceTranscriberApp(QWidget):
         """Creates and starts a new thread for the transcription worker."""
         self.show_tray_balloon("Transcription in progress...", 3000)
         thread = QThread()
+        # Get language code from display name
+        lang_display_name = self.config["input_language"]
+        lang_code = ""
+        for name, code in LANGUAGES.items():
+            if name == lang_display_name:
+                lang_code = code
+                break
+
         worker = TranscriptionWorker(
-            api_key=self.config.get("api_key", ""), api_endpoint=self.config.get("api_endpoint", ""),
-            audio_path=audio_path, prompt=self.config.get("prompt", ""),
-            model=self.config.get("model", DEFAULT_TRANSCRIPTION_MODEL), language=self.config.get("language", "DE")
+            api_key=self.config["api_key"], api_endpoint=self.config["api_endpoint"],
+            audio_path=audio_path, prompt=self.config["prompt"],
+            model=self.config["model"], language=lang_code
         )
         worker.moveToThread(thread)
         self.active_workers.append(worker)
@@ -1197,62 +1289,76 @@ class VoiceTranscriberApp(QWidget):
         logging.info(f"Transcription successful >>>>>>>>>>> {text}")
 
         processed = text.strip('"\'“”‘’ ')
-        prompt = self.config.get("prompt", "").strip()
+        prompt = self.config["prompt"].strip()
         if not processed or (prompt and processed.lower() == prompt.lower()):
             self.show_tray_balloon("No speech recognized.", 2000)
             logging.info("Transcription result was empty or matched the prompt, ignoring.")
             return
 
         # Rewording/Rephrasing via GPT if activated
-        if self.config.get("rewording_enabled", False):
-            trigger_word = self.config.get("rewording_trigger_word", "prompt").lower()
-            should_reword = False
-            if not trigger_word:
-                # If trigger is empty, always reword when enabled
-                should_reword = True
-            elif trigger_word in processed.lower():
-                # If trigger is found, reword
-                should_reword = True
+        if self.config["rephrasing_enabled"]:
+            trigger_words_str = self.config["rephrasing_trigger_word"].lower()
+            trigger_words = [word.strip() for word in trigger_words_str.split(',') if word.strip()]
 
-            if should_reword:
+            should_rephrase = False
+            if not trigger_words:
+                # If trigger list is empty, always rephrase when enabled
+                should_rephrase = True
+            else:
+                # If any trigger word is found, rephrase
+                processed_lower = processed.lower()
+                if any(trigger in processed_lower for trigger in trigger_words):
+                    should_rephrase = True
+
+            if should_rephrase:
                 try:
-                    self.show_tray_balloon(f"Rewording Transcript: {processed}", 3000)
-                    reworded = self.reword_text_with_gpt(
+                    self.show_tray_balloon(f"Rephrasing Transcript: {processed}", 3000)
+
+                    # Check if context from selection should be added
+                    context_text = ""
+                    if self.config["rephrase_use_selection_context"]:
+                        context_text = self.get_selected_text()
+                        if context_text:
+                            logging.info(f"Using selected text as context: {context_text}")
+
+                    rephrased = self.rephrase_text_with_gpt(
                         processed,
-                        self.config.get("rewording_prompt", DEFAULT_REWORDING_PROMPT),
-                        self.config.get("rewording_api_url", "https://api.openai.com/v1/chat/completions"),
-                        self.config.get("rewording_api_key", ""),
-                        self.config.get("rewording_model", DEFAULT_REWORDING_MODEL)
+                        self.config["rephrasing_prompt"],
+                        self.config["rephrasing_api_url"],
+                        self.config["rephrasing_api_key"],
+                        self.config["rephrasing_model"],
+                        context=context_text
                     )
-                    if reworded:
-                        processed = reworded
+                    if rephrased:
+                        processed = rephrased
                 except Exception as e:
-                    logging.error(f"Rewording failed: {e}")
-                    self.show_tray_balloon(f"Rewording failed: {e}", 3000)
+                    logging.error(f"Rephrasing failed: {e}")
+                    self.show_tray_balloon(f"Rephrasing failed: {e}", 3000)
 
         self.last_transcription = processed
         self.insert_transcribed_text(self.last_transcription)
 
-    def reword_text_with_gpt(self, text, prompt, api_url, api_key, model):
+    def rephrase_text_with_gpt(self, text: str, prompt: str, api_url: str, api_key: str, model: str, context: str = "") -> str:
         """
-        Sends the User's text to the rewording API and returns the reworded text.
+        Sends the User's text to the rephrasing API and returns the rephrased text.
 
         Args:
-            text (str): The text to be reworded.
-            prompt (str): The system prompt to guide the rewording model.
-            api_url (str): The URL of the rewording API.
-            api_key (str): The API key for the rewording service.
-            model (str): The name of the language model to use for rewording.
+            text (str): The text to be rephrased.
+            prompt (str): The system prompt to guide the rephrasing model.
+            api_url (str): The URL of the rephrasing API.
+            api_key (str): The API key for the rephrasing service.
+            model (str): The name of the language model to use for rephrasing.
+            context (str, optional): Additional context (e.g., selected text). Defaults to "".
 
         Returns:
-            str: The reworded text.
+            str: The rephrased text.
 
         Raises:
             ValueError: If API settings are incomplete.
             Exception: If the API request fails.
         """
         if not api_url or not api_key or not model:
-            raise ValueError("Rewording API settings are incomplete.")
+            raise ValueError("Rephrasing API settings are incomplete.")
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
@@ -1260,22 +1366,27 @@ class VoiceTranscriberApp(QWidget):
         messages = []
         if prompt and 0:
             messages.append({"role": "system", "content": prompt})
-        messages.append({"role": "user", "content": f"{prompt}\n\nText: {text}"})
+
+        user_content = f"{prompt}\n\nText: {text}"
+        if context:
+            user_content = f"Context from selected text:\n---\n{context}\n---\n\n{user_content}"
+
+        messages.append({"role": "user", "content": user_content})
         data = {
             "model": model,
             "messages": messages
         }
-        logging.debug(f"Rewording request data: {data}")
+        logging.debug(f"Rephrasing request data: {data}")
         try:
             response = requests.post(api_url, headers=headers, json=data, timeout=30)
             response.raise_for_status()
         except Exception as e:
-            raise Exception(f"Rewording API request failed: {e}")
+            raise Exception(f"Rephrasing API request failed: {e}")
         result = response.json()
 
         # OpenAI/Groq style: result['choices'][0]['message']['content']
         res = result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
-        logging.info(f"Rewording result: {res}")
+        logging.info(f"Rephrasing result: {res}")
         return res
 
     def on_transcription_error(self, error_message: str, audio_file_path: str) -> None:
@@ -1313,7 +1424,7 @@ class VoiceTranscriberApp(QWidget):
             str: The selected text, or an empty string if nothing is selected.
         """
         try:
-            restore = self.config.get("restore_clipboard", True)
+            restore = self.config["restore_clipboard"]
             old_clipboard = QApplication.clipboard().text() if restore else None
 
             # Use Ctrl+C to copy selected text to clipboard
@@ -1349,7 +1460,7 @@ class VoiceTranscriberApp(QWidget):
         if not text: return
         logging.debug("Inserting transcribed text.")
         try:
-            restore = self.config.get("restore_clipboard", True)
+            restore = self.config["restore_clipboard"]
             old_clipboard = QApplication.clipboard().text() if restore else None
 
             pyperclip.copy(text)
@@ -1379,7 +1490,7 @@ class VoiceTranscriberApp(QWidget):
         """Apply logging level and file handler based on current config."""
         logger = logging.getLogger()
         # Update level
-        logger.setLevel(logging.DEBUG if self.config.get("debug_logging", False) else logging.INFO)
+        logger.setLevel(logging.DEBUG if self.config["debug_logging"] else logging.INFO)
         # Remove existing file handler if present
         if getattr(self, '_file_log_handler', None):
             try:
@@ -1390,7 +1501,7 @@ class VoiceTranscriberApp(QWidget):
             self._file_log_handler = None
 
         # Add file handler if enabled
-        if self.config.get("file_logging", False):
+        if self.config["file_logging"]:
             try:
                 log_path = os.path.join(APP_BASE_DIR, "voice_transcriber.log")
                 fh = logging.FileHandler(log_path, encoding='utf-8')
@@ -1435,124 +1546,122 @@ class VoiceTranscriberApp(QWidget):
         return warnings
 
     # ---------------- Post Rewording (New Implementation) ----------------
-    def _load_post_rw_entries_into_list(self) -> None:
+    def _load_post_rp_entries_into_list(self) -> None:
         # Preserve current caption for selection restore
-        current_row = self.post_rw_list.currentRow()
+        current_row = self.post_rp_list.currentRow()
         current_item_caption = None
         if current_row >= 0:
-            itm = self.post_rw_list.item(current_row)
+            itm = self.post_rp_list.item(current_row)
             if itm:
                 current_item_caption = itm.text()
-        self.post_rw_list.clear()
-        for entry in self.post_rewording_data:
+        self.post_rp_list.clear()
+        for entry in self.post_rephrasing_data:
             caption = entry.get("caption", "").strip() or "(ohne Caption)"
             item = QListWidgetItem(caption)
             # Store reference to dict so we can rebuild ordering after drag&drop
             item.setData(Qt.ItemDataRole.UserRole, entry)
-            self.post_rw_list.addItem(item)
+            self.post_rp_list.addItem(item)
         # Try to restore selection
         if current_item_caption:
-            for i in range(self.post_rw_list.count()):
-                if self.post_rw_list.item(i).text() == current_item_caption:
-                    self.post_rw_list.setCurrentRow(i)
+            for i in range(self.post_rp_list.count()):
+                if self.post_rp_list.item(i).text() == current_item_caption:
+                    self.post_rp_list.setCurrentRow(i)
                     break
 
-    def _sync_post_rw_data_from_list(self) -> None:
+    def _sync_post_rp_data_from_list(self) -> None:
         # Build new list order based on item sequence and stored dict references
         new_list: List[Dict[str, str]] = []
-        for i in range(self.post_rw_list.count()):
-            item = self.post_rw_list.item(i)
+        for i in range(self.post_rp_list.count()):
+            item = self.post_rp_list.item(i)
             ref = item.data(Qt.ItemDataRole.UserRole)
             if isinstance(ref, dict):
                 new_list.append(ref)
-        if len(new_list) == len(self.post_rewording_data):
-            self.post_rewording_data = new_list
-        self._update_post_rw_ui_state()
+        if len(new_list) == len(self.post_rephrasing_data):
+            self.post_rephrasing_data = new_list
+        self._update_post_rp_ui_state()
 
-    # --- Missing handler methods (restored) ---
-    def _on_post_rw_selection_changed(self, row: int) -> None:
-        if row < 0 or row >= len(self.post_rewording_data):
-            self._post_rw_updating = True
-            self.post_rw_caption_edit.clear()
-            self.post_rw_text_edit.clear()
-            self.post_rw_caption_edit.setEnabled(False)
-            self.post_rw_text_edit.setEnabled(False)
-            self._post_rw_updating = False
-            self._update_post_rw_ui_state()
+    def _on_post_rp_selection_changed(self, row: int) -> None:
+        if row < 0 or row >= len(self.post_rephrasing_data):
+            self._post_rp_updating = True
+            self.post_rp_caption_edit.clear()
+            self.post_rp_text_edit.clear()
+            self.post_rp_caption_edit.setEnabled(False)
+            self.post_rp_text_edit.setEnabled(False)
+            self._post_rp_updating = False
+            self._update_post_rp_ui_state()
             return
-        self._post_rw_updating = True
-        entry = self.post_rewording_data[row]
-        self.post_rw_caption_edit.setEnabled(True)
-        self.post_rw_text_edit.setEnabled(True)
-        self.post_rw_caption_edit.setText(entry.get("caption", ""))
-        self.post_rw_text_edit.setPlainText(entry.get("text", ""))
-        self._post_rw_updating = False
-        self._update_post_rw_ui_state()
+        self._post_rp_updating = True
+        entry = self.post_rephrasing_data[row]
+        self.post_rp_caption_edit.setEnabled(True)
+        self.post_rp_text_edit.setEnabled(True)
+        self.post_rp_caption_edit.setText(entry.get("caption", ""))
+        self.post_rp_text_edit.setPlainText(entry.get("text", ""))
+        self._post_rp_updating = False
+        self._update_post_rp_ui_state()
 
-    def _on_post_rw_caption_changed(self, text: str) -> None:
-        if self._post_rw_updating:
+    def _on_post_rp_caption_changed(self, text: str) -> None:
+        if self._post_rp_updating:
             return
-        row = self.post_rw_list.currentRow()
-        if 0 <= row < len(self.post_rewording_data):
-            self.post_rewording_data[row]["caption"] = text
-            item = self.post_rw_list.item(row)
+        row = self.post_rp_list.currentRow()
+        if 0 <= row < len(self.post_rephrasing_data):
+            self.post_rephrasing_data[row]["caption"] = text
+            item = self.post_rp_list.item(row)
             if item:
                 item.setText(text.strip() or "(ohne Caption)")
-        self._sync_post_rw_data_from_list()
+        self._sync_post_rp_data_from_list()
 
-    def _on_post_rw_text_changed(self) -> None:
-        if self._post_rw_updating:
+    def _on_post_rp_text_changed(self) -> None:
+        if self._post_rp_updating:
             return
-        row = self.post_rw_list.currentRow()
-        if 0 <= row < len(self.post_rewording_data):
-            self.post_rewording_data[row]["text"] = self.post_rw_text_edit.toPlainText()
+        row = self.post_rp_list.currentRow()
+        if 0 <= row < len(self.post_rephrasing_data):
+            self.post_rephrasing_data[row]["text"] = self.post_rp_text_edit.toPlainText()
 
-    def _on_post_rw_add_clicked(self) -> None:
-        if len(self.post_rewording_data) >= self.max_post_rewording_entries:
+    def _on_post_rp_add_clicked(self) -> None:
+        if len(self.post_rephrasing_data) >= self.max_post_rephrasing_entries:
             return
         new_entry = {"caption": "", "text": ""}
-        self.post_rewording_data.append(new_entry)
+        self.post_rephrasing_data.append(new_entry)
         item = QListWidgetItem("(ohne Caption)")
         item.setData(Qt.ItemDataRole.UserRole, new_entry)
-        self.post_rw_list.addItem(item)
-        self.post_rw_list.setCurrentRow(self.post_rw_list.count() - 1)
-        self._update_post_rw_ui_state()
+        self.post_rp_list.addItem(item)
+        self.post_rp_list.setCurrentRow(self.post_rp_list.count() - 1)
+        self._update_post_rp_ui_state()
 
-    def _on_post_rw_remove_clicked(self) -> None:
-        row = self.post_rw_list.currentRow()
-        if 0 <= row < len(self.post_rewording_data):
+    def _on_post_rp_remove_clicked(self) -> None:
+        row = self.post_rp_list.currentRow()
+        if 0 <= row < len(self.post_rephrasing_data):
             # Prevent intermediate selection-change handling while mutating
-            self._post_rw_updating = True
-            self.post_rw_list.blockSignals(True)
-            del self.post_rewording_data[row]
-            self.post_rw_list.takeItem(row)
+            self._post_rp_updating = True
+            self.post_rp_list.blockSignals(True)
+            del self.post_rephrasing_data[row]
+            self.post_rp_list.takeItem(row)
 
             # Compute new target row (stay at same index, fallback to last existing)
-            if row >= self.post_rw_list.count():
-                row = self.post_rw_list.count() - 1
+            if row >= self.post_rp_list.count():
+                row = self.post_rp_list.count() - 1
 
             # Re-select if any remain
             if row >= 0:
-                self.post_rw_list.setCurrentRow(row)
+                self.post_rp_list.setCurrentRow(row)
 
-            self.post_rw_list.blockSignals(False)
-            self._post_rw_updating = False
+            self.post_rp_list.blockSignals(False)
+            self._post_rp_updating = False
             # Manually refresh editor state (selection signal suppressed or earlier blanked it)
-            self._on_post_rw_selection_changed(row if row >= 0 else -1)
-        self._update_post_rw_ui_state()
+            self._on_post_rp_selection_changed(row if row >= 0 else -1)
+        self._update_post_rp_ui_state()
 
-    def _update_post_rw_ui_state(self) -> None:
-        count = len(self.post_rewording_data)
-        self.post_rw_add_btn.setEnabled(count < self.max_post_rewording_entries)
-        self.post_rw_remove_btn.setEnabled(count > 0 and self.post_rw_list.currentRow() >= 0)
+    def _update_post_rp_ui_state(self) -> None:
+        count = len(self.post_rephrasing_data)
+        self.post_rp_add_btn.setEnabled(count < self.max_post_rephrasing_entries)
+        self.post_rp_remove_btn.setEnabled(count > 0 and self.post_rp_list.currentRow() >= 0)
 
-    def _save_current_post_rw_edits(self) -> None:
+    def _save_current_post_rp_edits(self) -> None:
         # Data already live-updated via signals; placeholder for future flush logic.
         pass
-    # --- End restored handlers ---
 
-    def save_and_close(self) -> None:
-        """Saves settings, restarts the hotkey listener, and hides the window."""
+    def save_settings(self) -> None:
+        """Saves settings, restarts the hotkey listener."""
         # Clean model name: remove anything in parentheses and trailing whitespace
         model_raw = self.model_input.text() if self.model_dropdown.currentText() == "Custom" else self.model_dropdown.currentText()
         # Perform validation (warnings only)
@@ -1568,7 +1677,7 @@ class VoiceTranscriberApp(QWidget):
         self.config["api_key"] = self.api_key_input.text()
         self.config["api_endpoint"] = self.api_endpoint_input.text()
         self.config["model"] = model_raw
-        self.config["language"] = self.language_input.currentText()
+        self.config["input_language"] = self.language_input.currentText()
         self.config["prompt"] = self.prompt_input.toPlainText()
         self.config["restore_clipboard"] = self.restore_clipboard_checkbox.isChecked()
         self.config["debug_logging"] = self.debug_logging_checkbox.isChecked()
@@ -1576,16 +1685,18 @@ class VoiceTranscriberApp(QWidget):
         # File logging
         self.config["file_logging"] = self.file_logging_checkbox.isChecked()
 
-        self.config["rewording_enabled"] = self.rewording_checkbox.isChecked()
-        self.config["rewording_trigger_word"] = self.rewording_trigger_input.text()
-        self.config["rewording_prompt"] = self.rewording_prompt_input.toPlainText()
-        self.config["rewording_api_url"] = self.rewording_api_url_input.text()
-        self.config["rewording_api_key"] = self.rewording_api_key_input.text()
-        self.config["rewording_model"] = self.rewording_model_input.text()
+        self.config["rephrasing_enabled"] = self.rephrasing_checkbox.isChecked()
+        # Get tags from widget and save as comma-separated string
+        self.config["rephrasing_trigger_word"] = self.rephrasing_trigger_word_input.text()
+        self.config["rephrase_use_selection_context"] = self.rephrase_context_checkbox.isChecked()
+        self.config["rephrasing_prompt"] = self.rephrasing_prompt_input.toPlainText()
+        self.config["rephrasing_api_url"] = self.rephrasing_api_url_input.text()
+        self.config["rephrasing_api_key"] = self.rephrasing_api_key_input.text()
+        self.config["rephrasing_model"] = self.rephrasing_model_input.text()
         # Post Rewording entries (new)
-        if hasattr(self, 'post_rewording_data'):
-            self._save_current_post_rw_edits()
-            self.config["post_rewording_entries"] = self.post_rewording_data
+        if hasattr(self, 'post_rephrasing_data'):
+            self._save_current_post_rp_edits()
+            self.config["post_rephrasing_entries"] = self.post_rephrasing_data
 
         if self.new_hotkey_str and self.new_hotkey_str != self.hotkey_str:
             self.hotkey_str = self.new_hotkey_str
@@ -1595,7 +1706,6 @@ class VoiceTranscriberApp(QWidget):
         self.new_hotkey_str = None
 
         self.save_config()
-        self.hide()
         self.show_tray_balloon(f"Settings saved.\nHotkey: {self.hotkey_str}", 2000)
         # Apply logging changes (level + file handler)
         self.apply_logging_configuration()
@@ -1624,7 +1734,15 @@ class VoiceTranscriberApp(QWidget):
                     logging.warning(f"Could not delete old recording {f}: {e}")
 
     def quit_app(self) -> None:
-        """Quits the application cleanly."""
+        """Quits the application cleanly after confirmation."""
+        reply = QMessageBox.question(self, 'Quit Application',
+                                     "Are you sure you want to exit?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                     QMessageBox.StandardButton.No)
+
+        if reply == QMessageBox.StandardButton.No:
+            return
+
         logging.info("Quitting application.")
         if hasattr(self, 'manual_listener') and self.manual_listener.is_alive():
             self.manual_listener.stop()
@@ -1667,6 +1785,8 @@ class VoiceTranscriberApp(QWidget):
             self.prompt_token_label.setText(f"Prompt Tokens (estimated): {tokens}")
             self.prompt_token_label.setStyleSheet("color: #555;")
 
+# GITHUB COPILOT: KEEP THIS CODE TO MAKE THIS APPLICATION RUNNABLE
+# Keep the Main Application Loop to directly run the application
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)

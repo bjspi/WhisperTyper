@@ -1,3 +1,5 @@
  - Use copykitten (maybe)
+ - Streaming output (maybe)
+ - Translation of the UI, maybe?
  - Generalize Hotkey Manager -> Separate Hotkey for Rephrasing
- - In case of Rewording (renae to "Paraphrazing / LivePrompting") -> checkbox which adds the context (current selected text if any)
+ - -> checkbox which adds the context (current selected text if any)
