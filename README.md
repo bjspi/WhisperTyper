@@ -1,8 +1,15 @@
-# Voice Transcriber & AI Prompter
+# AI-based Voice Transcriber & Live Prompter
 
-A powerful, cross-platform voice-to-text application that integrates seamlessly into your workflow. Use your voice to type, rephrase text, or even prompt AI models on-the-fly, all controlled by a simple hotkey and running discreetly in your system tray.
+A powerful, cross-platform voice-to-text application that integrates seamlessly into your workflow. 
+Use your voice to type, rephrase text, or even prompt AI models on-the-fly, all controlled by a simple hotkey and running discreetly in your system tray.
 
 This tool is designed for developers, writers, and anyone who wants to leverage the power of AI to type faster and smarter.
+
+- 🤫 **Discreet Systray Operation**: Runs quietly in the background.
+- 🚀 **Live Prompting**: Turn your voice into AI commands on the fly.
+- ⌨️ **Global Hotkeys**: Control everything with a single key press.
+- 🔧 **Custom APIs**: Supports OpenAI, Groq, and any Whisper-compatible API.
+- ✍️ **Advanced Rephrasing**: Go beyond simple transcription with powerful text transformations.
 
 ![App Screenshot](https://github.com/bjspi/WhisperTyper/blob/main/screenshot.jpg)
 
@@ -60,4 +67,3 @@ The workflow is designed to be as unobtrusive as possible:
     -   **General Tab**: Choose your UI language.
 4.  Save your settings. The window will hide, and the app will run in the background.
 5.  Click into any text field in any application and use your hotkey to start typing with your voice!
-
