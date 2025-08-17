@@ -53,7 +53,7 @@
   "transformations_info": "Defina hasta {max_entries} prompts de reformulación para el post-procesamiento de transcripciones.",
   "caption_label": "Título:",
   "text_label": "Texto:",
-  "text_placeholder": "Contenido del fragmento...",
+  "text_placeholder": "Contenido del prompt del sistema...",
   "caption_placeholder": "(sin título)",
   "add_button": "+",
   "remove_button": "-",
@@ -103,5 +103,14 @@
   "no_text_selected_for_rephrase": "No se ha seleccionado texto para reformular.",
   "no_post_rephrase_entries_configured": "No hay transformaciones de post-reformulación configuradas.",
   "rephrasing_selection_message": "Reformulando la selección...",
-  "rephrasing_failed_empty_message": "La reformulación falló (resultado vacío)."
+  "rephrasing_failed_empty_message": "La reformulación falló (resultado vacío).",
+  "menu_file": "Archivo",
+  "menu_file_open_config": "Abrir archivo de configuración",
+  "menu_file_exit": "Salir",
+  "menu_help": "Ayuda",
+  "menu_help_about": "Acerca de",
+  "menu_help_github": "Repositorio de GitHub",
+  "about_dialog_title": "Acerca de WhisperTyper",
+  "about_dialog_text": "WhisperTyper\n\nUna herramienta sencilla para transcribir su voz a texto y reformularlo utilizando varios modelos de IA.",
+  "transformations_tab_description": "Aquí puede definir transformaciones de texto personalizadas. Cuando presione el atajo de teclado configurado con texto seleccionado, aparecerá un menú con sus leyendas definidas. Al hacer clic en un botón, se reformulará el texto seleccionado utilizando el prompt correspondiente. Esta función utiliza la 'Configuración de API compartida' de la pestaña 'Reformular'."
 }

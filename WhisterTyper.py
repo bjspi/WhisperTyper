@@ -13,9 +13,10 @@ from typing import List, Dict, Any, Set, Optional
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel, QLineEdit,
                              QPushButton, QSystemTrayIcon, QMenu,
                              QMessageBox, QTextEdit, QStyle, QHBoxLayout, QComboBox, QCheckBox, QTabWidget, QScrollArea,
-                             QFrame, QListWidget, QListWidgetItem, QSplitter, QAbstractItemView, QSlider, QGroupBox)
-from PyQt6.QtCore import QObject, pyqtSignal, QThread, QTimer, Qt, QPoint
-from PyQt6.QtGui import QIcon, QCloseEvent, QCursor, QAction
+                             QFrame, QListWidget, QListWidgetItem, QSplitter, QAbstractItemView, QSlider, QGroupBox,
+                             QMenuBar)
+from PyQt6.QtCore import QObject, pyqtSignal, QThread, QTimer, Qt, QPoint, QUrl
+from PyQt6.QtGui import QIcon, QCloseEvent, QCursor, QAction, QDesktopServices
 from functools import partial
 
 # Global Hotkey
@@ -695,6 +696,30 @@ class WhisperTyperApp(QWidget):
         # this layout is automatically set for the WhisperTyperApp widget.
         main_layout = QVBoxLayout(self)
 
+        # --- Menu Bar ---
+        self.menu_bar = QMenuBar()
+        main_layout.setMenuBar(self.menu_bar)
+
+        # File Menu
+        self.file_menu = self.menu_bar.addMenu("")
+        self.open_config_action = QAction("", self)
+        self.open_config_action.triggered.connect(self.open_config_file)
+        self.file_menu.addAction(self.open_config_action)
+        self.file_menu.addSeparator()
+        self.exit_action = QAction("", self)
+        self.exit_action.triggered.connect(self.quit_app)
+        self.file_menu.addAction(self.exit_action)
+
+        # Help Menu
+        self.help_menu = self.menu_bar.addMenu("")
+        self.about_action = QAction("", self)
+        self.about_action.triggered.connect(self.show_about_dialog)
+        self.help_menu.addAction(self.about_action)
+        self.github_action = QAction("", self)
+        self.github_action.triggered.connect(self.open_github_link)
+        self.help_menu.addAction(self.github_action)
+
+
         # Create the tab widget
         self.tabs = QTabWidget()
         main_layout.addWidget(self.tabs)
@@ -837,9 +862,23 @@ class WhisperTyperApp(QWidget):
 
         # --- Populate Rewording Tab ---
         rephrasing_layout = QVBoxLayout(rephrasing_tab)
+        rephrasing_layout.setSpacing(10) # Add space between groups
 
         # --- LivePrompting Group ---
         self.liveprompt_group = QGroupBox()
+        self.liveprompt_group.setStyleSheet("""
+            QGroupBox {
+                border: 1px solid #444;
+                border-radius: 5px;
+                margin-top: 1ex;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 3px;
+                border-radius: 3px;
+            }
+        """)
         rephrasing_layout.addWidget(self.liveprompt_group)
         liveprompt_layout = QVBoxLayout(self.liveprompt_group)
 
@@ -872,6 +911,19 @@ class WhisperTyperApp(QWidget):
 
         # --- Generic Rephrasing Group ---
         self.generic_rephrase_group = QGroupBox()
+        self.generic_rephrase_group.setStyleSheet("""
+            QGroupBox {
+                border: 1px solid #444;
+                border-radius: 5px;
+                margin-top: 1ex;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 3px;
+                border-radius: 3px;
+            }
+        """)
         rephrasing_layout.addWidget(self.generic_rephrase_group)
         generic_rephrase_layout = QVBoxLayout(self.generic_rephrase_group)
 
@@ -886,6 +938,19 @@ class WhisperTyperApp(QWidget):
 
         # --- Shared API Settings ---
         self.shared_api_group = QGroupBox()
+        self.shared_api_group.setStyleSheet("""
+            QGroupBox {
+                border: 1px solid #444;
+                border-radius: 5px;
+                margin-top: 1ex;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 3px;
+                border-radius: 3px;
+            }
+        """)
         rephrasing_layout.addWidget(self.shared_api_group)
         shared_api_layout = QVBoxLayout(self.shared_api_group)
 
@@ -924,6 +989,13 @@ class WhisperTyperApp(QWidget):
         # Re-implemented as split view (list + editor)
         self.max_post_rephrasing_entries = 10
         pr_layout = QVBoxLayout(post_rephrasing_tab)
+
+        # New description label for the Transformations tab
+        self.transformations_tab_description_label = QLabel()
+        self.transformations_tab_description_label.setWordWrap(True)
+        self.transformations_tab_description_label.setStyleSheet("margin-bottom: 10px; font-style: italic; color: #aaa;")
+        pr_layout.addWidget(self.transformations_tab_description_label)
+
         self.transformations_info_label = QLabel()
         self.transformations_info_label.setWordWrap(True)
         pr_layout.addWidget(self.transformations_info_label)
@@ -977,12 +1049,18 @@ class WhisperTyperApp(QWidget):
         pr_layout.addLayout(btn_row)
 
         # Data list
-        self.post_rephrasing_data: List[Dict[str, str]] = self.config["post_rephrasing_entries"][:self.max_post_rephrasing_entries]
+        # FIX: Directly reference the list from config to ensure changes are saved.
+        # Slicing creates a copy, which was the source of the save bug.
+        self.post_rephrasing_data: List[Dict[str, str]] = self.config["post_rephrasing_entries"]
+        # Still enforce the limit on adding new items.
+        if len(self.post_rephrasing_data) > self.max_post_rephrasing_entries:
+             self.post_rephrasing_data = self.post_rephrasing_data[:self.max_post_rephrasing_entries]
+             self.config["post_rephrasing_entries"] = self.post_rephrasing_data
+
+        self._current_pr_row = -1
         self._post_rp_updating = False
         self._load_post_rp_entries_into_list()
         self.post_rp_list.currentRowChanged.connect(self._on_post_rp_selection_changed)
-        self.post_rp_caption_edit.textChanged.connect(self._on_post_rp_caption_changed)
-        self.post_rp_text_edit.textChanged.connect(self._on_post_rp_text_changed)
         self.post_rp_add_btn.clicked.connect(self._on_post_rp_add_clicked)
         self.post_rp_remove_btn.clicked.connect(self._on_post_rp_remove_clicked)
         self._update_post_rp_ui_state()
@@ -1069,10 +1147,42 @@ class WhisperTyperApp(QWidget):
         tooltip_text = self.translator.tr("liveprompt_help_tooltip")
         self.show_tray_balloon(tooltip_text, 5000) # Show for 5 seconds
 
+    def show_about_dialog(self) -> None:
+        """Shows the 'About' dialog with application information."""
+        QMessageBox.about(
+            self,
+            self.translator.tr("about_dialog_title"),
+            self.translator.tr("about_dialog_text")
+        )
+
+    def open_config_file(self) -> None:
+        """Opens the config.json file in the default system editor."""
+        if os.path.exists(CONFIG_FILE):
+            QDesktopServices.openUrl(QUrl.fromLocalFile(CONFIG_FILE))
+        else:
+            self.show_tray_balloon(self.translator.tr("config_file_not_found"), 3000)
+
+    def open_github_link(self) -> None:
+        """Opens the project's GitHub repository in the default browser."""
+        # Replace with the actual URL of your repository
+        url = QUrl("https://github.com/bjspi/WhisperTyper")
+        QDesktopServices.openUrl(url)
+
     def retranslate_ui(self) -> None:
         """Updates all UI texts to the currently selected language."""
         # Window Title
         self.setWindowTitle(self.translator.tr("window_title"))
+
+        # Menus
+        # NOTE TO USER: Please add the following keys to your language files:
+        # "menu_file", "menu_file_open_config", "menu_file_exit", "menu_help", "menu_help_about", "menu_help_github",
+        # "about_dialog_title", "about_dialog_text"
+        self.file_menu.setTitle(self.translator.tr("menu_file"))
+        self.open_config_action.setText(self.translator.tr("menu_file_open_config"))
+        self.exit_action.setText(self.translator.tr("menu_file_exit"))
+        self.help_menu.setTitle(self.translator.tr("menu_help"))
+        self.about_action.setText(self.translator.tr("menu_help_about"))
+        self.github_action.setText(self.translator.tr("menu_help_github"))
 
         # Tabs
         self.tabs.setTabText(0, self.translator.tr("tab_transcription"))
@@ -1178,6 +1288,10 @@ class WhisperTyperApp(QWidget):
         self.rephrasing_temp_slider.setToolTip(temp_tooltip)
 
         # Transformations Tab
+        # NOTE TO USER: Please add the following key "transformations_tab_description" to your language files (de.json, en.json, etc.)
+        # Example for en.json:
+        # "transformations_tab_description": "Here you can define custom text transformations. When you press the configured hotkey with text selected, a menu with your defined captions will appear. Clicking a button will rephrase the selected text using the corresponding prompt. This feature uses the 'Shared API Settings' from the 'Rephrasing' tab."
+        self.transformations_tab_description_label.setText(self.translator.tr("transformations_tab_description"))
         self.transformations_info_label.setText(self.translator.tr("transformations_info", max_entries=self.max_post_rephrasing_entries))
         self.caption_label.setText(self.translator.tr("caption_label"))
         self.text_label.setText(self.translator.tr("text_label"))
@@ -1461,7 +1575,7 @@ class WhisperTyperApp(QWidget):
 
     def _on_hotkey_release(self, key: Any) -> None:
         """
-        Callback for the manual listener when any key is released.
+        Callback for when a key is released.
 
         Args:
             key (Any): The key that was released.
@@ -2000,7 +2114,7 @@ class WhisperTyperApp(QWidget):
             else:
                 pyautogui.hotkey('ctrl', 'c')
 
-            time.sleep(0.1)  # Allow time for clipboard to update
+            time.sleep(0.3)  # Allow time for clipboard to update
             selected_text = copykitten.paste()
 
             # If no text was selected, we might have copied the current clipboard content
@@ -2037,7 +2151,7 @@ class WhisperTyperApp(QWidget):
                 pyautogui.hotkey('command', 'v')
             else:
                 pyautogui.hotkey('ctrl', 'v')
-            time.sleep(0.1)  # Brief pause to ensure paste command is processed
+            time.sleep(0.3)  # Brief pause to ensure paste command is processed
 
             if restore and old_clipboard is not None:
                 copykitten.copy(old_clipboard)
@@ -2194,118 +2308,130 @@ class WhisperTyperApp(QWidget):
 
     # ---------------- Post Rewording (New Implementation) ----------------
     def _load_post_rp_entries_into_list(self) -> None:
-        # Preserve current caption for selection restore
-        current_row = self.post_rp_list.currentRow()
-        current_item_caption = None
-        if current_row >= 0:
-            itm = self.post_rp_list.item(current_row)
-            if itm:
-                current_item_caption = itm.text()
+        """(Re)loads all entries from the data model into the list widget."""
+        self.post_rp_list.blockSignals(True)
         self.post_rp_list.clear()
         for entry in self.post_rephrasing_data:
-            caption = entry.get("caption", "").strip() or "(ohne Caption)"
+            caption = entry.get("caption", "").strip() or self.translator.tr("caption_placeholder")
             item = QListWidgetItem(caption)
-            # Store reference to dict so we can rebuild ordering after drag&drop
+            # Store a direct reference to the dictionary entry. This is crucial.
             item.setData(Qt.ItemDataRole.UserRole, entry)
             self.post_rp_list.addItem(item)
-        # Try to restore selection
-        if current_item_caption:
-            for i in range(self.post_rp_list.count()):
-                if self.post_rp_list.item(i).text() == current_item_caption:
-                    self.post_rp_list.setCurrentRow(i)
-                    break
+        self.post_rp_list.blockSignals(False)
+        self._update_post_rp_ui_state()
 
     def _sync_post_rp_data_from_list(self) -> None:
-        # Build new list order based on item sequence and stored dict references
-        new_list: List[Dict[str, str]] = []
+        """Rebuilds the data model list based on the visual order in the QListWidget after a drag-and-drop."""
+        # First, save any uncommitted changes from the editor.
+        self._save_pr_editor_changes()
+
+        # Rebuild the data list from the new visual order.
+        new_data_list: List[Dict[str, str]] = []
         for i in range(self.post_rp_list.count()):
             item = self.post_rp_list.item(i)
             ref = item.data(Qt.ItemDataRole.UserRole)
             if isinstance(ref, dict):
-                new_list.append(ref)
-        if len(new_list) == len(self.post_rephrasing_data):
-            self.post_rephrasing_data = new_list
-        self._update_post_rp_ui_state()
+                new_data_list.append(ref)
 
-    def _on_post_rp_selection_changed(self, row: int) -> None:
+        # Replace the old list with the newly ordered one.
+        self.post_rephrasing_data.clear()
+        self.post_rephrasing_data.extend(new_data_list)
+
+        # The selection index is the same, but the item at that index is different.
+        # We must reload the editor to reflect the item that is now at the selected row.
+        self._load_pr_editor_for_row(self.post_rp_list.currentRow())
+
+    def _save_pr_editor_changes(self) -> None:
+        """Saves the current editor contents to the data model for the last selected row."""
+        if self._post_rp_updating or self._current_pr_row < 0 or self._current_pr_row >= len(self.post_rephrasing_data):
+            return
+
+        # Save data from editors to the dictionary for the current row
+        entry = self.post_rephrasing_data[self._current_pr_row]
+        entry["caption"] = self.post_rp_caption_edit.text()
+        entry["text"] = self.post_rp_text_edit.toPlainText()
+
+        # Update the visual list item's text to match the new caption
+        item = self.post_rp_list.item(self._current_pr_row)
+        if item:
+            item.setText(entry["caption"].strip() or self.translator.tr("caption_placeholder"))
+
+    def _load_pr_editor_for_row(self, row: int) -> None:
+        """Loads data for a given row into the editor fields and updates state."""
+        self._post_rp_updating = True
         if row < 0 or row >= len(self.post_rephrasing_data):
-            self._post_rp_updating = True
+            # No valid selection, clear and disable editors
             self.post_rp_caption_edit.clear()
             self.post_rp_text_edit.clear()
             self.post_rp_caption_edit.setEnabled(False)
             self.post_rp_text_edit.setEnabled(False)
-            self._post_rp_updating = False
-            self._update_post_rp_ui_state()
-            return
-        self._post_rp_updating = True
-        entry = self.post_rephrasing_data[row]
-        self.post_rp_caption_edit.setEnabled(True)
-        self.post_rp_text_edit.setEnabled(True)
-        self.post_rp_caption_edit.setText(entry.get("caption", ""))
-        self.post_rp_text_edit.setPlainText(entry.get("text", ""))
+        else:
+            # Valid selection, load data from model into editors
+            entry = self.post_rephrasing_data[row]
+            self.post_rp_caption_edit.setEnabled(True)
+            self.post_rp_text_edit.setEnabled(True)
+            self.post_rp_caption_edit.setText(entry.get("caption", ""))
+            self.post_rp_text_edit.setPlainText(entry.get("text", ""))
+            self.post_rp_caption_edit.setFocus()
+
         self._post_rp_updating = False
+        self._current_pr_row = row
         self._update_post_rp_ui_state()
 
-    def _on_post_rp_caption_changed(self, text: str) -> None:
+    def _on_post_rp_selection_changed(self, current_row: int) -> None:
+        """Handles selection changes in the list. Saves old, loads new."""
         if self._post_rp_updating:
             return
-        row = self.post_rp_list.currentRow()
-        if 0 <= row < len(self.post_rephrasing_data):
-            self.post_rephrasing_data[row]["caption"] = text
-            item = self.post_rp_list.item(row)
-            if item:
-                item.setText(text.strip() or "(ohne Caption)")
-        self._sync_post_rp_data_from_list()
-
-    def _on_post_rp_text_changed(self) -> None:
-        if self._post_rp_updating:
-            return
-        row = self.post_rp_list.currentRow()
-        if 0 <= row < len(self.post_rephrasing_data):
-            self.post_rephrasing_data[row]["text"] = self.post_rp_text_edit.toPlainText()
+        # Save any changes from the previously selected item
+        self._save_pr_editor_changes()
+        # Load the data for the newly selected item
+        self._load_pr_editor_for_row(current_row)
 
     def _on_post_rp_add_clicked(self) -> None:
+        """Adds a new, blank entry."""
         if len(self.post_rephrasing_data) >= self.max_post_rephrasing_entries:
             return
+        # Save any pending edits from the current item first
+        self._save_pr_editor_changes()
+
+        # Add new entry to the data model
         new_entry = {"caption": "", "text": ""}
         self.post_rephrasing_data.append(new_entry)
-        item = QListWidgetItem("(ohne Caption)")
-        item.setData(Qt.ItemDataRole.UserRole, new_entry)
-        self.post_rp_list.addItem(item)
-        self.post_rp_list.setCurrentRow(self.post_rp_list.count() - 1)
-        self._update_post_rp_ui_state()
+
+        # Re-populate the visual list and select the new item
+        self._load_post_rp_entries_into_list()
+        self.post_rp_list.setCurrentRow(len(self.post_rephrasing_data) - 1)
 
     def _on_post_rp_remove_clicked(self) -> None:
+        """Removes the currently selected entry."""
         row = self.post_rp_list.currentRow()
         if 0 <= row < len(self.post_rephrasing_data):
-            # Prevent intermediate selection-change handling while mutating
-            self._post_rp_updating = True
-            self.post_rp_list.blockSignals(True)
             del self.post_rephrasing_data[row]
-            self.post_rp_list.takeItem(row)
 
-            # Compute new target row (stay at same index, fallback to last existing)
-            if row >= self.post_rp_list.count():
-                row = self.post_rp_list.count() - 1
+            # Determine which row to select next
+            new_row = row
+            if new_row >= len(self.post_rephrasing_data):
+                new_row = len(self.post_rephrasing_data) - 1
 
-            # Re-select if any remain
-            if row >= 0:
-                self.post_rp_list.setCurrentRow(row)
+            # Invalidate current row before reloading everything
+            self._current_pr_row = -1
+            self._load_post_rp_entries_into_list()
 
-            self.post_rp_list.blockSignals(False)
-            self._post_rp_updating = False
-            # Manually refresh editor state (selection signal suppressed or earlier blanked it)
-            self._on_post_rp_selection_changed(row if row >= 0 else -1)
-        self._update_post_rp_ui_state()
+            if new_row >= 0:
+                self.post_rp_list.setCurrentRow(new_row)
+            else:
+                # The list is now empty, clear the editor
+                self._load_pr_editor_for_row(-1)
 
     def _update_post_rp_ui_state(self) -> None:
+        """Enables/disables add/remove buttons based on item count."""
         count = len(self.post_rephrasing_data)
         self.post_rp_add_btn.setEnabled(count < self.max_post_rephrasing_entries)
         self.post_rp_remove_btn.setEnabled(count > 0 and self.post_rp_list.currentRow() >= 0)
 
     def _save_current_post_rp_edits(self) -> None:
-        # Data already live-updated via signals; placeholder for future flush logic.
-        pass
+        """Explicitly saves the currently visible editor state to the data model."""
+        self._save_pr_editor_changes()
 
     def save_settings(self) -> None:
         """Saves settings, restarts the hotkey listener."""

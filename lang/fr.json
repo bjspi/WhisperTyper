@@ -53,7 +53,7 @@
   "transformations_info": "Définissez jusqu'à {max_entries} prompts de reformulation pour le post-traitement des transcriptions.",
   "caption_label": "Légende :",
   "text_label": "Texte :",
-  "text_placeholder": "Contenu de l'extrait...",
+  "text_placeholder": "Contenu du prompt système...",
   "caption_placeholder": "(sans légende)",
   "add_button": "+",
   "remove_button": "-",
@@ -103,5 +103,14 @@
   "no_text_selected_for_rephrase": "Aucun texte sélectionné pour la reformulation.",
   "no_post_rephrase_entries_configured": "Aucune transformation de post-reformulation n'est configurée.",
   "rephrasing_selection_message": "Reformulation de la sélection en cours...",
-  "rephrasing_failed_empty_message": "La reformulation a échoué (résultat vide)."
+  "rephrasing_failed_empty_message": "La reformulation a échoué (résultat vide).",
+  "menu_file": "Fichier",
+  "menu_file_open_config": "Ouvrir le fichier de configuration",
+  "menu_file_exit": "Quitter",
+  "menu_help": "Aide",
+  "menu_help_about": "À propos",
+  "menu_help_github": "Dépôt GitHub",
+  "about_dialog_title": "À propos de WhisperTyper",
+  "about_dialog_text": "WhisperTyper\n\nUn outil simple pour transcrire votre voix en texte et le reformuler à l'aide de divers modèles d'IA.",
+  "transformations_tab_description": "Ici, vous pouvez définir des transformations de texte personnalisées. Lorsque vous appuyez sur le raccourci configuré avec du texte sélectionné, un menu avec vos légendes définies apparaîtra. Cliquer sur un bouton reformulera le texte sélectionné en utilisant l'invite correspondante. Cette fonctionnalité utilise les 'Paramètres d'API partagés' de l'onglet 'Reformulation'."
 }

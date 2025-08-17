@@ -53,7 +53,7 @@
   "transformations_info": "Define up to {max_entries} rewording Prompts for Post-Processing of Transcriptions.",
   "caption_label": "Caption:",
   "text_label": "Text:",
-  "text_placeholder": "Snippet content...",
+  "text_placeholder": "System prompt content...",
   "caption_placeholder": "(no caption)",
   "add_button": "+",
   "remove_button": "-",
@@ -103,5 +103,14 @@
   "no_text_selected_for_rephrase": "No text selected for rephrasing.",
   "no_post_rephrase_entries_configured": "No post-rephrasing transformations configured.",
   "rephrasing_selection_message": "Rephrasing selection...",
-  "rephrasing_failed_empty_message": "Rephrasing failed (empty result)."
+  "rephrasing_failed_empty_message": "Rephrasing failed (empty result).",
+  "menu_file": "File",
+  "menu_file_open_config": "Open Config File",
+  "menu_file_exit": "Exit",
+  "menu_help": "Help",
+  "menu_help_about": "About",
+  "menu_help_github": "GitHub Repository",
+  "about_dialog_title": "About WhisperTyper",
+  "about_dialog_text": "WhisperTyper\n\nA simple tool to transcribe your voice to text and rephrase it using various AI models.",
+  "transformations_tab_description": "Here you can define custom text transformations. When you press the configured hotkey with text selected, a menu with your defined captions will appear. Clicking a button will rephrase the selected text using the corresponding prompt. This feature uses the 'Shared API Settings' from the 'Rephrasing' tab."
 }
