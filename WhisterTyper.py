@@ -400,8 +400,7 @@ class VoiceTranscriberApp(QWidget):
         # Add placeholder for file log handler
         self._file_log_handler = None
 
-        self.hotkey_str: str = DEFAULT_HOTKEY_STR
-        self.new_hotkey_str: Optional[str] = None
+        # self.hotkey_str is now correctly set within load_config()
         self.captured_keys: Set[Any] = set()
 
         self.recording_thread: Optional[threading.Thread] = None
@@ -413,12 +412,12 @@ class VoiceTranscriberApp(QWidget):
         self.current_transcription_context: str = ""
 
         self.cleanup_old_recordings()
-        # self.load_config() # Moved up before translator init
+
         # After loading config ensure logging handlers reflect settings
         self.apply_logging_configuration()
         self.init_ui()
         self.init_tray_icon()
-        # self.init_audio_player()  # removed pygame init
+
         self.init_manual_hotkey_listener()
         # Preload short sound effects & prepare reusable output streams for low latency
         self.sound_cache: Dict[str, tuple] = {}
@@ -660,15 +659,15 @@ class VoiceTranscriberApp(QWidget):
         self.rephrasing_checkbox.setChecked(self.config["rephrasing_enabled"])
         rephrasing_layout.addWidget(self.rephrasing_checkbox)
 
-        self.rephrasing_trigger_label = QLabel()
-        rephrasing_layout.addWidget(self.rephrasing_trigger_label)
-        self.rephrasing_trigger_word_input = QLineEdit(self.config["rephrasing_trigger_word"])
-        rephrasing_layout.addWidget(self.rephrasing_trigger_word_input)
-
         # New checkbox for context
         self.rephrase_context_checkbox = QCheckBox()
         self.rephrase_context_checkbox.setChecked(self.config["rephrase_use_selection_context"])
         rephrasing_layout.addWidget(self.rephrase_context_checkbox)
+
+        self.rephrasing_trigger_label = QLabel()
+        rephrasing_layout.addWidget(self.rephrasing_trigger_label)
+        self.rephrasing_trigger_word_input = QLineEdit(self.config["rephrasing_trigger_word"])
+        rephrasing_layout.addWidget(self.rephrasing_trigger_word_input)
 
         self.rephrasing_prompt_label = QLabel()
         rephrasing_layout.addWidget(self.rephrasing_prompt_label)
@@ -950,8 +949,7 @@ class VoiceTranscriberApp(QWidget):
         if self.hotkey_capture_listener:
             self.hotkey_capture_listener.stop()
             self.hotkey_capture_listener = None
-        self.new_hotkey_str = self.keys_to_string(self.captured_keys)
-        self.hotkey_display.setText(self.new_hotkey_str)
+        self.hotkey_display.setText(self.keys_to_string(self.captured_keys))
         self.set_hotkey_button.setText(self.translator.tr("set_hotkey_button"))
         self.set_hotkey_button.setEnabled(True)
 
@@ -1905,12 +1903,13 @@ class VoiceTranscriberApp(QWidget):
             self._save_current_post_rp_edits()
             self.config["post_rephrasing_entries"] = self.post_rephrasing_data
 
-        if self.new_hotkey_str and self.new_hotkey_str != self.hotkey_str:
-            self.hotkey_str = self.new_hotkey_str
-            self.config["hotkey"] = self.new_hotkey_str
+        # Get the pending hotkey string from the UI display
+        pending_hotkey_str = self.hotkey_display.text()
+        if pending_hotkey_str != self.hotkey_str:
+            self.hotkey_str = pending_hotkey_str
+            self.config["hotkey"] = self.hotkey_str
             # Re-initialize the listener with the new key set
             self.init_manual_hotkey_listener()
-        self.new_hotkey_str = None
 
         self.save_config()
         self.show_tray_balloon(self.translator.tr("settings_saved_message", hotkey=self.hotkey_str), 2000)
