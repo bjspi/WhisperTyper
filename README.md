@@ -24,7 +24,9 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 - 🔧 **Custom APIs**: Supports OpenAI, Groq, and any Whisper-compatible API.
 - ✍️ **Advanced Rephrasing**: Go beyond simple transcription with powerful text transformations.
 
-<img src="https://github.com/bjspi/WhisperTyper/blob/main/screenshot.jpg" alt="App Screenshot" width="60%" />
+<p align="center">
+    <img src="https://github.com/bjspi/WhisperTyper/blob/main/screenshot.jpg" alt="App Screenshot" width="70%" />
+</p>
 
 ---
 
