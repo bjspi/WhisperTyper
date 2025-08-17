@@ -24,7 +24,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 - 🔧 **Custom APIs**: Supports OpenAI, Groq, and any Whisper-compatible API.
 - ✍️ **Advanced Rephrasing**: Go beyond simple transcription with powerful text transformations.
 
-![App Screenshot](https://github.com/bjspi/WhisperTyper/blob/main/screenshot.jpg)
+<img src="https://github.com/bjspi/WhisperTyper/blob/main/screenshot.jpg" alt="App Screenshot" width="60%" />
 
 ---
 
@@ -59,6 +59,12 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
     > `brew install portaudio`
 
     *(Note: You may need to create a `requirements.txt` file based on the project's imports.)*
+
+## Tech Stack
+<p align="center">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white" />
+  <img alt="PyQt" src="https://img.shields.io/badge/PyQt-41CD52?style=flat-square&logo=qt&logoColor=white" />
+</p>
 
 ## Usage
 
