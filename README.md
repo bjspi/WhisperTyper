@@ -4,7 +4,7 @@ A powerful, cross-platform voice-to-text application that integrates seamlessly 
 
 This tool is designed for developers, writers, and anyone who wants to leverage the power of AI to type faster and smarter.
 
-![App Screenshot](https://raw.githubusercontent.com/user/repo/main/screenshot.jpg)
+![App Screenshot](https://github.com/bjspi/WhisperTyper/blob/main/screenshot.jpg)
 
 ---
 
