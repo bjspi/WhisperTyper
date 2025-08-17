@@ -19,13 +19,13 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 
 - 🤫 **Discreet Systray Operation**: Runs quietly in the background.
 - 🎤 **Global Voice Typing**: Transcribe your voice into any application with a single hotkey.
-- 🚀 **Live Prompting**: Turn your voice into AI commands on the fly.
-- ⌨️ **Clipboard Safe**: Restores your clipboard after pasting, so you never lose your copied content.
-- 🔧 **Custom APIs**: Supports OpenAI, Groq, and any Whisper-compatible API.
-- ✍️ **Advanced Rephrasing**: Go beyond simple transcription with powerful text transformations.
+- 🚀 **Live Prompting**: Turn your voice into AI commands on the fly within any text field.
+- ⌨️ **Clipboard Safe**: Doesnt hijack your clipboard, restores your previous clipboard contents after pasting
+- 🔧 **Custom APIs**: Supports OpenAI, Groq, and any Whisper-compatible API
+- ✍️ **Advanced Rephrasing**: Go beyond simple transcription with powerful and preset text transformations.
 
 <p align="center">
-    <img src="https://github.com/bjspi/WhisperTyper/blob/main/screenshot.jpg" alt="App Screenshot" width="70%" />
+    <img src="https://github.com/bjspi/WhisperTyper/blob/main/screenshot.jpg" alt="App Screenshot" width="80%" />
 </p>
 
 ---
@@ -51,7 +51,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 1.  Clone the repository (or download the ZIP file):
     ```bash
     git clone https://github.com/bjspi/WhisperTyper.git
-    cd VoiceTranscriber
+    cd WhisperTyper
     ```
 2.  Install the required Python packages:
     ```bash

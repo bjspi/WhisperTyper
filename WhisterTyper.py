@@ -877,7 +877,7 @@ class WhisperTyperApp(QWidget):
     def show_liveprompt_help(self) -> None:
         """Shows a detailed help tooltip for the LivePrompting feature."""
         tooltip_text = self.translator.tr("liveprompt_help_tooltip")
-        self.show_tray_balloon(tooltip_text, 10000) # Show for 10 seconds
+        self.show_tray_balloon(tooltip_text, 5000) # Show for 5 seconds
 
     def retranslate_ui(self) -> None:
         """Updates all UI texts to the currently selected language."""
