@@ -102,5 +102,12 @@
   "token_counter_label": "Prompt-Token (geschätzt): {tokens}",
   "token_counter_exceeded_label": "Prompt-Token: {tokens} / {limit}{exceeded_text}",
   "token_exceeded_text": " (überschritten!)",
-  "ui_language_label": "UI-Sprache:"
+  "ui_language_label": "UI-Sprache:",
+  "post_rephrase_hotkey_group_title": "Hotkey für Nachbearbeitung",
+  "post_rephrase_hotkey_label": "Hotkey zum Anzeigen der Nachbearbeitungs-Optionen für markierten Text:",
+  "post_rephrase_hotkey_tooltip": "Drücken Sie diesen Hotkey, wenn Sie Text markiert haben, um ein Menü mit Ihren benutzerdefinierten Transformationen anzuzeigen.",
+  "no_text_selected_for_rephrase": "Kein Text zur Nachbearbeitung markiert.",
+  "no_post_rephrase_entries_configured": "Keine Nachbearbeitungs-Transformationen konfiguriert.",
+  "rephrasing_selection_message": "Auswahl wird umformuliert...",
+  "rephrasing_failed_empty_message": "Umformulierung fehlgeschlagen (leeres Ergebnis)."
 }

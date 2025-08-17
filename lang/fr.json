@@ -96,5 +96,12 @@
   "token_counter_label": "Jetons de prompt (estimé) : {tokens}",
   "token_counter_exceeded_label": "Jetons de prompt : {tokens} / {limit}{exceeded_text}",
   "token_exceeded_text": " (dépassé !)",
-  "ui_language_label": "Langue de l'interface :"
+  "ui_language_label": "Langue de l'interface :",
+  "post_rephrase_hotkey_group_title": "Raccourci pour Post-Reformulation",
+  "post_rephrase_hotkey_label": "Raccourci pour afficher les options de post-reformulation pour le texte sélectionné :",
+  "post_rephrase_hotkey_tooltip": "Appuyez sur ce raccourci lorsque du texte est sélectionné pour afficher un menu avec vos transformations personnalisées.",
+  "no_text_selected_for_rephrase": "Aucun texte sélectionné pour la reformulation.",
+  "no_post_rephrase_entries_configured": "Aucune transformation de post-reformulation n'est configurée.",
+  "rephrasing_selection_message": "Reformulation de la sélection en cours...",
+  "rephrasing_failed_empty_message": "La reformulation a échoué (résultat vide)."
 }

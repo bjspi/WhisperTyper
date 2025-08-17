@@ -96,5 +96,12 @@
   "token_counter_label": "Tokens de Prompt (estimado): {tokens}",
   "token_counter_exceeded_label": "Tokens de Prompt: {tokens} / {limit}{exceeded_text}",
   "token_exceeded_text": " (¡excedido!)",
-  "ui_language_label": "Idioma de la interfaz:"
+  "ui_language_label": "Idioma de la interfaz:",
+  "post_rephrase_hotkey_group_title": "Atajo para Post-Reformulación",
+  "post_rephrase_hotkey_label": "Atajo para mostrar opciones de post-reformulación para el texto seleccionado:",
+  "post_rephrase_hotkey_tooltip": "Presione este atajo mientras tiene texto seleccionado para mostrar un menú con sus transformaciones personalizadas.",
+  "no_text_selected_for_rephrase": "No se ha seleccionado texto para reformular.",
+  "no_post_rephrase_entries_configured": "No hay transformaciones de post-reformulación configuradas.",
+  "rephrasing_selection_message": "Reformulando la selección...",
+  "rephrasing_failed_empty_message": "La reformulación falló (resultado vacío)."
 }

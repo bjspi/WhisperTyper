@@ -96,5 +96,12 @@
   "token_counter_label": "Prompt Tokens (estimated): {tokens}",
   "token_counter_exceeded_label": "Prompt Tokens: {tokens} / {limit}{exceeded_text}",
   "token_exceeded_text": " (exceeded!)",
-  "ui_language_label": "UI Language:"
+  "ui_language_label": "UI Language:",
+  "post_rephrase_hotkey_group_title": "Post-Rephrasing Hotkey",
+  "post_rephrase_hotkey_label": "Hotkey to show post-rephrasing options for selected text:",
+  "post_rephrase_hotkey_tooltip": "Press this hotkey while text is selected to show a menu with your custom transformations.",
+  "no_text_selected_for_rephrase": "No text selected for rephrasing.",
+  "no_post_rephrase_entries_configured": "No post-rephrasing transformations configured.",
+  "rephrasing_selection_message": "Rephrasing selection...",
+  "rephrasing_failed_empty_message": "Rephrasing failed (empty result)."
 }

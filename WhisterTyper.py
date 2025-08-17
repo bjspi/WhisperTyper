@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel, QLineEd
                              QFrame, QListWidget, QListWidgetItem, QSplitter, QAbstractItemView, QSlider, QGroupBox)
 from PyQt6.QtCore import QObject, pyqtSignal, QThread, QTimer, Qt, QPoint
 from PyQt6.QtGui import QIcon, QCloseEvent, QCursor, QAction
+from functools import partial
 
 # Global Hotkey
 from pynput import keyboard
@@ -180,7 +181,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "rephrasing_api_key": "",
     "rephrasing_model": DEFAULT_REPHRASING_MODEL,
     "rephrasing_temperature": 0.7,
-    "post_rephrasing_entries": []
+    "post_rephrasing_entries": [],
+    "post_rephrase_hotkey": ""
 }
 
 logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(message)s')
@@ -283,6 +285,74 @@ class MouseFollowerTooltip(QWidget):
         # Create a new instance
         MouseFollowerTooltip(message, timeout_ms)
 
+class FloatingButtonWindow(QWidget):
+    """A frameless window with buttons that appears near the mouse."""
+    _instance: Optional['FloatingButtonWindow'] = None
+
+    def __init__(self, buttons: List[Dict[str, str]], selected_text: str, on_button_click_callback):
+        """
+        Initializes the floating button window.
+
+        Args:
+            buttons (List[Dict[str, str]]): A list of dicts, each with 'caption' and 'text'.
+            selected_text (str): The text that was selected when the window was triggered.
+            on_button_click_callback (callable): Function to call when a button is clicked.
+        """
+        super().__init__()
+        if FloatingButtonWindow._instance:
+            FloatingButtonWindow._instance.close()
+        FloatingButtonWindow._instance = self
+
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(3)
+        self.setStyleSheet("""
+            FloatingButtonWindow {
+                background-color: rgba(30, 30, 30, 0.85);
+                border: 1px solid #555;
+                border-radius: 4px;
+            }
+            QPushButton {
+                background-color: #333;
+                color: white;
+                border: 1px solid #666;
+                padding: 4px 8px;
+                border-radius: 3px;
+                text-align: left;
+            }
+            QPushButton:hover {
+                background-color: #444;
+                border-color: #888;
+            }
+            QPushButton:pressed {
+                background-color: #222;
+            }
+        """)
+
+        for button_info in buttons:
+            caption = button_info.get("caption", "Unnamed")
+            prompt_text = button_info.get("text", "")
+            btn = QPushButton(caption)
+            btn.clicked.connect(partial(on_button_click_callback, prompt_text, selected_text, self))
+            layout.addWidget(btn)
+
+        self.move(QCursor.pos() + QPoint(10, 10))
+        self.show()
+
+    def focusOutEvent(self, event):
+        """Close the window when it loses focus."""
+        self.close()
+        super().focusOutEvent(event)
+
+    def closeEvent(self, event):
+        if FloatingButtonWindow._instance is self:
+            FloatingButtonWindow._instance = None
+        super().closeEvent(event)
+
 # ---------------- Helper Token Utilities ----------------
 TOKEN_PATTERN = re.compile(r"\w+|[^\s\w]")  # crude approximation (words or single punctuation)
 
@@ -382,6 +452,57 @@ class TranscriptionWorker(QObject):
             logging.error(error_msg)
             self.error.emit(error_msg, self.audio_path)
 
+class RephrasingWorker(QObject):
+    """
+    Runs the rephrasing API request in a separate thread to avoid blocking the GUI.
+    """
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
+
+    def __init__(self, app_instance: 'WhisperTyperApp', system_prompt: str, user_prompt: str, context: str) -> None:
+        """
+        Initializes the rephrasing worker.
+
+        Args:
+            app_instance (WhisperTyperApp): The main application instance to access config and methods.
+            system_prompt (str): The system-level instruction for the AI.
+            user_prompt (str): The user's direct input or text to be processed.
+            context (str): Additional context (e.g., selected text).
+        """
+        super().__init__()
+        self.app = app_instance
+
+        # Copy necessary data from the app instance
+        self.system_prompt = system_prompt
+        self.user_prompt = user_prompt
+        self.context = context
+        self.config = app_instance.config
+
+    def run(self) -> None:
+        """
+        Executes the rephrasing request and emits the corresponding signal.
+        """
+        logging.info("RephrasingWorker started.")
+        try:
+            rephrased_text = self.app.rephrase_text_with_gpt(
+                system_prompt=self.system_prompt,
+                user_prompt=self.user_prompt,
+                api_url=self.config["rephrasing_api_url"],
+                api_key=self.config["rephrasing_api_key"],
+                model=self.config["rephrasing_model"],
+                temperature=self.config["rephrasing_temperature"],
+                context=self.context
+            )
+            if rephrased_text:
+                self.finished.emit(rephrased_text)
+            else:
+                self.error.emit("Rephrasing resulted in empty text.")
+        except Exception as e:
+            error_msg = f"An unexpected error occurred in RephrasingWorker:\n{str(e)}"
+            logging.error(error_msg)
+            self.error.emit(error_msg)
+
+
 class WhisperTyperApp(QWidget):
     """
     Main application class for the WhisperTyper.
@@ -389,6 +510,7 @@ class WhisperTyperApp(QWidget):
     """
     # CORRECTED: Signal for thread-safe GUI updates
     show_tooltip_signal = pyqtSignal(str, int)
+    show_floating_window_signal = pyqtSignal(list, str)
 
     def __init__(self) -> None:
         """Initializes the application."""
@@ -410,6 +532,7 @@ class WhisperTyperApp(QWidget):
         self._file_log_handler = None
 
         # self.hotkey_str is now correctly set within load_config()
+        self.capturing_for_widget: Optional[QLineEdit] = None
         self.captured_keys: Set[Any] = set()
 
         self.recording_thread: Optional[threading.Thread] = None
@@ -417,6 +540,8 @@ class WhisperTyperApp(QWidget):
         self.hotkey_capture_listener: Optional[keyboard.Listener] = None
         self.active_workers: List[TranscriptionWorker] = []
         self.active_threads: List[QThread] = []
+        self.active_rephrasing_workers: List[RephrasingWorker] = []
+        self.active_rephrasing_threads: List[QThread] = []
         self.last_transcription: str = ""
         self.current_transcription_context: str = ""
 
@@ -436,6 +561,7 @@ class WhisperTyperApp(QWidget):
 
         # Connect the signal to the slot for safe cross-thread communication
         self.show_tooltip_signal.connect(self._show_tooltip_slot)
+        self.show_floating_window_signal.connect(self._show_floating_window_slot)
 
         self.tray_icon.setToolTip(self.translator.tr("tray_ready_tooltip", hotkey=self.hotkey_str))
         logging.info(f"Application started. Press '{self.hotkey_str}' to start/stop recording.")
@@ -450,6 +576,20 @@ class WhisperTyperApp(QWidget):
             timeout_ms (int): The duration in milliseconds for the tooltip to be visible.
         """
         MouseFollowerTooltip.show_tooltip(message, timeout_ms)
+
+    def _show_floating_window_slot(self, valid_entries: List[Dict[str, str]], selected_text: str) -> None:
+        """
+        This slot is executed in the main GUI thread and can safely create the floating window.
+
+        Args:
+            valid_entries (List[Dict[str, str]]): The list of button configurations.
+            selected_text (str): The text that was selected.
+        """
+        FloatingButtonWindow(
+            buttons=valid_entries,
+            selected_text=selected_text,
+            on_button_click_callback=self.on_floating_button_clicked
+        )
 
     def show_tray_balloon(self, message: str, timeout_ms: int = 2000) -> None:
         """
@@ -500,6 +640,7 @@ class WhisperTyperApp(QWidget):
 
         self.config = loaded_config
         self.hotkey_str = self.config["hotkey"]
+        self.post_rephrase_hotkey_str = self.config["post_rephrase_hotkey"]
 
         # If we added any missing keys, save the file back
         if config_updated:
@@ -816,6 +957,22 @@ class WhisperTyperApp(QWidget):
         if self.post_rp_list.count() > 0:
             self.post_rp_list.setCurrentRow(0)
 
+        # --- Post Rephrase Hotkey ---
+        self.pr_hotkey_group = QGroupBox()
+        pr_layout.addWidget(self.pr_hotkey_group)
+        pr_hotkey_layout = QVBoxLayout(self.pr_hotkey_group)
+
+        self.pr_hotkey_label = QLabel()
+        pr_hotkey_layout.addWidget(self.pr_hotkey_label)
+        pr_hotkey_h_layout = QHBoxLayout()
+        self.pr_hotkey_display = QLineEdit(self.config["post_rephrase_hotkey"])
+        self.pr_hotkey_display.setReadOnly(True)
+        self.set_pr_hotkey_button = QPushButton()
+        self.set_pr_hotkey_button.clicked.connect(self.start_hotkey_capture)
+        pr_hotkey_h_layout.addWidget(self.pr_hotkey_display)
+        pr_hotkey_h_layout.addWidget(self.set_pr_hotkey_button)
+        pr_hotkey_layout.addLayout(pr_hotkey_h_layout)
+
         # --- Populate General Tab ---
         general_layout = QVBoxLayout(general_tab)
 
@@ -995,6 +1152,15 @@ class WhisperTyperApp(QWidget):
         self.post_rp_add_btn.setText(self.translator.tr("add_button"))
         self.post_rp_remove_btn.setText(self.translator.tr("remove_button"))
 
+        # Post Rephrase Hotkey
+        self.pr_hotkey_group.setTitle(self.translator.tr("post_rephrase_hotkey_group_title"))
+        self.pr_hotkey_label.setText(self.translator.tr("post_rephrase_hotkey_label"))
+        pr_hotkey_tooltip = self.translator.tr("post_rephrase_hotkey_tooltip")
+        self.pr_hotkey_group.setToolTip(pr_hotkey_tooltip)
+        self.pr_hotkey_display.setToolTip(pr_hotkey_tooltip)
+        self.set_pr_hotkey_button.setToolTip(pr_hotkey_tooltip)
+        self.set_pr_hotkey_button.setText(self.translator.tr("set_hotkey_button"))
+
         # General Tab
         self.ui_language_label.setText(self.translator.tr("ui_language_label"))
         self.restore_clipboard_checkbox.setText(self.translator.tr("restore_clipboard_checkbox"))
@@ -1033,8 +1199,19 @@ class WhisperTyperApp(QWidget):
 
     def start_hotkey_capture(self) -> None:
         """Initiates the process of listening for a new hotkey."""
-        self.set_hotkey_button.setText(self.translator.tr("hotkey_listening_button"))
-        self.set_hotkey_button.setEnabled(False)
+        sender = self.sender()
+        if sender == self.set_hotkey_button:
+            target_widget = self.hotkey_display
+            button_widget = self.set_hotkey_button
+        elif sender == self.set_pr_hotkey_button:
+            target_widget = self.pr_hotkey_display
+            button_widget = self.set_pr_hotkey_button
+        else:
+            return
+
+        self.capturing_for_widget = target_widget
+        button_widget.setText(self.translator.tr("hotkey_listening_button"))
+        button_widget.setEnabled(False)
         self.captured_keys = set()
         self.hotkey_capture_listener = keyboard.Listener(on_press=self.on_press_capture,
                                                          on_release=self.on_release_capture)
@@ -1047,8 +1224,9 @@ class WhisperTyperApp(QWidget):
         Args:
             key (Any): The key that was pressed.
         """
+        if not self.capturing_for_widget: return
         self.captured_keys.add(key)
-        self.hotkey_display.setText(self.keys_to_string(self.captured_keys))
+        self.capturing_for_widget.setText(self.keys_to_string(self.captured_keys))
 
     def on_release_capture(self, key: Any) -> None:
         """
@@ -1060,9 +1238,14 @@ class WhisperTyperApp(QWidget):
         if self.hotkey_capture_listener:
             self.hotkey_capture_listener.stop()
             self.hotkey_capture_listener = None
-        self.hotkey_display.setText(self.keys_to_string(self.captured_keys))
-        self.set_hotkey_button.setText(self.translator.tr("set_hotkey_button"))
-        self.set_hotkey_button.setEnabled(True)
+
+        if self.capturing_for_widget:
+            self.capturing_for_widget.setText(self.keys_to_string(self.captured_keys))
+            # Determine which button to re-enable
+            button_to_enable = self.set_hotkey_button if self.capturing_for_widget == self.hotkey_display else self.set_pr_hotkey_button
+            button_to_enable.setText(self.translator.tr("set_hotkey_button"))
+            button_to_enable.setEnabled(True)
+            self.capturing_for_widget = None
 
     def keys_to_string(self, keys: Set[Any]) -> str:
         """
@@ -1191,19 +1374,21 @@ class WhisperTyperApp(QWidget):
         """Initializes the manual, low-level keyboard listener."""
         # This set will hold the keys for our desired hotkey combination
         self.target_hotkey_set = self.string_to_keyset(self.hotkey_str)
+        self.post_rephrase_hotkey_set = self.string_to_keyset(self.post_rephrase_hotkey_str)
 
         # This set tracks which keys are currently held down
         self.pressed_keys = set()
 
         # This flag prevents the hotkey from firing repeatedly while held down
         self.hotkey_fired = False
+        self.post_rephrase_hotkey_fired = False
 
         # Stop any previous listeners if this is called again
         if hasattr(self, 'manual_listener') and self.manual_listener.is_alive():
             self.manual_listener.stop()
 
-        if not self.target_hotkey_set:
-            logging.warning("No valid hotkey set. Hotkey listener will not start.")
+        if not self.target_hotkey_set and not self.post_rephrase_hotkey_set:
+            logging.warning("No valid hotkeys set. Hotkey listener will not start.")
             return
 
         # Create and start the new listener
@@ -1212,7 +1397,7 @@ class WhisperTyperApp(QWidget):
             on_release=self._on_hotkey_release
         )
         self.manual_listener.start()
-        logging.info(f"Manual hotkey listener started for combo: {self.hotkey_str}")
+        logging.info(f"Manual hotkey listener started for combos: '{self.hotkey_str}' and '{self.post_rephrase_hotkey_str}'")
 
     def _on_hotkey_press(self, key: Any) -> None:
         """
@@ -1221,24 +1406,24 @@ class WhisperTyperApp(QWidget):
         Args:
             key (Any): The key that was pressed.
         """
-        # Return early if the target hotkey is empty to avoid accidental triggers
-        if not self.target_hotkey_set:
-            return
-
         self.pressed_keys.add(key)
 
-        # Check if all target keys are now in the set of pressed keys
-        if self.target_hotkey_set.issubset(self.pressed_keys):
-            # Fire the event only once per press-down sequence
+        # Check for main transcription hotkey
+        if self.target_hotkey_set and self.target_hotkey_set.issubset(self.pressed_keys):
             if not self.hotkey_fired:
                 self.hotkey_fired = True
                 logging.info(f"Manual hotkey combo detected: {self.hotkey_str}")
                 self.toggle_recording()
+                # Clear pressed keys to prevent sticky modifiers causing issues
+                self.pressed_keys.clear()
+                return # Prioritize main hotkey
 
-                # --- FIX ---
-                # Clear the set of pressed keys immediately after a successful trigger.
-                # This prevents stale/missed key-up events (especially for modifier keys
-                # like Ctrl) from causing incorrect future activations.
+        # Check for post-rephrase hotkey
+        if self.post_rephrase_hotkey_set and self.post_rephrase_hotkey_set.issubset(self.pressed_keys):
+            if not self.post_rephrase_hotkey_fired:
+                self.post_rephrase_hotkey_fired = True
+                logging.info(f"Post-rephrase hotkey combo detected: {self.post_rephrase_hotkey_str}")
+                self.trigger_post_rephrase_window()
                 self.pressed_keys.clear()
 
     def _on_hotkey_release(self, key: Any) -> None:
@@ -1248,9 +1433,13 @@ class WhisperTyperApp(QWidget):
         Args:
             key (Any): The key that was released.
         """
-        # If any of our hotkey keys are released, we can fire the event again next time.
+        # Reset main hotkey fired flag
         if key in self.target_hotkey_set:
             self.hotkey_fired = False
+
+        # Reset post-rephrase hotkey fired flag
+        if key in self.post_rephrase_hotkey_set:
+            self.post_rephrase_hotkey_fired = False
 
         # Remove the key from the set of pressed keys
         if key in self.pressed_keys:
@@ -1597,6 +1786,18 @@ class WhisperTyperApp(QWidget):
         if thread in self.active_threads: self.active_threads.remove(thread)
         logging.info("Worker thread cleaned up.")
 
+    def _cleanup_rephrasing_worker(self, thread: QThread, worker: RephrasingWorker) -> None:
+        """
+        Removes finished rephrasing worker/thread references.
+
+        Args:
+            thread (QThread): The QThread that has finished.
+            worker (RephrasingWorker): The worker that has finished.
+        """
+        if worker in self.active_rephrasing_workers: self.active_rephrasing_workers.remove(worker)
+        if thread in self.active_rephrasing_threads: self.active_rephrasing_threads.remove(thread)
+        logging.info("Rephrasing worker thread cleaned up.")
+
     def on_transcription_finished(self, text: str) -> None:
         """
         Handles the successful transcription result.
@@ -1777,7 +1978,7 @@ class WhisperTyperApp(QWidget):
             if restore and old_clipboard is not None:
                 copykitten.copy(old_clipboard)
                 logging.debug("Clipboard content restored.")
-            return selected_text
+            return selected_text.strip()
         except Exception as e:
             logging.error(f"Failed to retrieve selected text: {e}")
             return ""
@@ -1810,6 +2011,86 @@ class WhisperTyperApp(QWidget):
                 logging.debug("Clipboard content restored.")
         except Exception as e:
             logging.error(f"Failed to insert text via clipboard: {e}")
+
+    def trigger_post_rephrase_window(self) -> None:
+        """Checks for selected text and shows the floating button window if text is present."""
+        selected_text = self.get_selected_text()
+        if not selected_text:
+            logging.info("Post-rephrase hotkey pressed, but no text was selected.")
+            self.show_tray_balloon(self.translator.tr("no_text_selected_for_rephrase"), 2000)
+            return
+
+        # Filter for entries that have a caption
+        valid_entries = [entry for entry in self.config.get("post_rephrasing_entries", []) if entry.get("caption", "").strip()]
+        if not valid_entries:
+            logging.info("Post-rephrase hotkey pressed, but no valid post-processing entries are configured.")
+            self.show_tray_balloon(self.translator.tr("no_post_rephrase_entries_configured"), 3000)
+            return
+
+        # Emit a signal to create the window in the main GUI thread
+        self.show_floating_window_signal.emit(valid_entries, selected_text)
+
+    def on_floating_button_clicked(self, system_prompt: str, selected_text: str, window: QWidget) -> None:
+        """
+        Callback executed when a button in the floating window is clicked.
+
+        Args:
+            system_prompt (str): The prompt associated with the clicked button.
+            selected_text (str): The text that was selected when the window was opened.
+            window (QWidget): The floating window instance, to be closed.
+        """
+        window.close()
+        logging.info(f"Floating button clicked. Rephrasing selected text with custom prompt.")
+        self.show_tray_balloon(self.translator.tr("rephrasing_selection_message"), 2000)
+
+        # --- Start Rephrasing in Worker Thread ---
+        thread = QThread()
+        worker = RephrasingWorker(
+            app_instance=self,
+            system_prompt=system_prompt,
+            user_prompt=selected_text,
+            context="" # Context is not used for this specific action
+        )
+        worker.moveToThread(thread)
+
+        self.active_rephrasing_threads.append(thread)
+        self.active_rephrasing_workers.append(worker)
+
+        thread.started.connect(worker.run)
+        worker.finished.connect(self.on_rephrasing_finished)
+        worker.error.connect(self.on_rephrasing_error)
+
+        # Cleanup connections
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda t=thread, w=worker: self._cleanup_rephrasing_worker(t, w))
+
+        thread.start()
+
+    def on_rephrasing_finished(self, rephrased_text: str) -> None:
+        """
+        Callback for when rephrasing from the floating window is successful.
+
+        Args:
+            rephrased_text (str): The text returned by the AI.
+        """
+        self.insert_transcribed_text(rephrased_text)
+        logging.info("Successfully inserted rephrased text.")
+
+    def on_rephrasing_error(self, error_message: str) -> None:
+        """
+        Callback for when rephrasing from the floating window fails.
+
+        Args:
+            error_message (str): The error message from the worker.
+        """
+        logging.error(f"Post-rephrasing from floating window failed: {error_message}")
+        if "empty text" in error_message:
+            self.show_tray_balloon(self.translator.tr("rephrasing_failed_empty_message"), 3000)
+        else:
+            self.show_tray_balloon(self.translator.tr("rephrasing_failed_message", error=error_message), 3000)
 
     def copy_last_transcription_to_clipboard(self) -> None:
         """Copies the last transcription to the system clipboard."""
@@ -2041,9 +2322,16 @@ class WhisperTyperApp(QWidget):
 
         # Get the pending hotkey string from the UI display
         pending_hotkey_str = self.hotkey_display.text()
-        if pending_hotkey_str != self.hotkey_str:
+        pending_pr_hotkey_str = self.pr_hotkey_display.text()
+
+        hotkey_changed = (pending_hotkey_str != self.hotkey_str) or \
+                         (pending_pr_hotkey_str != self.post_rephrase_hotkey_str)
+
+        if hotkey_changed:
             self.hotkey_str = pending_hotkey_str
             self.config["hotkey"] = self.hotkey_str
+            self.post_rephrase_hotkey_str = pending_pr_hotkey_str
+            self.config["post_rephrase_hotkey"] = self.post_rephrase_hotkey_str
             # Re-initialize the listener with the new key set
             self.init_manual_hotkey_listener()
 
