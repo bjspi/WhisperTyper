@@ -17,3 +17,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Files
+.idea/
+/deploy/
+/history/
+/voice_transcriber.log
