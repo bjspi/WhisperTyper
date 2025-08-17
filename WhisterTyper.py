@@ -19,10 +19,6 @@ from PyQt6.QtGui import QIcon, QCloseEvent, QCursor, QAction
 # Global Hotkey
 from pynput import keyboard
 
-# Playing Sounds (removed pygame, will use PyAudio for playback)
-os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"  # legacy env var can stay harmless
-# import pygame  # removed
-
 # Audio Recording & Playback with PyAudio (replaces sounddevice/numpy/scipy/pygame)
 import pyaudio
 import wave
@@ -59,10 +55,9 @@ DEFAULT_REWORDING_MODEL = "gpt-4o-mini"
 WHISPER_PROMPT_TOKEN_LIMIT = 230
 
 # --- Configuration ---
-if getattr(sys, 'frozen', False):
-    CONFIG_FILE: str = os.path.join(os.path.dirname(sys.executable), "ressources", "config.json")
-else:
-    CONFIG_FILE: str = os.path.join(os.path.dirname(__file__), "ressources", "config.json")
+# Define the application's base directory for both frozen and non-frozen states
+APP_BASE_DIR = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(__file__)
+CONFIG_FILE: str = os.path.join(APP_BASE_DIR, "ressources", "config.json")
 
 DEFAULT_HOTKEY_STR: str = "<f9>"
 
@@ -189,11 +184,11 @@ def resource_path(relative_path: str) -> str:
         str: The absolute path to the resource.
     """
     if getattr(sys, 'frozen', False):
-        # If the application is frozen (e.g., using PyInstaller)
+        # If the application is frozen (e.g., using PyInstaller), resources are in a temp folder.
         base_path = sys._MEIPASS
     else:
-        # If the application is not frozen
-        base_path = os.path.dirname(__file__)
+        # If the application is not frozen, resources are relative to the script.
+        base_path = APP_BASE_DIR
     return os.path.join(base_path, relative_path)
 
 class TranscriptionWorker(QObject):
@@ -771,13 +766,13 @@ class VoiceTranscriberApp(QWidget):
     def update_logfile_menu_action(self) -> None:
         """Updates the enabled/disabled state of the 'Open Log File' action in the tray menu."""
         if hasattr(self, 'open_log_action'):
-            log_file_path = os.path.join(os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(__file__), "voice_transcriber.log")
+            log_file_path = os.path.join(APP_BASE_DIR, "voice_transcriber.log")
             log_file_exists = os.path.isfile(log_file_path)
             self.open_log_action.setEnabled(log_file_exists)
 
     def open_log_file(self) -> None:
         """Opens the log file with the system's default application (text editor)."""
-        log_file_path = os.path.join(os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(__file__), "voice_transcriber.log")
+        log_file_path = os.path.join(APP_BASE_DIR, "voice_transcriber.log")
 
         if not os.path.isfile(log_file_path):
             self.show_tray_balloon("Log file does not exist.", 2000)
@@ -1309,6 +1304,9 @@ class VoiceTranscriberApp(QWidget):
         Retrieves the currently selected text from any application via Pressing Ctrl+C to copy
         to clipboard and then reading it.
 
+        If no text is selected, it would yield the current Clipboard content - this is recognized
+        and avoided
+
         Restores clipboard content if configured.
 
         Returns:
@@ -1327,6 +1325,11 @@ class VoiceTranscriberApp(QWidget):
             time.sleep(0.1)  # Allow time for clipboard to update
             selected_text = QApplication.clipboard().text()
 
+            # If no text was selected, we might have copied the current clipboard content
+            if not selected_text or selected_text == old_clipboard:
+                logging.debug("No new text selected, using current clipboard content.")
+                selected_text = ""
+                
             if restore and old_clipboard is not None:
                 QApplication.clipboard().setText(old_clipboard)
                 logging.debug("Clipboard content restored.")
@@ -1389,8 +1392,7 @@ class VoiceTranscriberApp(QWidget):
         # Add file handler if enabled
         if self.config.get("file_logging", False):
             try:
-                base_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(__file__)
-                log_path = os.path.join(base_dir, "ressources", "voice_transcriber.log")
+                log_path = os.path.join(APP_BASE_DIR, "voice_transcriber.log")
                 fh = logging.FileHandler(log_path, encoding='utf-8')
                 fh.setLevel(logging.DEBUG)  # always capture full detail in file
                 fh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
