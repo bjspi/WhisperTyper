@@ -331,14 +331,47 @@ class FloatingButtonWindow(QWidget):
             QPushButton:pressed {
                 background-color: #222;
             }
+            /* Style for the new close button */
+            QPushButton#closeButton {
+                font-family: "Arial", sans-serif;
+                font-weight: bold;
+                font-size: 12px;
+                min-width: 18px;
+                max-width: 18px;
+                min-height: 18px;
+                max-height: 18px;
+                padding: 0px;
+                text-align: center;
+                border-radius: 9px;
+                background-color: #555;
+                border: 1px solid #777;
+            }
+            QPushButton#closeButton:hover {
+                background-color: #777;
+            }
+            QPushButton#closeButton:pressed {
+                background-color: #444;
+            }
         """)
+
+        # Top bar with close button
+        top_bar_layout = QHBoxLayout()
+        top_bar_layout.setContentsMargins(0, 0, 0, 2) # Add some space below the button
+        top_bar_layout.addStretch()
+        close_button = QPushButton("x")
+        close_button.setObjectName("closeButton") # For specific styling
+        close_button.setToolTip("Close")
+        close_button.clicked.connect(self.close)
+        top_bar_layout.addWidget(close_button)
+        top_bar_layout.addStretch()
+        layout.addLayout(top_bar_layout)
 
         for button_info in buttons:
             caption = button_info.get("caption", "Unnamed")
             prompt_text = button_info.get("text", "")
             btn = QPushButton(caption)
             btn.clicked.connect(partial(on_button_click_callback, prompt_text, selected_text, self))
-            layout.addWidget(btn)
+            layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         self.move(QCursor.pos() + QPoint(10, 10))
         self.show()
@@ -985,7 +1018,7 @@ class WhisperTyperApp(QWidget):
         lang_map = {"en": "English", "de": "Deutsch", "es": "Español", "fr": "Français"}
         current_lang_name = lang_map.get(self.config.get("ui_language", "en"), "English")
         self.ui_language_selector.setCurrentText(current_lang_name)
-        self.ui_language_selector.currentTextChanged.connect(self.change_language)
+        lang_v_layout.addWidget(self.ui_language_selector)
         general_layout.addWidget(self.ui_language_selector)
 
         self.restore_clipboard_checkbox = QCheckBox()
