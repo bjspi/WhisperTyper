@@ -6,8 +6,9 @@ Use your voice to type, rephrase text, or even prompt AI models on-the-fly, all 
 This tool is designed for developers, writers, and anyone who wants to leverage the power of AI to type faster and smarter.
 
 - 🤫 **Discreet Systray Operation**: Runs quietly in the background.
+- 🎤 **Global Voice Typing**: Transcribe your voice into any application with a single hotkey.
 - 🚀 **Live Prompting**: Turn your voice into AI commands on the fly.
-- ⌨️ **Global Hotkeys**: Control everything with a single key press.
+- ⌨️ **Clipboard Safe**: Restores your clipboard after pasting, so you never lose your copied content.
 - 🔧 **Custom APIs**: Supports OpenAI, Groq, and any Whisper-compatible API.
 - ✍️ **Advanced Rephrasing**: Go beyond simple transcription with powerful text transformations.
 
@@ -31,19 +32,6 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 -   **Multi-Language UI**: The application interface is available in English, German, Spanish, and French.
 -   **Cross-Platform**: Works on Windows, macOS, and Linux.
 
-## How It Works
-
-The workflow is designed to be as unobtrusive as possible:
-
-1.  **(Optional) Select Context**: Highlight any text on your screen you want the AI to use as context.
-2.  **Press Hotkey**: Press your configured hotkey to start recording.
-3.  **Speak**: Say what you want to type, or state your trigger word followed by a prompt.
-4.  **Release Hotkey**: Release the hotkey to stop recording.
-5.  **AI Magic**:
-    -   The app sends the audio to your chosen AI service (e.g., Whisper) for transcription.
-    -   If rephrasing or LivePrompting is triggered, the text (along with any selected context) is sent to a second AI for processing.
-6.  **Paste & Restore**: The final text is typed out at your cursor's location, and your original clipboard content is instantly restored.
-
 ## Installation
 
 1.  Clone the repository (or download the ZIP file):
@@ -55,6 +43,9 @@ The workflow is designed to be as unobtrusive as possible:
     ```bash
     pip install -r requirements.txt
     ```
+    > **Note for macOS users**: `PyAudio` has a dependency on `PortAudio`. If you encounter installation errors, please install it first using [Homebrew](https://brew.sh/):
+    > `brew install portaudio`
+
     *(Note: You may need to create a `requirements.txt` file based on the project's imports.)*
 
 ## Usage
