@@ -59,8 +59,11 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
     ```
     > **Note for macOS users**: `PyAudio` has a dependency on `PortAudio`. If you encounter installation errors, please install it first using [Homebrew](https://brew.sh/):
     > `brew install portaudio`
-
-    *(Note: You may need to create a `requirements.txt` file based on the project's imports.)*
+    
+3.  Run the application, for headless operation on Windows, use pythonw instead of python:
+    ```bash
+    python WhisterTyper.py
+    ```
 
 ## Tech Stack
 <p align="center">
