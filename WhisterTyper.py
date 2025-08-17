@@ -2114,13 +2114,22 @@ class WhisperTyperApp(QWidget):
             else:
                 pyautogui.hotkey('ctrl', 'c')
 
-            time.sleep(0.3)  # Allow time for clipboard to update
-            selected_text = copykitten.paste()
+            # --- New: Wait for clipboard to update with new content ---
+            selected_text = ""
+            max_wait_ms = 500  # Max wait 0.5 seconds
+            wait_interval_ms = 20 # Check every 20ms
+            elapsed_ms = 0
+            while elapsed_ms < max_wait_ms:
+                time.sleep(wait_interval_ms / 1000.0)
+                current_clipboard = copykitten.paste()
+                # If clipboard content changed, we assume it's the selection
+                if current_clipboard != old_clipboard:
+                    selected_text = current_clipboard
+                    break
+                elapsed_ms += wait_interval_ms
 
-            # If no text was selected, we might have copied the current clipboard content
-            if not selected_text or selected_text == old_clipboard:
-                logging.debug("No new text selected. Context will be empty.")
-                selected_text = ""
+            if not selected_text:
+                logging.debug("No new text selected (clipboard content did not change).")
 
             if restore and old_clipboard is not None:
                 copykitten.copy(old_clipboard)
@@ -2146,12 +2155,28 @@ class WhisperTyperApp(QWidget):
 
             copykitten.copy(text)
 
+            # --- New: Wait for clipboard to update before pasting ---
+            # This ensures that we don't send the paste command before the OS has
+            # processed the copy command, preventing a race condition.
+            max_wait_ms = 500  # Max wait 0.5 seconds
+            wait_interval_ms = 20 # Check every 20ms
+            elapsed_ms = 0
+            while copykitten.paste() != text:
+                time.sleep(wait_interval_ms / 1000.0)
+                elapsed_ms += wait_interval_ms
+                if elapsed_ms >= max_wait_ms:
+                    logging.warning("Clipboard did not update with new text in time. Pasting might fail.")
+                    break
+
             # Platform-aware paste hotkey
             if is_MACOS:
                 pyautogui.hotkey('command', 'v')
             else:
                 pyautogui.hotkey('ctrl', 'v')
-            time.sleep(0.3)  # Brief pause to ensure paste command is processed
+
+            # Increased sleep duration to give the target application more time
+            # to process the paste command before we restore the clipboard.
+            time.sleep(0.5)
 
             if restore and old_clipboard is not None:
                 copykitten.copy(old_clipboard)
