@@ -1,4 +1,4 @@
-/ressources/config.json
+/config.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -23,3 +23,4 @@ venv.bak/
 .vscode/
 history/
 deploy/
+/voice_transcriber.log

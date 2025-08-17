@@ -3,4 +3,4 @@ pyaudio
 pynput
 requests
 pyautogui
-pyperclip
+copykitten

@@ -5,14 +5,15 @@ import re
 import json
 import threading
 import tempfile
-import time  # For the latency fix
+import time
 from datetime import datetime
 from typing import List, Dict, Any, Set, Optional
 
 # GUI and System Tray
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel, QLineEdit,
                              QPushButton, QSystemTrayIcon, QMenu,
-                             QMessageBox, QTextEdit, QStyle, QHBoxLayout, QComboBox, QCheckBox, QTabWidget, QScrollArea, QFrame, QListWidget, QListWidgetItem, QSplitter, QAbstractItemView)
+                             QMessageBox, QTextEdit, QStyle, QHBoxLayout, QComboBox, QCheckBox, QTabWidget, QScrollArea,
+                             QFrame, QListWidget, QListWidgetItem, QSplitter, QAbstractItemView, QSlider)
 from PyQt6.QtCore import QObject, pyqtSignal, QThread, QTimer, Qt, QPoint
 from PyQt6.QtGui import QIcon, QCloseEvent, QCursor, QAction
 
@@ -28,10 +29,81 @@ import math
 # API Request and Text Output
 import requests
 import pyautogui
-import pyperclip  # re-added
+import copykitten
 
 # Logging
 import logging
+
+class TranslationManager:
+    """Manages loading and retrieving translated strings from JSON files."""
+
+    def __init__(self, initial_language: str = 'en'):
+        """
+        Initializes the TranslationManager.
+
+        Args:
+            initial_language (str): The initial language code (e.g., 'en').
+        """
+        self.translations: Dict[str, str] = {}
+        self.language: str = ''
+        self.set_language(initial_language)
+
+    def get_base_path(self) -> str:
+        """
+        Gets the base path for resource files, compatible with PyInstaller.
+
+        Returns:
+            str: The absolute base path.
+        """
+        if getattr(sys, 'frozen', False):
+            return sys._MEIPASS
+        else:
+            # In a normal environment, this file is in the project root.
+            return os.path.dirname(__file__)
+
+    def set_language(self, lang_code: str) -> None:
+        """
+        Sets the current language and loads the corresponding translation file.
+
+        Args:
+            lang_code (str): The language code to load (e.g., 'en', 'de').
+        """
+        if self.language == lang_code:
+            return
+
+        base_path = self.get_base_path()
+        translations_dir = os.path.join(base_path, 'lang')
+        filepath = os.path.join(translations_dir, f"{lang_code}.json")
+
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                self.translations = json.load(f)
+            self.language = lang_code
+            print(f"Successfully loaded language: {lang_code}")
+        except (FileNotFoundError, json.JSONDecodeError):
+            print(f"Could not load language file for '{lang_code}'. Falling back to English.")
+            # Fallback to English if the selected language file is missing/corrupt
+            if lang_code != 'en':
+                self.set_language('en')
+
+    def tr(self, key: str, **kwargs: Any) -> str:
+        """
+        Retrieves a translated string for a given key.
+
+        Args:
+            key (str): The key for the string to translate.
+            **kwargs: Placeholder values to format into the string.
+
+        Returns:
+            str: The translated and formatted string, or the key if not found.
+        """
+        text = self.translations.get(key, key)
+        if kwargs:
+            try:
+                return text.format(**kwargs)
+            except KeyError:
+                return text  # Return raw text if format keys don't match
+        return text
 
 # --- Default Prompts ---
 DEFAULT_TRANSCRIPTION_PROMPT = """
@@ -39,7 +111,7 @@ The following is a transcription of a voice input. The transcription should be a
 """
 
 DEFAULT_REPHRASING_PROMPT = """
-I will give you a transcript from a user. You should either return the text in its original form with revised formatting OR follow the prompt. If the following text explicitly contains the word 'prompt' at the beginning, consider the text as a prompt, follow it and its instructions, and write a text from it. If you do not find any instructions to use it as a prompt, then simply return the TEXT to me in its original form, replacing ONLY "new line" with a line break."""
+I will give you a transcript from a user. You should either return the text in its original form with revised formatting OR follow the prompt. If the following text explicitly contains the word 'prompt' at thebeginning, consider the text as a prompt, follow it and its instructions, and write a text from it. If you do not find any instructions to use it as a prompt, then simply return the TEXT to me in its original form, replacing ONLY "new line" with a line break."""
 
 TRANSCRIPTION_MODEL_OPTIONS = [
     "whisper-1 (openai)",
@@ -74,7 +146,7 @@ LANGUAGES = {
 # --- Configuration ---
 # Define the application's base directory for both frozen and non-frozen states
 APP_BASE_DIR = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(__file__)
-CONFIG_FILE: str = os.path.join(APP_BASE_DIR, "ressources", "config.json")
+CONFIG_FILE: str = os.path.join(APP_BASE_DIR, "config.json")
 
 DEFAULT_HOTKEY_STR: str = "<f9>"
 
@@ -82,9 +154,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "api_key": "",
     "api_endpoint": "https://api.openai.com/v1/audio/transcriptions",
     "model": DEFAULT_TRANSCRIPTION_MODEL,
+    "transcription_temperature": 0.0,
     "prompt": DEFAULT_TRANSCRIPTION_PROMPT,
     "hotkey": DEFAULT_HOTKEY_STR,
-    "input_language": "EN",
+    "input_language": "en",
+    "ui_language": "en",
     "restore_clipboard": True,
     "debug_logging": True,
     "file_logging": False,
@@ -96,6 +170,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "rephrasing_api_url": "https://api.openai.com/v1/chat/completions",
     "rephrasing_api_key": "",
     "rephrasing_model": DEFAULT_REPHRASING_MODEL,
+    "rephrasing_temperature": 0.7,
     "post_rephrasing_entries": []
 }
 
@@ -226,7 +301,7 @@ def resource_path(relative_path: str) -> str:
         base_path = sys._MEIPASS
     else:
         # If the application is not frozen, resources are relative to the script.
-        base_path = APP_BASE_DIR
+        base_path = os.path.dirname(__file__)
     return os.path.join(base_path, relative_path)
 
 class TranscriptionWorker(QObject):
@@ -237,7 +312,7 @@ class TranscriptionWorker(QObject):
     error = pyqtSignal(str, str)
 
     def __init__(self, api_key: str, api_endpoint: str, audio_path: str, prompt: str, model: str,
-                 language: str) -> None:
+                 language: str, temperature: float) -> None:
         """
         Initializes the transcription worker.
 
@@ -248,6 +323,7 @@ class TranscriptionWorker(QObject):
             prompt (str): A prompt to guide the transcription model.
             model (str): The name of the transcription model to use.
             language (str): The language of the audio in ISO 639-1 format (e.g., "en", "de"). Can be empty for auto-detection.
+            temperature (float): The sampling temperature for the model.
         """
         super().__init__()
         self.api_key = api_key
@@ -256,6 +332,7 @@ class TranscriptionWorker(QObject):
         self.prompt = prompt
         self.model = re.sub(r"\s*\(.*?\)", "", model).strip()
         self.language = language.lower() if language else ""
+        self.temperature = temperature
 
     def run(self) -> None:
         """
@@ -268,7 +345,7 @@ class TranscriptionWorker(QObject):
                 raise ValueError("API key not found in configuration.")
 
             headers: Dict[str, str] = {"Authorization": f"Bearer {self.api_key}"}
-            data: Dict[str, str] = {"model": self.model, "prompt": self.prompt}
+            data: Dict[str, Any] = {"model": self.model, "prompt": self.prompt, "temperature": self.temperature}
             # Only add language if it's not empty (for auto-detection)
             if self.language:
                 data["language"] = self.language
@@ -315,6 +392,11 @@ class VoiceTranscriberApp(QWidget):
         self.pyaudio_instance: Optional[pyaudio.PyAudio] = None
 
         self.config: Dict[str, Any] = {}
+        self.load_config()  # Load config first to get UI language
+
+        # Initialize TranslationManager
+        self.translator = TranslationManager(initial_language=self.config.get('ui_language', 'en'))
+
         # Add placeholder for file log handler
         self._file_log_handler = None
 
@@ -328,9 +410,10 @@ class VoiceTranscriberApp(QWidget):
         self.active_workers: List[TranscriptionWorker] = []
         self.active_threads: List[QThread] = []
         self.last_transcription: str = ""
+        self.current_transcription_context: str = ""
 
         self.cleanup_old_recordings()
-        self.load_config()
+        # self.load_config() # Moved up before translator init
         # After loading config ensure logging handlers reflect settings
         self.apply_logging_configuration()
         self.init_ui()
@@ -346,9 +429,9 @@ class VoiceTranscriberApp(QWidget):
         # Connect the signal to the slot for safe cross-thread communication
         self.show_tooltip_signal.connect(self._show_tooltip_slot)
 
-        self.tray_icon.setToolTip(f"Voice Transcriber ready.\nHotkey: {self.hotkey_str}")
+        self.tray_icon.setToolTip(self.translator.tr("tray_ready_tooltip", hotkey=self.hotkey_str))
         logging.info(f"Application started. Press '{self.hotkey_str}' to start/stop recording.")
-        self.show_tray_balloon("Voice Transcriber started!", 2000)
+        self.show_tray_balloon(self.translator.tr("tray_started_message"), 2000)
 
     def _show_tooltip_slot(self, message: str, timeout_ms: int) -> None:
         """
@@ -385,24 +468,19 @@ class VoiceTranscriberApp(QWidget):
             pass
 
         config_updated = False
+
         # --- Start Migration ---
         # Migrate old 'language' key to 'input_language'
         if "language" in loaded_config and "input_language" not in loaded_config:
             loaded_config["input_language"] = loaded_config.pop("language")
             config_updated = True
-        # Migrate all "rewording" keys to "rephrasing"
-        migration_map = {
-            "rewording_enabled": "rephrasing_enabled",
-            "rewording_prompt": "rephrasing_prompt",
-            "rewording_trigger_word": "rephrasing_trigger_word",
-            "rewording_api_url": "rephrasing_api_url",
-            "rewording_api_key": "rephrasing_api_key",
-            "rewording_model": "rephrasing_model",
-            "post_rewording_entries": "post_rephrasing_entries"
-        }
-        for old_key, new_key in migration_map.items():
-            if old_key in loaded_config and new_key not in loaded_config:
-                loaded_config[new_key] = loaded_config.pop(old_key)
+
+        # Check if input_language is a display name and convert to code
+        if "input_language" in loaded_config:
+            lang_value = loaded_config["input_language"]
+            # If it's a name (e.g., "German", length > 2), convert it to code
+            if len(lang_value) > 2 and lang_value in LANGUAGES:
+                loaded_config["input_language"] = LANGUAGES[lang_value]
                 config_updated = True
         # --- End Migration ---
 
@@ -436,8 +514,8 @@ class VoiceTranscriberApp(QWidget):
         main_layout = QVBoxLayout(self)
 
         # Create the tab widget
-        tabs = QTabWidget()
-        main_layout.addWidget(tabs)
+        self.tabs = QTabWidget()
+        main_layout.addWidget(self.tabs)
 
         # Create widgets for each tab
         transcription_tab = QWidget()
@@ -446,32 +524,28 @@ class VoiceTranscriberApp(QWidget):
         general_tab = QWidget()
 
         # Add tabs to the tab widget
-        tabs.addTab(transcription_tab, "Transcription")
-        tabs.addTab(rephrasing_tab, "Rephrase / LivePrompt")
-        tabs.addTab(post_rephrasing_tab, "Transformations")
-        tabs.addTab(general_tab, "General")
-
-        # --- Add Tooltips to Tabs ---
-        tabs.setTabToolTip(0, "Configure the main transcription service (API, model, language, etc.).")
-        tabs.setTabToolTip(1, "Set up automatic rephrasing or prompting of your transcribed text using a secondary AI model.")
-        tabs.setTabToolTip(2, "Define custom prompts for manual selection-based rephrasing / transfrmations")
-        tabs.setTabToolTip(3, "General application settings like logging options / debugging playing of the sound file.")
+        self.tabs.addTab(transcription_tab, "") # Text set in retranslate_ui
+        self.tabs.addTab(rephrasing_tab, "")
+        self.tabs.addTab(post_rephrasing_tab, "")
+        self.tabs.addTab(general_tab, "")
 
         # --- Populate Transcription Tab ---
         transcription_layout = QVBoxLayout(transcription_tab)
 
-        transcription_layout.addWidget(QLabel("API Key:"))
+        self.api_key_label = QLabel()
+        transcription_layout.addWidget(self.api_key_label)
         self.api_key_input = QLineEdit(self.config["api_key"])
         self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         transcription_layout.addWidget(self.api_key_input)
 
-        transcription_layout.addWidget(QLabel("API Endpoint:"))
+        self.api_endpoint_label = QLabel()
+        transcription_layout.addWidget(self.api_endpoint_label)
         self.api_endpoint_input = QLineEdit(self.config["api_endpoint"])
         transcription_layout.addWidget(self.api_endpoint_input)
 
         api_button_layout = QHBoxLayout()
-        self.openai_button = QPushButton("OpenAI")
-        self.groq_button = QPushButton("Groq")
+        self.openai_button = QPushButton()
+        self.groq_button = QPushButton()
         api_button_layout.addWidget(self.openai_button)
         api_button_layout.addWidget(self.groq_button)
         api_button_layout.addStretch(1)
@@ -481,12 +555,13 @@ class VoiceTranscriberApp(QWidget):
         self.groq_button.clicked.connect(
             lambda: self.api_endpoint_input.setText("https://api.groq.com/openai/v1/audio/transcriptions"))
 
-        transcription_layout.addWidget(QLabel("Model:"))
+        self.model_label = QLabel()
+        transcription_layout.addWidget(self.model_label)
         model_layout = QHBoxLayout()
         self.model_dropdown = QComboBox()
         self.model_dropdown.addItems(TRANSCRIPTION_MODEL_OPTIONS)
         model_layout.addWidget(self.model_dropdown)
-        self.model_input = QLineEdit(placeholderText="Custom model name", visible=False)
+        self.model_input = QLineEdit(visible=False)
         model_layout.addWidget(self.model_input)
         transcription_layout.addLayout(model_layout)
         model_value = self.config["model"]
@@ -501,16 +576,30 @@ class VoiceTranscriberApp(QWidget):
         self.model_dropdown.currentTextChanged.connect(lambda _t: self._update_prompt_token_counter())
         self.model_input.textChanged.connect(lambda _t: self._update_prompt_token_counter())
 
+        # --- Temperature Slider ---
+        self.transcription_temp_label_title = QLabel()
+        transcription_layout.addWidget(self.transcription_temp_label_title)
+        temp_layout = QHBoxLayout()
+        self.transcription_temp_slider = QSlider(Qt.Orientation.Horizontal)
+        self.transcription_temp_slider.setRange(0, 100)
+        self.transcription_temp_slider.setValue(int(self.config["transcription_temperature"] * 100))
+        self.transcription_temp_label = QLabel(f"{self.config['transcription_temperature']:.2f}")
+        self.transcription_temp_slider.valueChanged.connect(self._update_transcription_temp_label)
+        temp_layout.addWidget(self.transcription_temp_slider)
+        temp_layout.addWidget(self.transcription_temp_label)
+        transcription_layout.addLayout(temp_layout)
+
         # --- Hotkey, Language, and Gain Side-by-Side ---
         controls_layout = QHBoxLayout()
 
         # Left side: Hotkey
         hotkey_v_layout = QVBoxLayout()
-        hotkey_v_layout.addWidget(QLabel("Hotkey:"))
+        self.hotkey_label = QLabel()
+        hotkey_v_layout.addWidget(self.hotkey_label)
         hotkey_h_layout = QHBoxLayout()
         self.hotkey_display = QLineEdit(self.hotkey_str)
         self.hotkey_display.setReadOnly(True)
-        self.set_hotkey_button = QPushButton("Set New Hotkey")
+        self.set_hotkey_button = QPushButton()
         self.set_hotkey_button.clicked.connect(self.start_hotkey_capture)
         hotkey_h_layout.addWidget(self.hotkey_display)
         hotkey_h_layout.addWidget(self.set_hotkey_button)
@@ -519,7 +608,8 @@ class VoiceTranscriberApp(QWidget):
 
         # Middle: Language
         lang_v_layout = QVBoxLayout()
-        lang_v_layout.addWidget(QLabel("Input Language:"))
+        self.input_language_label = QLabel()
+        lang_v_layout.addWidget(self.input_language_label)
         self.language_input = QComboBox()
         # Create a reverse map from ISO code to display name for easy lookup
         self.lang_code_to_name = {v: k for k, v in LANGUAGES.items()}
@@ -533,7 +623,8 @@ class VoiceTranscriberApp(QWidget):
 
         # Right side: Gain
         gain_v_layout = QVBoxLayout()
-        gain_v_layout.addWidget(QLabel("Volume Gain (dB) for Audio Recording"))
+        self.gain_label = QLabel()
+        gain_v_layout.addWidget(self.gain_label)
         # Ensure gain is a float and convert to string for display
         self.gain_input = QLineEdit(str(self.config["gain_db"]))
         self.gain_input.setPlaceholderText("0")
@@ -548,7 +639,8 @@ class VoiceTranscriberApp(QWidget):
 
         transcription_layout.addLayout(controls_layout)
 
-        transcription_layout.addWidget(QLabel("Transcription Prompt (optional):"))
+        self.transcription_prompt_label = QLabel()
+        transcription_layout.addWidget(self.transcription_prompt_label)
         self.prompt_input = QTextEdit(self.config["prompt"], placeholderText="Enter hints for the AI...")
         transcription_layout.addWidget(self.prompt_input)
         # Token count label
@@ -564,45 +656,53 @@ class VoiceTranscriberApp(QWidget):
         # --- Populate Rewording Tab ---
         rephrasing_layout = QVBoxLayout(rephrasing_tab)
 
-        self.rephrasing_checkbox = QCheckBox("Enable Rephrasing / LivePrompt via AI")
+        self.rephrasing_checkbox = QCheckBox()
         self.rephrasing_checkbox.setChecked(self.config["rephrasing_enabled"])
-        self.rephrasing_checkbox.setToolTip(
-            "If enabled, the transcribed text can be automatically sent to another AI model\n"
-            "for rephrasing or to follow instructions (LivePrompting)."
-        )
         rephrasing_layout.addWidget(self.rephrasing_checkbox)
 
-        rephrasing_layout.addWidget(QLabel("Rephrase Trigger Word(s) (comma-separated):"))
+        self.rephrasing_trigger_label = QLabel()
+        rephrasing_layout.addWidget(self.rephrasing_trigger_label)
         self.rephrasing_trigger_word_input = QLineEdit(self.config["rephrasing_trigger_word"])
-        self.rephrasing_trigger_word_input.setToolTip("Enter one or more words separated by a comma.\nLeave empty to rephrase always if enabled.")
         rephrasing_layout.addWidget(self.rephrasing_trigger_word_input)
 
         # New checkbox for context
-        self.rephrase_context_checkbox = QCheckBox("Add selected text as Context when LivePrompting via Triggerword")
+        self.rephrase_context_checkbox = QCheckBox()
         self.rephrase_context_checkbox.setChecked(self.config["rephrase_use_selection_context"])
-        self.rephrase_context_checkbox.setToolTip(
-            "If checked, any text you have selected on screen will be automatically added\n"
-            "as context to the prompt when a trigger word is used."
-        )
         rephrasing_layout.addWidget(self.rephrase_context_checkbox)
 
-        rephrasing_layout.addWidget(QLabel("Rephrase / LivePrompt Prompt (optional):"))
-        self.rephrasing_prompt_input = QTextEdit(self.config["rephrasing_prompt"],
-                                                placeholderText="e.g. Rephrase the text more politely...")
+        self.rephrasing_prompt_label = QLabel()
+        rephrasing_layout.addWidget(self.rephrasing_prompt_label)
+        self.rephrasing_prompt_input = QTextEdit(self.config["rephrasing_prompt"])
         rephrasing_layout.addWidget(self.rephrasing_prompt_input)
 
-        rephrasing_layout.addWidget(QLabel("Rephrase API URL:"))
+        self.rephrasing_api_url_label = QLabel()
+        rephrasing_layout.addWidget(self.rephrasing_api_url_label)
         self.rephrasing_api_url_input = QLineEdit(self.config["rephrasing_api_url"])
         rephrasing_layout.addWidget(self.rephrasing_api_url_input)
 
-        rephrasing_layout.addWidget(QLabel("Rephrase API Key:"))
+        self.rephrasing_api_key_label = QLabel()
+        rephrasing_layout.addWidget(self.rephrasing_api_key_label)
         self.rephrasing_api_key_input = QLineEdit(self.config["rephrasing_api_key"])
         self.rephrasing_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         rephrasing_layout.addWidget(self.rephrasing_api_key_input)
 
-        rephrasing_layout.addWidget(QLabel("Rephrase Model:"))
+        self.rephrasing_model_label = QLabel()
+        rephrasing_layout.addWidget(self.rephrasing_model_label)
         self.rephrasing_model_input = QLineEdit(self.config["rephrasing_model"])
         rephrasing_layout.addWidget(self.rephrasing_model_input)
+
+        # --- Rephrasing Temperature Slider ---
+        self.rephrasing_temp_label_title = QLabel()
+        rephrasing_layout.addWidget(self.rephrasing_temp_label_title)
+        rephrasing_temp_layout = QHBoxLayout()
+        self.rephrasing_temp_slider = QSlider(Qt.Orientation.Horizontal)
+        self.rephrasing_temp_slider.setRange(0, 100)
+        self.rephrasing_temp_slider.setValue(int(self.config["rephrasing_temperature"] * 100))
+        self.rephrasing_temp_label = QLabel(f"{self.config['rephrasing_temperature']:.2f}")
+        self.rephrasing_temp_slider.valueChanged.connect(self._update_rephrasing_temp_label)
+        rephrasing_temp_layout.addWidget(self.rephrasing_temp_slider)
+        rephrasing_temp_layout.addWidget(self.rephrasing_temp_label)
+        rephrasing_layout.addLayout(rephrasing_temp_layout)
 
         rephrasing_layout.addStretch()  # Pushes widgets to the top
 
@@ -610,9 +710,9 @@ class VoiceTranscriberApp(QWidget):
         # Re-implemented as split view (list + editor)
         self.max_post_rephrasing_entries = 10
         pr_layout = QVBoxLayout(post_rephrasing_tab)
-        info_lbl = QLabel(f"Define up to {self.max_post_rephrasing_entries} rewording Prompts for Post-Processing of Transcriptions.")
-        info_lbl.setWordWrap(True)
-        pr_layout.addWidget(info_lbl)
+        self.transformations_info_label = QLabel()
+        self.transformations_info_label.setWordWrap(True)
+        pr_layout.addWidget(self.transformations_info_label)
 
         splitter = QSplitter()
         pr_layout.addWidget(splitter, 1)
@@ -641,12 +741,13 @@ class VoiceTranscriberApp(QWidget):
         # Right editor container
         self.post_rp_editor_container = QWidget()
         editor_layout = QVBoxLayout(self.post_rp_editor_container)
-        editor_layout.addWidget(QLabel("Caption:"))
+        self.caption_label = QLabel()
+        editor_layout.addWidget(self.caption_label)
         self.post_rp_caption_edit = QLineEdit()
         editor_layout.addWidget(self.post_rp_caption_edit)
-        editor_layout.addWidget(QLabel("Text:"))
+        self.text_label = QLabel()
+        editor_layout.addWidget(self.text_label)
         self.post_rp_text_edit = QTextEdit()
-        self.post_rp_text_edit.setPlaceholderText("Textbaustein Inhalt...")
         editor_layout.addWidget(self.post_rp_text_edit, 1)
         splitter.addWidget(self.post_rp_editor_container)
         splitter.setStretchFactor(0, 0)
@@ -654,8 +755,8 @@ class VoiceTranscriberApp(QWidget):
 
         # Buttons row
         btn_row = QHBoxLayout()
-        self.post_rp_add_btn = QPushButton("+")
-        self.post_rp_remove_btn = QPushButton("-")
+        self.post_rp_add_btn = QPushButton()
+        self.post_rp_remove_btn = QPushButton()
         btn_row.addWidget(self.post_rp_add_btn)
         btn_row.addWidget(self.post_rp_remove_btn)
         btn_row.addStretch(1)
@@ -678,28 +779,39 @@ class VoiceTranscriberApp(QWidget):
         # --- Populate General Tab ---
         general_layout = QVBoxLayout(general_tab)
 
-        self.restore_clipboard_checkbox = QCheckBox("Restore previous clipboard after paste")
+        # UI Language Selector
+        self.ui_language_label = QLabel()
+        general_layout.addWidget(self.ui_language_label)
+        self.ui_language_selector = QComboBox()
+        self.ui_language_selector.addItems(["English", "Deutsch", "Español", "Français"]) # Add more as json files are created
+        # Set current language
+        lang_map = {"en": "English", "de": "Deutsch", "es": "Español", "fr": "Français"}
+        current_lang_name = lang_map.get(self.config.get("ui_language", "en"), "English")
+        self.ui_language_selector.setCurrentText(current_lang_name)
+        self.ui_language_selector.currentTextChanged.connect(self.change_language)
+        general_layout.addWidget(self.ui_language_selector)
+
+        self.restore_clipboard_checkbox = QCheckBox()
         self.restore_clipboard_checkbox.setChecked(self.config["restore_clipboard"])
         general_layout.addWidget(self.restore_clipboard_checkbox)
 
-        self.debug_logging_checkbox = QCheckBox("Activate Debug Logging (more details in log)")
+        self.debug_logging_checkbox = QCheckBox()
         self.debug_logging_checkbox.setChecked(self.config["debug_logging"])
         general_layout.addWidget(self.debug_logging_checkbox)
 
         # New checkbox for file logging
-        self.file_logging_checkbox = QCheckBox("Write log file in application folder (voice_transcriber.log)")
+        self.file_logging_checkbox = QCheckBox()
         self.file_logging_checkbox.setChecked(self.config["file_logging"])
         general_layout.addWidget(self.file_logging_checkbox)
 
-        self.play_g_button = QPushButton("Play Last Recording")
-        self.play_g_button.setToolTip("Play latest recording using the default system player")
+        self.play_g_button = QPushButton()
         self.play_g_button.clicked.connect(self.play_latest_recording)
         general_layout.addWidget(self.play_g_button, alignment=Qt.AlignmentFlag.AlignLeft)
 
         general_layout.addStretch()  # Pushes widgets to the top
 
         # --- Save Button (outside tabs) ---
-        self.save_button = QPushButton("Save")
+        self.save_button = QPushButton()
         self.save_button.clicked.connect(self.save_settings)
         main_layout.addWidget(self.save_button)
 
@@ -710,7 +822,7 @@ class VoiceTranscriberApp(QWidget):
         # self.setLayout(main_layout)
 
         # Make the settings window 50% wider than default
-        self.resize(int(self.sizeHint().width() * 1.5), self.sizeHint().height())
+        self.resize(int(self.sizeHint().width() * 1.28), self.sizeHint().height())
 
         # Set window icon
         icon_path = resource_path("ressources/app_icon.png")
@@ -719,9 +831,99 @@ class VoiceTranscriberApp(QWidget):
         else:
             self.setWindowIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
 
+        # Set all translatable texts
+        self.retranslate_ui()
+
+    def retranslate_ui(self) -> None:
+        """Updates all UI texts to the currently selected language."""
+        # Window Title
+        self.setWindowTitle(self.translator.tr("window_title"))
+
+        # Tabs
+        self.tabs.setTabText(0, self.translator.tr("tab_transcription"))
+        self.tabs.setTabText(1, self.translator.tr("tab_rephrase"))
+        self.tabs.setTabText(2, self.translator.tr("tab_transformations"))
+        self.tabs.setTabText(3, self.translator.tr("tab_general"))
+        self.tabs.setTabToolTip(0, self.translator.tr("tooltip_tab_transcription"))
+        self.tabs.setTabToolTip(1, self.translator.tr("tooltip_tab_rephrase"))
+        self.tabs.setTabToolTip(2, self.translator.tr("tooltip_tab_transformations"))
+        self.tabs.setTabToolTip(3, self.translator.tr("tooltip_tab_general"))
+
+        # Transcription Tab
+        self.api_key_label.setText(self.translator.tr("api_key_label"))
+        self.api_endpoint_label.setText(self.translator.tr("api_endpoint_label"))
+        self.openai_button.setText(self.translator.tr("openai_button"))
+        self.groq_button.setText(self.translator.tr("groq_button"))
+        self.model_label.setText(self.translator.tr("model_label"))
+        self.model_input.setPlaceholderText(self.translator.tr("custom_model_placeholder"))
+        self.transcription_temp_label_title.setText(self.translator.tr("temperature_label"))
+        self.hotkey_label.setText(self.translator.tr("hotkey_label"))
+        self.set_hotkey_button.setText(self.translator.tr("set_hotkey_button"))
+        self.input_language_label.setText(self.translator.tr("input_language_label"))
+        self.gain_label.setText(self.translator.tr("gain_label"))
+        self.transcription_prompt_label.setText(self.translator.tr("transcription_prompt_label"))
+
+        # Rephrase Tab
+        self.rephrasing_checkbox.setText(self.translator.tr("rephrase_enable_checkbox"))
+        self.rephrasing_checkbox.setToolTip(self.translator.tr("rephrase_enable_tooltip"))
+        self.rephrasing_trigger_label.setText(self.translator.tr("rephrase_trigger_label"))
+        self.rephrasing_trigger_word_input.setToolTip(self.translator.tr("rephrase_trigger_tooltip"))
+        self.rephrase_context_checkbox.setText(self.translator.tr("rephrase_context_checkbox"))
+        self.rephrase_context_checkbox.setToolTip(self.translator.tr("rephrase_context_tooltip"))
+        self.rephrasing_prompt_label.setText(self.translator.tr("rephrase_prompt_label"))
+        self.rephrasing_prompt_input.setPlaceholderText(self.translator.tr("rephrase_prompt_placeholder"))
+        self.rephrasing_api_url_label.setText(self.translator.tr("rephrase_api_url_label"))
+        self.rephrasing_api_key_label.setText(self.translator.tr("rephrase_api_key_label"))
+        self.rephrasing_model_label.setText(self.translator.tr("rephrase_model_label"))
+        self.rephrasing_temp_label_title.setText(self.translator.tr("temperature_label"))
+
+        # Transformations Tab
+        self.transformations_info_label.setText(self.translator.tr("transformations_info", max_entries=self.max_post_rephrasing_entries))
+        self.caption_label.setText(self.translator.tr("caption_label"))
+        self.text_label.setText(self.translator.tr("text_label"))
+        self.post_rp_text_edit.setPlaceholderText(self.translator.tr("text_placeholder"))
+        self.post_rp_add_btn.setText(self.translator.tr("add_button"))
+        self.post_rp_remove_btn.setText(self.translator.tr("remove_button"))
+
+        # General Tab
+        self.ui_language_label.setText(self.translator.tr("ui_language_label"))
+        self.restore_clipboard_checkbox.setText(self.translator.tr("restore_clipboard_checkbox"))
+        self.debug_logging_checkbox.setText(self.translator.tr("debug_logging_checkbox"))
+        self.file_logging_checkbox.setText(self.translator.tr("file_logging_checkbox"))
+        self.play_g_button.setText(self.translator.tr("play_last_recording_button"))
+        self.play_g_button.setToolTip(self.translator.tr("play_last_recording_tooltip"))
+
+        # Save Button
+        self.save_button.setText(self.translator.tr("save_button"))
+
+        # Update other dynamic texts
+        self._update_prompt_token_counter()
+        self.init_tray_icon() # Re-init to update menu item texts
+
+    def change_language(self, lang_name: str) -> None:
+        """
+        Changes the application's UI language.
+
+        Args:
+            lang_name (str): The display name of the language to switch to.
+        """
+        lang_map = {"English": "en", "Deutsch": "de", "Español": "es", "Français": "fr"}
+        lang_code = lang_map.get(lang_name, "en")
+        self.translator.set_language(lang_code)
+        self.config["ui_language"] = lang_code
+        self.retranslate_ui()
+
+    def _update_transcription_temp_label(self, value: int) -> None:
+        """Updates the label for the transcription temperature slider."""
+        self.transcription_temp_label.setText(f"{value / 100.0:.2f}")
+
+    def _update_rephrasing_temp_label(self, value: int) -> None:
+        """Updates the label for the rephrasing temperature slider."""
+        self.rephrasing_temp_label.setText(f"{value / 100.0:.2f}")
+
     def start_hotkey_capture(self) -> None:
         """Initiates the process of listening for a new hotkey."""
-        self.set_hotkey_button.setText("Listening... Press keys")
+        self.set_hotkey_button.setText(self.translator.tr("hotkey_listening_button"))
         self.set_hotkey_button.setEnabled(False)
         self.captured_keys = set()
         self.hotkey_capture_listener = keyboard.Listener(on_press=self.on_press_capture,
@@ -750,7 +952,7 @@ class VoiceTranscriberApp(QWidget):
             self.hotkey_capture_listener = None
         self.new_hotkey_str = self.keys_to_string(self.captured_keys)
         self.hotkey_display.setText(self.new_hotkey_str)
-        self.set_hotkey_button.setText("Set New Hotkey")
+        self.set_hotkey_button.setText(self.translator.tr("set_hotkey_button"))
         self.set_hotkey_button.setEnabled(True)
 
     def keys_to_string(self, keys: Set[Any]) -> str:
@@ -809,36 +1011,38 @@ class VoiceTranscriberApp(QWidget):
 
     def init_tray_icon(self) -> None:
         """Initializes the system tray icon and its context menu."""
+        if hasattr(self, 'tray_icon'):
+            self.tray_icon.hide() # Hide old one if exists
         self.tray_icon = QSystemTrayIcon(self)
         self.tray_icon.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
 
         tray_menu = QMenu()
 
-        show_action = tray_menu.addAction("Settings")
+        show_action = tray_menu.addAction(self.translator.tr("tray_settings_action"))
         show_action.triggered.connect(self.show)
 
-        copy_action = tray_menu.addAction("Copy Last Transcription")
+        copy_action = tray_menu.addAction(self.translator.tr("tray_copy_action"))
         copy_action.triggered.connect(self.copy_last_transcription_to_clipboard)
 
         # Add "Play Last Recording" action
-        self.play_action = tray_menu.addAction("Play Last Recording")
+        self.play_action = tray_menu.addAction(self.translator.tr("tray_play_action"))
         self.play_action.triggered.connect(self.play_latest_recording)
         self.play_action.setEnabled(False)  # Disabled until a recording exists
 
         # Add "Open Log File" action
-        self.open_log_action = tray_menu.addAction("Open Log File")
+        self.open_log_action = tray_menu.addAction(self.translator.tr("tray_log_action"))
         self.open_log_action.triggered.connect(self.open_log_file)
         # Will be enabled/disabled based on log file existence
 
         # Create "Cancel Recording" action
-        self.cancel_action = QAction("Cancel Recording", self)
+        self.cancel_action = QAction(self.translator.tr("tray_cancel_action"), self)
         self.cancel_action.triggered.connect(self.cancel_recording)
         self.cancel_action.setVisible(False)  # Hide initially
         tray_menu.addAction(self.cancel_action)
 
         tray_menu.addSeparator()
 
-        quit_action = tray_menu.addAction("Quit")
+        quit_action = tray_menu.addAction(self.translator.tr("tray_quit_action"))
         quit_action.triggered.connect(self.quit_app)
 
         self.tray_icon.setContextMenu(tray_menu)
@@ -859,7 +1063,7 @@ class VoiceTranscriberApp(QWidget):
         log_file_path = os.path.join(APP_BASE_DIR, "voice_transcriber.log")
 
         if not os.path.isfile(log_file_path):
-            self.show_tray_balloon("Log file does not exist.", 2000)
+            self.show_tray_balloon(self.translator.tr("log_file_not_exist_message"), 2000)
             self.update_logfile_menu_action()  # Update menu state
             return
 
@@ -872,7 +1076,7 @@ class VoiceTranscriberApp(QWidget):
                 subprocess.call(['xdg-open', log_file_path])
         except Exception as e:
             logging.error(f"Failed to open log file: {e}")
-            self.show_tray_balloon(f"Could not open log file: {e}", 3000)
+            self.show_tray_balloon(self.translator.tr("log_file_open_fail_message", error=e), 3000)
 
     def init_manual_hotkey_listener(self) -> None:
         """Initializes the manual, low-level keyboard listener."""
@@ -1060,13 +1264,22 @@ class VoiceTranscriberApp(QWidget):
             self.is_recording = False
             self.cancel_action.setVisible(False)  # Hide cancel option
             self.tray_icon.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
-            self.show_tray_balloon("Recording stopped, transcribing...", 2000)
+            self.show_tray_balloon(self.translator.tr("recording_stopped_message"), 2000)
             if self.recording_thread and self.recording_thread.is_alive():
                 self.recording_thread.join()
             logging.info("Recording stopped. Processing audio.")
             self.play_sound('ressources/sound_end.wav')
             self.process_recording()
         else:
+            # Reset context for the new operation
+            self.current_transcription_context = ""
+            # Check if context from selection should be added at the start
+            if self.config["rephrase_use_selection_context"]:
+                context_text = self.get_selected_text()
+                if context_text:
+                    self.current_transcription_context = context_text
+                    logging.info(f"Captured context for rephrasing: {context_text}")
+
             self.is_recording = True
             self.cancel_action.setVisible(True)  # Show cancel option
             self.recorded_frames = []
@@ -1076,7 +1289,7 @@ class VoiceTranscriberApp(QWidget):
             self.recording_thread.start()
             # Play start sound immediately (removed artificial sleep)
             self.play_sound('ressources/sound_start.wav')
-            self.show_tray_balloon("Recording running...", 99999999)
+            self.show_tray_balloon(self.translator.tr("recording_running_message"), 99999999)
             logging.info("Recording started.")
 
     def cancel_recording(self) -> None:
@@ -1094,7 +1307,7 @@ class VoiceTranscriberApp(QWidget):
 
         # Reset UI and provide feedback
         self.tray_icon.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
-        self.show_tray_balloon("Recording canceled.", 2000)
+        self.show_tray_balloon(self.translator.tr("recording_canceled_message"), 2000)
         self.play_sound('ressources/sound_end.wav')
 
     def record_audio(self) -> None:
@@ -1150,7 +1363,7 @@ class VoiceTranscriberApp(QWidget):
         """Processes the recorded audio, saves it to a file, and starts transcription."""
         if not self.recorded_frames:
             logging.warning("No audio data was recorded.")
-            self.show_tray_balloon("No audio captured.", 2000)
+            self.show_tray_balloon(self.translator.tr("no_audio_captured_message"), 2000)
             return
         temp_dir: str = tempfile.gettempdir()
         filename: str = f"pyvoicetranscriber_recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
@@ -1222,7 +1435,7 @@ class VoiceTranscriberApp(QWidget):
         files = [f for f in os.listdir(temp_dir) if
                  f.startswith("pyvoicetranscriber_recording_") and f.endswith(".wav")]
         if not files:
-            self.show_tray_balloon("No recording found.", 2000)
+            self.show_tray_balloon(self.translator.tr("no_recording_found_message"), 2000)
             return
         files.sort(reverse=True)
         latest = os.path.join(temp_dir, files[0])
@@ -1234,24 +1447,20 @@ class VoiceTranscriberApp(QWidget):
             else:
                 subprocess.call(['xdg-open', latest])
         except Exception as e:
-            self.show_tray_balloon(f"Could not play file: {e}", 2000)
+            self.show_tray_balloon(self.translator.tr("could_not_play_file_message", error=e), 2000)
 
     def start_transcription_worker(self, audio_path: str) -> None:
         """Creates and starts a new thread for the transcription worker."""
-        self.show_tray_balloon("Transcription in progress...", 3000)
+        self.show_tray_balloon(self.translator.tr("transcription_progress_message"), 3000)
         thread = QThread()
-        # Get language code from display name
-        lang_display_name = self.config["input_language"]
-        lang_code = ""
-        for name, code in LANGUAGES.items():
-            if name == lang_display_name:
-                lang_code = code
-                break
+        # The config now stores the language code directly
+        lang_code = self.config["input_language"]
 
         worker = TranscriptionWorker(
             api_key=self.config["api_key"], api_endpoint=self.config["api_endpoint"],
             audio_path=audio_path, prompt=self.config["prompt"],
-            model=self.config["model"], language=lang_code
+            model=self.config["model"], language=lang_code,
+            temperature=self.config["transcription_temperature"]
         )
         worker.moveToThread(thread)
         self.active_workers.append(worker)
@@ -1286,16 +1495,14 @@ class VoiceTranscriberApp(QWidget):
         Args:
             text (str): The transcribed text.
         """
-        logging.info(f"Transcription successful >>>>>>>>>>> {text}")
-
         processed = text.strip('"\'“”‘’ ')
         prompt = self.config["prompt"].strip()
         if not processed or (prompt and processed.lower() == prompt.lower()):
-            self.show_tray_balloon("No speech recognized.", 2000)
+            self.show_tray_balloon(self.translator.tr("no_speech_recognized_message"), 2000)
             logging.info("Transcription result was empty or matched the prompt, ignoring.")
             return
 
-        # Rewording/Rephrasing via GPT if activated
+        # Rewording/Rephrasing via AI if activated
         if self.config["rephrasing_enabled"]:
             trigger_words_str = self.config["rephrasing_trigger_word"].lower()
             trigger_words = [word.strip() for word in trigger_words_str.split(',') if word.strip()]
@@ -1312,14 +1519,7 @@ class VoiceTranscriberApp(QWidget):
 
             if should_rephrase:
                 try:
-                    self.show_tray_balloon(f"Rephrasing Transcript: {processed}", 3000)
-
-                    # Check if context from selection should be added
-                    context_text = ""
-                    if self.config["rephrase_use_selection_context"]:
-                        context_text = self.get_selected_text()
-                        if context_text:
-                            logging.info(f"Using selected text as context: {context_text}")
+                    self.show_tray_balloon(self.translator.tr("rephrasing_transcript_message", processed_text=processed), 3000)
 
                     rephrased = self.rephrase_text_with_gpt(
                         processed,
@@ -1327,18 +1527,19 @@ class VoiceTranscriberApp(QWidget):
                         self.config["rephrasing_api_url"],
                         self.config["rephrasing_api_key"],
                         self.config["rephrasing_model"],
-                        context=context_text
+                        self.config["rephrasing_temperature"],
+                        context=self.current_transcription_context
                     )
                     if rephrased:
                         processed = rephrased
                 except Exception as e:
                     logging.error(f"Rephrasing failed: {e}")
-                    self.show_tray_balloon(f"Rephrasing failed: {e}", 3000)
+                    self.show_tray_balloon(self.translator.tr("rephrasing_failed_message", error=e), 3000)
 
         self.last_transcription = processed
         self.insert_transcribed_text(self.last_transcription)
 
-    def rephrase_text_with_gpt(self, text: str, prompt: str, api_url: str, api_key: str, model: str, context: str = "") -> str:
+    def rephrase_text_with_gpt(self, text: str, prompt: str, api_url: str, api_key: str, model: str, temperature: float, context: str = "") -> str:
         """
         Sends the User's text to the rephrasing API and returns the rephrased text.
 
@@ -1348,6 +1549,7 @@ class VoiceTranscriberApp(QWidget):
             api_url (str): The URL of the rephrasing API.
             api_key (str): The API key for the rephrasing service.
             model (str): The name of the language model to use for rephrasing.
+            temperature (float): The sampling temperature for the model.
             context (str, optional): Additional context (e.g., selected text). Defaults to "".
 
         Returns:
@@ -1369,12 +1571,13 @@ class VoiceTranscriberApp(QWidget):
 
         user_content = f"{prompt}\n\nText: {text}"
         if context:
-            user_content = f"Context from selected text:\n---\n{context}\n---\n\n{user_content}"
+            user_content = f"{user_content}\n\nContext: {context}"
 
         messages.append({"role": "user", "content": user_content})
         data = {
             "model": model,
-            "messages": messages
+            "messages": messages,
+            "temperature": temperature
         }
         logging.debug(f"Rephrasing request data: {data}")
         try:
@@ -1398,14 +1601,14 @@ class VoiceTranscriberApp(QWidget):
             audio_file_path (str): The path to the audio file that caused the error.
         """
         logging.error(f"Transcription error: {error_message}")
-        self.show_tray_balloon("Transcription failed. See dialog for details.", 4000)
+        self.show_tray_balloon(self.translator.tr("transcription_failed_message"), 4000)
         self.tray_icon.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))  # Reset icon
 
         msg_box = QMessageBox()
         msg_box.setIcon(QMessageBox.Icon.Warning)
-        msg_box.setText("Transcription Failed")
-        msg_box.setInformativeText(f"{error_message}\n\nThe audio file was not deleted:\n{audio_file_path}")
-        msg_box.setWindowTitle("Error")
+        msg_box.setText(self.translator.tr("transcription_error_title"))
+        msg_box.setInformativeText(self.translator.tr("transcription_error_text", error_message=error_message, audio_file_path=audio_file_path))
+        msg_box.setWindowTitle(self.translator.tr("transcription_error_title"))
         msg_box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Retry)
         if msg_box.exec() == QMessageBox.StandardButton.Retry:
             self.start_transcription_worker(audio_file_path)
@@ -1425,7 +1628,7 @@ class VoiceTranscriberApp(QWidget):
         """
         try:
             restore = self.config["restore_clipboard"]
-            old_clipboard = QApplication.clipboard().text() if restore else None
+            old_clipboard = copykitten.paste() if restore else None
 
             # Use Ctrl+C to copy selected text to clipboard
             if is_MACOS:
@@ -1434,15 +1637,15 @@ class VoiceTranscriberApp(QWidget):
                 pyautogui.hotkey('ctrl', 'c')
 
             time.sleep(0.1)  # Allow time for clipboard to update
-            selected_text = QApplication.clipboard().text()
+            selected_text = copykitten.paste()
 
             # If no text was selected, we might have copied the current clipboard content
             if not selected_text or selected_text == old_clipboard:
-                logging.debug("No new text selected, using current clipboard content.")
+                logging.debug("No new text selected. Context will be empty.")
                 selected_text = ""
-                
+
             if restore and old_clipboard is not None:
-                QApplication.clipboard().setText(old_clipboard)
+                copykitten.copy(old_clipboard)
                 logging.debug("Clipboard content restored.")
             return selected_text
         except Exception as e:
@@ -1461,9 +1664,9 @@ class VoiceTranscriberApp(QWidget):
         logging.debug("Inserting transcribed text.")
         try:
             restore = self.config["restore_clipboard"]
-            old_clipboard = QApplication.clipboard().text() if restore else None
+            old_clipboard = copykitten.paste() if restore else None
 
-            pyperclip.copy(text)
+            copykitten.copy(text)
 
             # Platform-aware paste hotkey
             if is_MACOS:
@@ -1473,7 +1676,7 @@ class VoiceTranscriberApp(QWidget):
             time.sleep(0.1)  # Brief pause to ensure paste command is processed
 
             if restore and old_clipboard is not None:
-                QApplication.clipboard().setText(old_clipboard)
+                copykitten.copy(old_clipboard)
                 logging.debug("Clipboard content restored.")
         except Exception as e:
             logging.error(f"Failed to insert text via clipboard: {e}")
@@ -1481,10 +1684,10 @@ class VoiceTranscriberApp(QWidget):
     def copy_last_transcription_to_clipboard(self) -> None:
         """Copies the last transcription to the system clipboard."""
         if not self.last_transcription:
-            self.show_tray_balloon("No transcription available to copy.", 2000)
+            self.show_tray_balloon(self.translator.tr("no_transcription_to_copy_message"), 2000)
             return
-        QApplication.clipboard().setText(self.last_transcription)
-        self.show_tray_balloon("Last transcription copied to clipboard.", 2000)
+        copykitten.copy(self.last_transcription)
+        self.show_tray_balloon(self.translator.tr("transcription_copied_message"), 2000)
 
     def apply_logging_configuration(self) -> None:
         """Apply logging level and file handler based on current config."""
@@ -1669,15 +1872,18 @@ class VoiceTranscriberApp(QWidget):
         if warnings:
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Icon.Information)
-            msg.setWindowTitle("Validation Warnings")
-            msg.setText("There seem to be some issues with your settings (warnings only / still saved):")
+            msg.setWindowTitle(self.translator.tr("validation_warning_title"))
+            msg.setText(self.translator.tr("validation_warning_text"))
             msg.setInformativeText("\n".join(f"- {w}" for w in warnings))
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
         self.config["api_key"] = self.api_key_input.text()
         self.config["api_endpoint"] = self.api_endpoint_input.text()
         self.config["model"] = model_raw
-        self.config["input_language"] = self.language_input.currentText()
+        self.config["transcription_temperature"] = self.transcription_temp_slider.value() / 100.0
+        # Save the language code, not the display name
+        lang_display_name = self.language_input.currentText()
+        self.config["input_language"] = LANGUAGES.get(lang_display_name, "en")
         self.config["prompt"] = self.prompt_input.toPlainText()
         self.config["restore_clipboard"] = self.restore_clipboard_checkbox.isChecked()
         self.config["debug_logging"] = self.debug_logging_checkbox.isChecked()
@@ -1693,6 +1899,7 @@ class VoiceTranscriberApp(QWidget):
         self.config["rephrasing_api_url"] = self.rephrasing_api_url_input.text()
         self.config["rephrasing_api_key"] = self.rephrasing_api_key_input.text()
         self.config["rephrasing_model"] = self.rephrasing_model_input.text()
+        self.config["rephrasing_temperature"] = self.rephrasing_temp_slider.value() / 100.0
         # Post Rewording entries (new)
         if hasattr(self, 'post_rephrasing_data'):
             self._save_current_post_rp_edits()
@@ -1706,7 +1913,7 @@ class VoiceTranscriberApp(QWidget):
         self.new_hotkey_str = None
 
         self.save_config()
-        self.show_tray_balloon(f"Settings saved.\nHotkey: {self.hotkey_str}", 2000)
+        self.show_tray_balloon(self.translator.tr("settings_saved_message", hotkey=self.hotkey_str), 2000)
         # Apply logging changes (level + file handler)
         self.apply_logging_configuration()
 
@@ -1735,8 +1942,8 @@ class VoiceTranscriberApp(QWidget):
 
     def quit_app(self) -> None:
         """Quits the application cleanly after confirmation."""
-        reply = QMessageBox.question(self, 'Quit Application',
-                                     "Are you sure you want to exit?",
+        reply = QMessageBox.question(self, self.translator.tr("quit_dialog_title"),
+                                     self.translator.tr("quit_dialog_text"),
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                      QMessageBox.StandardButton.No)
 
@@ -1779,10 +1986,11 @@ class VoiceTranscriberApp(QWidget):
         if limit:
             over = tokens > limit
             color = 'red' if over else ('#aa7700' if tokens > int(limit*0.85) else '#555')
-            self.prompt_token_label.setText(f"Prompt Tokens: {tokens} / {limit}{' (exceeded!)' if over else ''}")
+            exceeded_text = self.translator.tr("token_exceeded_text") if over else ""
+            self.prompt_token_label.setText(self.translator.tr("token_counter_exceeded_label", tokens=tokens, limit=limit, exceeded_text=exceeded_text))
             self.prompt_token_label.setStyleSheet(f"color: {color};")
         else:
-            self.prompt_token_label.setText(f"Prompt Tokens (estimated): {tokens}")
+            self.prompt_token_label.setText(self.translator.tr("token_counter_label", tokens=tokens))
             self.prompt_token_label.setStyleSheet("color: #555;")
 
 # GITHUB COPILOT: KEEP THIS CODE TO MAKE THIS APPLICATION RUNNABLE

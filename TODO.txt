@@ -1,5 +1,2 @@
- - Use copykitten (maybe)
  - Streaming output (maybe)
- - Translation of the UI, maybe?
- - Generalize Hotkey Manager -> Separate Hotkey for Rephrasing
- - -> checkbox which adds the context (current selected text if any)
+   -> Tricky weil dann kein Einfügen via Clipboard mehr möglich
