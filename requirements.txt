@@ -2,5 +2,4 @@ PyQt6
 pyaudio
 pynput
 requests
-pyautogui
 copykitten

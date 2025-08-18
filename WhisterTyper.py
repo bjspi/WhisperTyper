@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel, QLineEd
                              QMenuBar)
 from PyQt6.QtCore import QObject, pyqtSignal, QThread, QTimer, Qt, QPoint, QUrl
 from PyQt6.QtGui import QIcon, QCloseEvent, QCursor, QAction, QDesktopServices
-from PyQt6 import uic # Import the uic module
+from PyQt6 import uic
 from functools import partial
 
 # Global Hotkey
@@ -34,7 +34,6 @@ import math
 
 # API Request and Text Output
 import requests
-import pyautogui
 import copykitten
 
 # --- Default Prompts ---
@@ -101,6 +100,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "debug_logging": True,
     "file_logging": False,
     "gain_db": 0,
+    "systray_double_click_copy": True, # New option
     # New Rephrasing Settings
     "liveprompt_enabled": True,
     "liveprompt_trigger_words": "prompt, liveprompt",
@@ -621,6 +621,7 @@ class WhisperTyperApp(QWidget):
     restore_clipboard_checkbox: QCheckBox
     debug_logging_checkbox: QCheckBox
     file_logging_checkbox: QCheckBox
+    systray_double_click_copy_checkbox: QCheckBox # New checkbox
     play_g_button: QPushButton
 
     # CORRECTED: Signal for thread-safe GUI updates
@@ -630,6 +631,7 @@ class WhisperTyperApp(QWidget):
     def __init__(self) -> None:
         """Initializes the application."""
         super().__init__()
+        self.keyboard_controller = keyboard.Controller()
         self.is_recording: bool = False
         self.recorded_frames: List[bytes] = []
         self.samplerate: int = 16000
@@ -913,6 +915,8 @@ class WhisperTyperApp(QWidget):
         self.restore_clipboard_checkbox.setChecked(self.config["restore_clipboard"])
         self.debug_logging_checkbox.setChecked(self.config["debug_logging"])
         self.file_logging_checkbox.setChecked(self.config["file_logging"])
+        self.systray_double_click_copy_checkbox.setChecked(self.config["systray_double_click_copy"])
+
         self.play_g_button.clicked.connect(self.play_latest_recording)
 
         # Main Save Button
@@ -1099,6 +1103,7 @@ class WhisperTyperApp(QWidget):
         self.restore_clipboard_checkbox.setText(self.translator.tr("restore_clipboard_checkbox"))
         self.debug_logging_checkbox.setText(self.translator.tr("debug_logging_checkbox"))
         self.file_logging_checkbox.setText(self.translator.tr("file_logging_checkbox"))
+        self.systray_double_click_copy_checkbox.setText(self.translator.tr("systray_double_click_copy_checkbox"))
         self.play_g_button.setText(self.translator.tr("play_last_recording_button"))
         self.play_g_button.setToolTip(self.translator.tr("play_last_recording_tooltip"))
 
@@ -1276,8 +1281,23 @@ class WhisperTyperApp(QWidget):
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
 
+        # Connect activation signal for double-click handling
+        self.tray_icon.activated.connect(self.on_tray_icon_activated)
+
         # Initial state update for log file action
         self.update_logfile_menu_action()
+
+    def on_tray_icon_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        """
+        Handles activation events for the system tray icon, like double-clicks.
+
+        Args:
+            reason (QSystemTrayIcon.ActivationReason): The reason for the activation.
+        """
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            if self.config.get("systray_double_click_copy", True):
+                logging.debug("Tray icon double-clicked, copying last transcription.")
+                self.copy_last_transcription_to_clipboard()
 
     def update_logfile_menu_action(self) -> None:
         """Updates the enabled/disabled state of the 'Open Log File' action in the tray menu."""
@@ -1877,6 +1897,18 @@ class WhisperTyperApp(QWidget):
         if msg_box.exec() == QMessageBox.StandardButton.Retry:
             self.start_transcription_worker(audio_file_path)
 
+    def _simulate_key_combination(self, char: str) -> None:
+        """
+        Simulates pressing a key combination like Ctrl+C or Cmd+C.
+
+        Args:
+            char (str): The character key to press (e.g., 'c', 'v').
+        """
+        modifier = keyboard.Key.cmd if is_MACOS else keyboard.Key.ctrl
+        with self.keyboard_controller.pressed(modifier):
+            self.keyboard_controller.press(char)
+            self.keyboard_controller.release(char)
+
     def get_selected_text(self) -> str:
         """
         Retrieves the currently selected text from any application via Pressing Ctrl+C to copy
@@ -1892,13 +1924,15 @@ class WhisperTyperApp(QWidget):
         """
         try:
             restore = self.config["restore_clipboard"]
-            old_clipboard = copykitten.paste() if restore else None
+            old_clipboard = ""
+            try:
+                old_clipboard = copykitten.paste() if restore else None
+            except Exception:
+                # If clipboard is busy, we can proceed assuming it's empty for comparison
+                logging.warning("Could not read initial clipboard state. Assuming empty.")
 
             # Use Ctrl+C to copy selected text to clipboard
-            if is_MACOS:
-                pyautogui.hotkey('command', 'c')
-            else:
-                pyautogui.hotkey('ctrl', 'c')
+            self._simulate_key_combination('c')
 
             # --- New: Wait for clipboard to update with new content ---
             selected_text = ""
@@ -1907,12 +1941,16 @@ class WhisperTyperApp(QWidget):
             elapsed_ms = 0
             while elapsed_ms < max_wait_ms:
                 time.sleep(wait_interval_ms / 1000.0)
-                current_clipboard = copykitten.paste()
-                # If clipboard content changed, we assume it's the selection
-                if current_clipboard != old_clipboard:
-                    selected_text = current_clipboard
-                    break
                 elapsed_ms += wait_interval_ms
+                try:
+                    current_clipboard = copykitten.paste()
+                    # If clipboard content changed, we assume it's the selection
+                    if current_clipboard != old_clipboard:
+                        selected_text = current_clipboard
+                        break
+                except Exception:
+                    # Ignore errors, clipboard might be temporarily busy. Continue polling.
+                    pass
 
             if not selected_text:
                 logging.debug("No new text selected (clipboard content did not change).")
@@ -1927,46 +1965,44 @@ class WhisperTyperApp(QWidget):
 
     def insert_transcribed_text(self, text: str) -> None:
         """
-        Inserts transcribed text, preferably using clipboard for reliability.
-        Restore functionality is optional based on user config.
+        Inserts transcribed text using the clipboard to ensure reliability with special characters.
+        This is more robust than simulating typing.
+
+        If 'Restore clipboard' is enabled, the original clipboard content is saved and restored.
+        If disabled, the new text remains on the clipboard after pasting.
 
         Args:
             text (str): The text to insert.
         """
-        if not text: return
-        logging.debug("Inserting transcribed text.")
+        if not text:
+            return
+
+        logging.debug("Inserting transcribed text via clipboard paste for reliability.")
         try:
             restore = self.config["restore_clipboard"]
-            old_clipboard = copykitten.paste() if restore else None
+            old_clipboard = ""
+            if restore:
+                try:
+                    old_clipboard = copykitten.paste()
+                except Exception:
+                    logging.warning("Could not read initial clipboard state for restoration.")
 
+            # Copy the new text to the clipboard. This is necessary for special characters.
             copykitten.copy(text)
 
-            # --- New: Wait for clipboard to update before pasting ---
-            # This ensures that we don't send the paste command before the OS has
-            # processed the copy command, preventing a race condition.
-            max_wait_ms = 500  # Max wait 0.5 seconds
-            wait_interval_ms = 20 # Check every 20ms
-            elapsed_ms = 0
-            while copykitten.paste() != text:
-                time.sleep(wait_interval_ms / 1000.0)
-                elapsed_ms += wait_interval_ms
-                if elapsed_ms >= max_wait_ms:
-                    logging.warning("Clipboard did not update with new text in time. Pasting might fail.")
-                    break
+            # Wait a moment to ensure the OS has processed the copy command.
+            time.sleep(0.1)
 
             # Platform-aware paste hotkey
-            if is_MACOS:
-                pyautogui.hotkey('command', 'v')
-            else:
-                pyautogui.hotkey('ctrl', 'v')
+            self._simulate_key_combination('v')
 
-            # Increased sleep duration to give the target application more time
-            # to process the paste command before we restore the clipboard.
-            time.sleep(0.5)
+            # Give the target application a moment to process the paste command.
+            time.sleep(0.1)
 
-            if restore and old_clipboard is not None:
+            if restore:
                 copykitten.copy(old_clipboard)
                 logging.debug("Clipboard content restored.")
+
         except Exception as e:
             logging.error(f"Failed to insert text via clipboard: {e}")
 
@@ -2274,6 +2310,8 @@ class WhisperTyperApp(QWidget):
         self.config["gain_db"] = float(self.gain_input.text() or 0)
         # File logging
         self.config["file_logging"] = self.file_logging_checkbox.isChecked()
+        # Systray double-click
+        self.config["systray_double_click_copy"] = self.systray_double_click_copy_checkbox.isChecked()
 
         # Rephrasing settings
         self.config["liveprompt_enabled"] = self.liveprompt_enabled_checkbox.isChecked()

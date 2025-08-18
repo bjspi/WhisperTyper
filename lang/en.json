@@ -57,7 +57,7 @@
   "caption_placeholder": "(no caption)",
   "add_button": "+",
   "remove_button": "-",
-  "restore_clipboard_checkbox": "Restore previous clipboard after paste",
+  "restore_clipboard_checkbox": "Restore Clipboard after use (If deactivated: Will copy transcript to clipboard)",
   "debug_logging_checkbox": "Activate Debug Logging (more details in log)",
   "file_logging_checkbox": "Write log file in application folder (WhisperTyper.log)",
   "play_last_recording_button": "Play Last Recording",
@@ -112,5 +112,6 @@
   "menu_help_github": "GitHub Repository",
   "about_dialog_title": "About WhisperTyper",
   "about_dialog_text": "WhisperTyper\n\nA simple tool to transcribe your voice to text and rephrase it using various AI models.",
-  "transformations_tab_description": "Here you can define custom text transformations. When you press the configured hotkey with text selected, a menu with your defined captions will appear. Clicking a button will rephrase the selected text using the corresponding prompt. This feature uses the 'Shared API Settings' from the 'Rephrasing' tab."
+  "transformations_tab_description": "Here you can define custom text transformations. When you press the configured hotkey with text selected, a menu with your defined captions will appear. Clicking a button will rephrase the selected text using the corresponding prompt. This feature uses the 'Shared API Settings' from the 'Rephrasing' tab.",
+  "systray_double_click_copy_checkbox": "Enable double click on SysTray to copy transcript"
 }

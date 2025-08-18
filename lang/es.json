@@ -57,7 +57,7 @@
   "caption_placeholder": "(sin título)",
   "add_button": "+",
   "remove_button": "-",
-  "restore_clipboard_checkbox": "Restaurar portapapeles anterior después de pegar",
+  "restore_clipboard_checkbox": "Restaurar portapapeles después de usar (Si está desactivado: Copiará la transcripción al portapapeles)",
   "debug_logging_checkbox": "Activar registro de depuración (más detalles en el log)",
   "file_logging_checkbox": "Escribir archivo de registro en la carpeta de la aplicación (WhisperTyper.log)",
   "play_last_recording_button": "Reproducir última grabación",
@@ -112,5 +112,6 @@
   "menu_help_github": "Repositorio de GitHub",
   "about_dialog_title": "Acerca de WhisperTyper",
   "about_dialog_text": "WhisperTyper\n\nUna herramienta sencilla para transcribir su voz a texto y reformularlo utilizando varios modelos de IA.",
-  "transformations_tab_description": "Aquí puede definir transformaciones de texto personalizadas. Cuando presione el atajo de teclado configurado con texto seleccionado, aparecerá un menú con sus leyendas definidas. Al hacer clic en un botón, se reformulará el texto seleccionado utilizando el prompt correspondiente. Esta función utiliza la 'Configuración de API compartida' de la pestaña 'Reformular'."
+  "transformations_tab_description": "Aquí puede definir transformaciones de texto personalizadas. Cuando presione el atajo de teclado configurado con texto seleccionado, aparecerá un menú con sus leyendas definidas. Al hacer clic en un botón, se reformulará el texto seleccionado utilizando el prompt correspondiente. Esta función utiliza la 'Configuración de API compartida' de la pestaña 'Reformular'.",
+  "systray_double_click_copy_checkbox": "Habilitar doble clic en el icono de SysTray para copiar la transcripción"
 }

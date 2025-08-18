@@ -633,6 +633,13 @@
         </widget>
        </item>
        <item>
+        <widget class="QCheckBox" name="systray_double_click_copy_checkbox">
+         <property name="text">
+          <string>Enable double click on SysTray to copy transcript</string>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QPushButton" name="play_g_button">
          <property name="text">
           <string>Play Last Recording</string>
@@ -688,4 +695,3 @@
  <resources/>
  <connections/>
 </ui>
-

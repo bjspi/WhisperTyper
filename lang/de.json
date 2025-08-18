@@ -63,7 +63,7 @@
   "caption_placeholder": "(ohne Bezeichnung)",
   "add_button": "+",
   "remove_button": "-",
-  "restore_clipboard_checkbox": "Vorherige Zwischenablage nach dem Einfügen wiederherstellen",
+  "restore_clipboard_checkbox": "Zwischenablage nach Benutzung wiederherstellen (Wenn deaktiviert: Kopiert Transkript in Zwischenablage)",
   "debug_logging_checkbox": "Debug-Protokollierung aktivieren (mehr Details im Log)",
   "file_logging_checkbox": "Log-Datei im Anwendungsordner schreiben (WhisperTyper.log)",
   "play_last_recording_button": "Letzte Aufnahme abspielen",
@@ -118,5 +118,6 @@
   "menu_help_github": "GitHub-Repository",
   "about_dialog_title": "Über WhisperTyper",
   "about_dialog_text": "WhisperTyper\n\nEin einfaches Werkzeug, um Ihre Stimme in Text zu transkribieren und ihn mit verschiedenen KI-Modellen umzuformulieren.",
-  "transformations_tab_description": "Hier können Sie benutzerdefinierte Texttransformationen definieren. Wenn Sie den konfigurierten Hotkey bei markiertem Text drücken, erscheint ein Menü mit Ihren definierten Beschriftungen. Ein Klick auf eine Schaltfläche formuliert den markierten Text mit dem entsprechenden Prompt um. Diese Funktion verwendet die 'Gemeinsamen API-Einstellungen' aus dem 'Umformulieren'-Tab."
+  "transformations_tab_description": "Hier können Sie benutzerdefinierte Texttransformationen definieren. Wenn Sie den konfigurierten Hotkey bei markiertem Text drücken, erscheint ein Menü mit Ihren definierten Beschriftungen. Ein Klick auf eine Schaltfläche formuliert den markierten Text mit dem entsprechenden Prompt um. Diese Funktion verwendet die 'Gemeinsamen API-Einstellungen' aus dem 'Umformulieren'-Tab.",
+  "systray_double_click_copy_checkbox": "Doppelklick auf SysTray-Icon zum Kopieren des Transkripts aktivieren"
 }

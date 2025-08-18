@@ -57,7 +57,7 @@
   "caption_placeholder": "(sans légende)",
   "add_button": "+",
   "remove_button": "-",
-  "restore_clipboard_checkbox": "Restaurer le presse-papiers précédent après avoir collé",
+  "restore_clipboard_checkbox": "Restaurer le presse-papiers après utilisation (Si désactivé : Copiera la transcription dans le presse-papiers)",
   "debug_logging_checkbox": "Activer la journalisation de débogage (plus de détails dans le log)",
   "file_logging_checkbox": "Écrire le fichier journal dans le dossier de l'application (WhisperTyper.log)",
   "play_last_recording_button": "Lire le dernier enregistrement",
@@ -112,5 +112,6 @@
   "menu_help_github": "Dépôt GitHub",
   "about_dialog_title": "À propos de WhisperTyper",
   "about_dialog_text": "WhisperTyper\n\nUn outil simple pour transcrire votre voix en texte et le reformuler à l'aide de divers modèles d'IA.",
-  "transformations_tab_description": "Ici, vous pouvez définir des transformations de texte personnalisées. Lorsque vous appuyez sur le raccourci configuré avec du texte sélectionné, un menu avec vos légendes définies apparaîtra. Cliquer sur un bouton reformulera le texte sélectionné en utilisant l'invite correspondante. Cette fonctionnalité utilise les 'Paramètres d'API partagés' de l'onglet 'Reformulation'."
+  "transformations_tab_description": "Ici, vous pouvez définir des transformations de texte personnalisées. Lorsque vous appuyez sur le raccourci configuré avec du texte sélectionné, un menu avec vos légendes définies apparaîtra. Cliquer sur un bouton reformulera le texte sélectionné en utilisant l'invite correspondante. Cette fonctionnalité utilise les 'Paramètres d'API partagés' de l'onglet 'Reformulation'.",
+  "systray_double_click_copy_checkbox": "Activer le double-clic sur l'icône SysTray pour copier la transcription"
 }
