@@ -1092,6 +1092,7 @@ class WhisperTyperApp(QWidget):
         general_layout.addWidget(self.ui_language_label)
         self.ui_language_selector = QComboBox()
         self.ui_language_selector.addItems(["English", "Deutsch", "Español", "Français"]) # Add more as json files are created
+
         # Set current language
         lang_map = {"en": "English", "de": "Deutsch", "es": "Español", "fr": "Français"}
         current_lang_name = lang_map.get(self.config.get("ui_language", "en"), "English")
@@ -1388,6 +1389,7 @@ class WhisperTyperApp(QWidget):
 
         if self.capturing_for_widget:
             self.capturing_for_widget.setText(self.keys_to_string(self.captured_keys))
+
             # Determine which button to re-enable
             button_to_enable = self.set_hotkey_button if self.capturing_for_widget == self.hotkey_display else self.set_pr_hotkey_button
             button_to_enable.setText(self.translator.tr("set_hotkey_button"))
@@ -1405,6 +1407,7 @@ class WhisperTyperApp(QWidget):
             str: The string representation of the hotkey combination.
         """
         key_parts = []
+
         # CORRECTED: Simplified the sorting key to be more robust.
         for key in sorted(keys, key=str):
             key_name = None
@@ -1452,6 +1455,7 @@ class WhisperTyperApp(QWidget):
         """Initializes the system tray icon and its context menu."""
         if hasattr(self, 'tray_icon'):
             self.tray_icon.hide() # Hide old one if exists
+
         self.tray_icon = QSystemTrayIcon(self)
         self.tray_icon.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
 
@@ -2407,8 +2411,10 @@ class WhisperTyperApp(QWidget):
         """Handles selection changes in the list. Saves old, loads new."""
         if self._post_rp_updating:
             return
+
         # Save any changes from the previously selected item
         self._save_pr_editor_changes()
+
         # Load the data for the newly selected item
         self._load_pr_editor_for_row(current_row)
 
@@ -2472,10 +2478,12 @@ class WhisperTyperApp(QWidget):
             msg.setInformativeText("\n".join(f"- {w}" for w in warnings))
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
+
         self.config["api_key"] = self.api_key_input.text()
         self.config["api_endpoint"] = self.api_endpoint_input.text()
         self.config["model"] = model_raw
         self.config["transcription_temperature"] = self.transcription_temp_slider.value() / 100.0
+
         # Save the language code, not the display name
         lang_display_name = self.language_input.currentText()
         self.config["input_language"] = LANGUAGES.get(lang_display_name, "en")
