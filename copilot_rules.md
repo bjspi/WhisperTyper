@@ -6,6 +6,7 @@
 - **Docstrings:** Generate Google-style docstrings for all functions, including `Args:` and `Returns:` sections.
 - **Keep the Main Application Loop to directly run the application**
 - **Preserve the top menu bar** with its "File" and "Help" entries.
+- **UI Definition:** The main window layout is defined in `main_window.ui` and loaded at runtime. Do not rebuild the UI manually in Python code.
 - Ensure that the file `WhisperTyper.py` remains runnable / executable after modifications.
 - Keep the main application loop intact to allow direct execution of the application.
 - MUST DO: KEEP THE `if __name__ == '__main__'` clause WITHIN THE FILE `WhisperTyper.py`

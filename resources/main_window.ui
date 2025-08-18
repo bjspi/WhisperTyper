@@ -1,0 +1,691 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>WhisperTyperApp</class>
+ <widget class="QWidget" name="WhisperTyperApp">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>750</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>WhisperTyper - Settings</string>
+  </property>
+  <layout class="QVBoxLayout" name="main_layout">
+   <item>
+    <widget class="QTabWidget" name="tabs">
+     <property name="currentIndex">
+      <number>0</number>
+     </property>
+     <widget class="QWidget" name="transcription_tab">
+      <attribute name="title">
+       <string>Transcription</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="transcription_layout">
+       <item>
+        <widget class="QGroupBox" name="transcription_api_group">
+         <property name="title">
+          <string>API Settings</string>
+         </property>
+         <layout class="QVBoxLayout" name="api_settings_layout">
+          <item>
+           <widget class="QLabel" name="api_key_label">
+            <property name="text">
+             <string>API Key:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="api_key_input">
+            <property name="echoMode">
+             <enum>QLineEdit::Password</enum>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="api_endpoint_label">
+            <property name="text">
+             <string>API Endpoint:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="api_endpoint_input"/>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="api_button_layout">
+            <item>
+             <widget class="QPushButton" name="openai_button">
+              <property name="text">
+               <string>Set OpenAI Defaults</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="groq_button">
+              <property name="text">
+               <string>Set Groq Defaults</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="horizontalSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QLabel" name="model_label">
+            <property name="text">
+             <string>Model:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="model_layout">
+            <item>
+             <widget class="QComboBox" name="model_dropdown"/>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="model_input"/>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QLabel" name="transcription_temp_label_title">
+            <property name="text">
+             <string>Temperature:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="temp_layout">
+            <item>
+             <widget class="QSlider" name="transcription_temp_slider">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="transcription_temp_label">
+              <property name="text">
+               <string>0.00</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="controls_layout">
+         <item>
+          <layout class="QVBoxLayout" name="hotkey_v_layout">
+           <item>
+            <widget class="QLabel" name="hotkey_label">
+             <property name="text">
+              <string>Hotkey:</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <layout class="QHBoxLayout" name="hotkey_h_layout">
+             <item>
+              <widget class="QLineEdit" name="hotkey_display">
+               <property name="readOnly">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="set_hotkey_button">
+               <property name="text">
+                <string>Set</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <layout class="QVBoxLayout" name="lang_v_layout">
+           <item>
+            <widget class="QLabel" name="input_language_label">
+             <property name="text">
+              <string>Input Language:</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QComboBox" name="language_input"/>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <layout class="QVBoxLayout" name="gain_v_layout">
+           <item>
+            <widget class="QLabel" name="gain_label">
+             <property name="text">
+              <string>Gain (dB):</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLineEdit" name="gain_input">
+             <property name="placeholderText">
+              <string>0</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QLabel" name="transcription_prompt_label">
+         <property name="text">
+          <string>Transcription Prompt (Hints for the AI):</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QTextEdit" name="prompt_input">
+         <property name="placeholderText">
+          <string>Enter hints for the AI...</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="prompt_token_label">
+         <property name="styleSheet">
+          <string>color: #555;</string>
+         </property>
+         <property name="text">
+          <string/>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="rephrasing_tab">
+      <attribute name="title">
+       <string>Rephrasing</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="rephrasing_layout">
+       <property name="spacing">
+        <number>10</number>
+       </property>
+       <item>
+        <widget class="QGroupBox" name="liveprompt_group">
+         <property name="styleSheet">
+          <string>
+            QGroupBox {
+                border: 1px solid #444;
+                border-radius: 5px;
+                margin-top: 1ex;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 3px;
+                border-radius: 3px;
+            }
+        </string>
+         </property>
+         <property name="title">
+          <string>LivePrompting (via Trigger Words)</string>
+         </property>
+         <layout class="QVBoxLayout" name="liveprompt_layout">
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_2">
+            <item>
+             <widget class="QCheckBox" name="liveprompt_enabled_checkbox">
+              <property name="text">
+               <string>Enable LivePrompting</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="liveprompt_help_button">
+              <property name="text">
+               <string>?</string>
+              </property>
+              <property name="fixedSize">
+               <size>
+                <width>22</width>
+                <height>22</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="horizontalSpacer_2">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QLabel" name="liveprompt_trigger_label">
+            <property name="text">
+             <string>Trigger Words (comma-separated):</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="liveprompt_trigger_words_input"/>
+          </item>
+          <item>
+           <widget class="QLabel" name="liveprompt_system_prompt_label">
+            <property name="text">
+             <string>System Prompt:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QTextEdit" name="liveprompt_system_prompt_input"/>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="rephrase_context_checkbox">
+            <property name="text">
+             <string>Use selected text as context</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="generic_rephrase_group">
+         <property name="styleSheet">
+          <string>
+            QGroupBox {
+                border: 1px solid #444;
+                border-radius: 5px;
+                margin-top: 1ex;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 3px;
+                border-radius: 3px;
+            }
+        </string>
+         </property>
+         <property name="title">
+          <string>Generic Rephrasing</string>
+         </property>
+         <layout class="QVBoxLayout" name="generic_rephrase_layout">
+          <item>
+           <widget class="QCheckBox" name="generic_rephrase_enabled_checkbox">
+            <property name="text">
+             <string>Enable Generic Rephrasing</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="generic_rephrase_prompt_label">
+            <property name="text">
+             <string>Rephrasing Prompt:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QTextEdit" name="generic_rephrase_prompt_input"/>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="shared_api_group">
+         <property name="styleSheet">
+          <string>
+            QGroupBox {
+                border: 1px solid #444;
+                border-radius: 5px;
+                margin-top: 1ex;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 3px;
+                border-radius: 3px;
+            }
+        </string>
+         </property>
+         <property name="title">
+          <string>Shared API Settings (for all rephrasing features)</string>
+         </property>
+         <layout class="QVBoxLayout" name="shared_api_layout">
+          <item>
+           <widget class="QLabel" name="rephrasing_api_url_label">
+            <property name="text">
+             <string>API URL:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="rephrasing_api_url_input"/>
+          </item>
+          <item>
+           <widget class="QLabel" name="rephrasing_api_key_label">
+            <property name="text">
+             <string>API Key (optional, uses transcription key if empty):</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="rephrasing_api_key_input">
+            <property name="echoMode">
+             <enum>QLineEdit::Password</enum>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="rephrasing_model_label">
+            <property name="text">
+             <string>Model:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="rephrasing_model_input"/>
+          </item>
+          <item>
+           <widget class="QLabel" name="rephrasing_temp_label_title">
+            <property name="text">
+             <string>Temperature:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="rephrasing_temp_layout">
+            <item>
+             <widget class="QSlider" name="rephrasing_temp_slider">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="rephrasing_temp_label">
+              <property name="text">
+               <string>0.70</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_2">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="post_rephrasing_tab">
+      <attribute name="title">
+       <string>Transformations</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="pr_layout">
+       <item>
+        <widget class="QLabel" name="transformations_tab_description_label">
+         <property name="text">
+          <string>Description Text</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+         <property name="styleSheet">
+          <string>margin-bottom: 10px; font-style: italic; color: #aaa;</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="transformations_info_label">
+         <property name="text">
+          <string>Info Text</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QSplitter" name="splitter">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <widget class="QListWidget" name="post_rp_list_placeholder"/>
+         <widget class="QWidget" name="post_rp_editor_container" native="true">
+          <layout class="QVBoxLayout" name="editor_layout">
+           <item>
+            <widget class="QLabel" name="caption_label">
+             <property name="text">
+              <string>Caption:</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLineEdit" name="post_rp_caption_edit"/>
+           </item>
+           <item>
+            <widget class="QLabel" name="text_label">
+             <property name="text">
+              <string>System Prompt:</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QTextEdit" name="post_rp_text_edit"/>
+           </item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="btn_row">
+         <item>
+          <widget class="QPushButton" name="post_rp_add_btn">
+           <property name="text">
+            <string>Add</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="post_rp_remove_btn">
+           <property name="text">
+            <string>Remove</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="horizontalSpacer_3">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="pr_hotkey_group">
+         <property name="title">
+          <string>Post-Rephrase Hotkey</string>
+         </property>
+         <layout class="QVBoxLayout" name="pr_hotkey_layout">
+          <item>
+           <widget class="QLabel" name="pr_hotkey_label">
+            <property name="text">
+             <string>Hotkey:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="pr_hotkey_h_layout">
+            <item>
+             <widget class="QLineEdit" name="pr_hotkey_display">
+              <property name="readOnly">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="set_pr_hotkey_button">
+              <property name="text">
+               <string>Set</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="general_tab">
+      <attribute name="title">
+       <string>General</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="general_layout">
+       <item>
+        <widget class="QLabel" name="ui_language_label">
+         <property name="text">
+          <string>UI Language:</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="ui_language_selector"/>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="restore_clipboard_checkbox">
+         <property name="text">
+          <string>Restore clipboard content after pasting</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="debug_logging_checkbox">
+         <property name="text">
+          <string>Enable debug logging to console</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="file_logging_checkbox">
+         <property name="text">
+          <string>Enable logging to file (WhisperTyper.log)</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="play_g_button">
+         <property name="text">
+          <string>Play Last Recording</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_3">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="save_button">
+     <property name="text">
+      <string>Save and Close</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+  <action name="open_config_action">
+   <property name="text">
+    <string>Open Config File</string>
+   </property>
+  </action>
+  <action name="exit_action">
+   <property name="text">
+    <string>Exit</string>
+   </property>
+  </action>
+  <action name="about_action">
+   <property name="text">
+    <string>About</string>
+   </property>
+  </action>
+  <action name="github_action">
+   <property name="text">
+    <string>GitHub Repository</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+

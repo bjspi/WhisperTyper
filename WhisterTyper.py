@@ -9,6 +9,9 @@ import time
 from datetime import datetime
 from typing import List, Dict, Any, Set, Optional
 
+# Logging
+import logging
+
 # GUI and System Tray
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel, QLineEdit,
                              QPushButton, QSystemTrayIcon, QMenu,
@@ -17,6 +20,7 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel, QLineEd
                              QMenuBar)
 from PyQt6.QtCore import QObject, pyqtSignal, QThread, QTimer, Qt, QPoint, QUrl
 from PyQt6.QtGui import QIcon, QCloseEvent, QCursor, QAction, QDesktopServices
+from PyQt6 import uic # Import the uic module
 from functools import partial
 
 # Global Hotkey
@@ -33,8 +37,90 @@ import requests
 import pyautogui
 import copykitten
 
-# Logging
-import logging
+# --- Default Prompts ---
+DEFAULT_TRANSCRIPTION_PROMPT = """
+The following is a transcription of a voice input. The transcription should be almost perfect to the original, only filler words and silence/emptiness should be removed. Please pay attention to spelling, capitalization, and sensible punctuation, including periods and commas. I also use "Germanized" English terms, especially from the tech and IT scene, from the areas of gadgets, smartphones, automotive, AI, and Python programming. Please recognize these as well.
+"""
+
+DEFAULT_LIVEPROMPT_SYSTEM_PROMPT = """
+You are a helpful assistant. The user will provide a direct instruction as prompt and execute it. Generate only the response to the instruction.
+"""
+
+DEFAULT_GENERIC_REPHRASE_PROMPT = """
+Rephrase the following text to be more polite, professional, and clear. Correct any spelling or grammar mistakes. Return only the rephrased text.
+"""
+
+TRANSCRIPTION_MODEL_OPTIONS = [
+    "whisper-1 (openai)",
+    "gpt-4o-transcribe (openai)",
+    "gpt-4o-mini-transcribe (openai)",
+    "whisper-large-v3 (groq)",
+    "whisper-large-v3-turbo (groq)",
+    "Custom"
+]
+DEFAULT_TRANSCRIPTION_MODEL = "whisper-1 (openai)"
+DEFAULT_REPHRASING_MODEL = "gpt-4o-mini"
+# Approximate max token length for Whisper initial prompt (variously documented ~224; using 230 for safety margin display)
+WHISPER_PROMPT_TOKEN_LIMIT = 230
+
+# --- Languages ---
+# Map display names to ISO 639-1 codes
+LANGUAGES = {
+    "Detect Language": "",
+    "English": "en", "German": "de", "French": "fr", "Spanish": "es", "Italian": "it", "Dutch": "nl",
+    "Afrikaans": "af", "Arabic": "ar", "Armenian": "hy", "Azerbaijani": "az", "Belarusian": "be",
+    "Bosnian": "bs", "Bulgarian": "bg", "Catalan": "ca", "Chinese": "zh", "Croatian": "hr",
+    "Czech": "cs", "Danish": "da", "Estonian": "et", "Finnish": "fi", "Galician": "gl",
+    "Greek": "el", "Hebrew": "he", "Hindi": "hi", "Hungarian": "hu", "Icelandic": "is",
+    "Indonesian": "id", "Japanese": "ja", "Kannada": "kn", "Kazakh": "kk", "Korean": "ko",
+    "Latvian": "lv", "Lithuanian": "lt", "Macedonian": "mk", "Malay": "ms", "Marathi": "mr",
+    "Maori": "mi", "Nepali": "ne", "Norwegian": "no", "Persian": "fa", "Polish": "pl",
+    "Portuguese": "pt", "Romanian": "ro", "Russian": "ru", "Serbian": "sr", "Slovak": "sk",
+    "Slovenian": "sl", "Swahili": "sw", "Swedish": "sv", "Tagalog": "tl", "Tamil": "ta",
+    "Thai": "th", "Turkish": "tr", "Ukrainian": "uk", "Urdu": "ur", "Vietnamese": "vi", "Welsh": "cy"
+}
+
+# --- Configuration ---
+# Define the application's base directory for both frozen and non-frozen states
+APP_BASE_DIR = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(__file__)
+CONFIG_FILE: str = os.path.join(APP_BASE_DIR, "config.json")
+LOG_FILE_PATH: str = os.path.join(APP_BASE_DIR, "WhisperTyper.log")
+
+DEFAULT_HOTKEY_STR: str = "<f9>"
+
+DEFAULT_CONFIG: Dict[str, Any] = {
+    "api_key": "",
+    "api_endpoint": "https://api.openai.com/v1/audio/transcriptions",
+    "model": DEFAULT_TRANSCRIPTION_MODEL,
+    "transcription_temperature": 0.0,
+    "prompt": DEFAULT_TRANSCRIPTION_PROMPT,
+    "hotkey": DEFAULT_HOTKEY_STR,
+    "input_language": "en",
+    "ui_language": "en",
+    "restore_clipboard": True,
+    "debug_logging": True,
+    "file_logging": False,
+    "gain_db": 0,
+    # New Rephrasing Settings
+    "liveprompt_enabled": True,
+    "liveprompt_trigger_words": "prompt, liveprompt",
+    "liveprompt_system_prompt": DEFAULT_LIVEPROMPT_SYSTEM_PROMPT,
+    "rephrase_use_selection_context": True, # This is shared
+    "generic_rephrase_enabled": False,
+    "generic_rephrase_prompt": DEFAULT_GENERIC_REPHRASE_PROMPT,
+    # Shared API settings for rephrasing
+    "rephrasing_api_url": "https://api.openai.com/v1/chat/completions",
+    "rephrasing_api_key": "",
+    "rephrasing_model": DEFAULT_REPHRASING_MODEL,
+    "rephrasing_temperature": 0.7,
+    "post_rephrasing_entries": [],
+    "post_rephrase_hotkey": ""
+}
+
+logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(message)s')
+is_MACOS = sys.platform.startswith('darwin')
+is_WINDOWS = sys.platform.startswith('win')
+
 
 class TranslationManager:
     """Manages loading and retrieving translated strings from JSON files."""
@@ -107,89 +193,6 @@ class TranslationManager:
                 return text  # Return raw text if format keys don't match
         return text
 
-# --- Default Prompts ---
-DEFAULT_TRANSCRIPTION_PROMPT = """
-The following is a transcription of a voice input. The transcription should be almost perfect to the original, only filler words and silence/emptiness should be removed. Please pay attention to spelling, capitalization, and sensible punctuation, including periods and commas. I also use "Germanized" English terms, especially from the tech and IT scene, from the areas of gadgets, smartphones, automotive, AI, and Python programming. Please recognize these as well.
-"""
-
-DEFAULT_LIVEPROMPT_SYSTEM_PROMPT = """
-You are a helpful assistant. The user will provide a direct instruction as prompt and execute it. Generate only the response to the instruction.
-"""
-
-DEFAULT_GENERIC_REPHRASE_PROMPT = """
-Rephrase the following text to be more polite, professional, and clear. Correct any spelling or grammar mistakes. Return only the rephrased text.
-"""
-
-TRANSCRIPTION_MODEL_OPTIONS = [
-    "whisper-1 (openai)",
-    "gpt-4o-transcribe (openai)",
-    "gpt-4o-mini-transcribe (openai)",
-    "whisper-large-v3 (groq)",
-    "whisper-large-v3-turbo (groq)",
-    "Custom"
-]
-DEFAULT_TRANSCRIPTION_MODEL = "whisper-1 (openai)"
-DEFAULT_REPHRASING_MODEL = "gpt-4o-mini"
-# Approximate max token length for Whisper initial prompt (variously documented ~224; using 230 for safety margin display)
-WHISPER_PROMPT_TOKEN_LIMIT = 230
-
-# --- Languages ---
-# Map display names to ISO 639-1 codes
-LANGUAGES = {
-    "Detect Language": "",
-    "English": "en", "German": "de", "French": "fr", "Spanish": "es", "Italian": "it", "Dutch": "nl",
-    "Afrikaans": "af", "Arabic": "ar", "Armenian": "hy", "Azerbaijani": "az", "Belarusian": "be",
-    "Bosnian": "bs", "Bulgarian": "bg", "Catalan": "ca", "Chinese": "zh", "Croatian": "hr",
-    "Czech": "cs", "Danish": "da", "Estonian": "et", "Finnish": "fi", "Galician": "gl",
-    "Greek": "el", "Hebrew": "he", "Hindi": "hi", "Hungarian": "hu", "Icelandic": "is",
-    "Indonesian": "id", "Japanese": "ja", "Kannada": "kn", "Kazakh": "kk", "Korean": "ko",
-    "Latvian": "lv", "Lithuanian": "lt", "Macedonian": "mk", "Malay": "ms", "Marathi": "mr",
-    "Maori": "mi", "Nepali": "ne", "Norwegian": "no", "Persian": "fa", "Polish": "pl",
-    "Portuguese": "pt", "Romanian": "ro", "Russian": "ru", "Serbian": "sr", "Slovak": "sk",
-    "Slovenian": "sl", "Swahili": "sw", "Swedish": "sv", "Tagalog": "tl", "Tamil": "ta",
-    "Thai": "th", "Turkish": "tr", "Ukrainian": "uk", "Urdu": "ur", "Vietnamese": "vi", "Welsh": "cy"
-}
-
-# --- Configuration ---
-# Define the application's base directory for both frozen and non-frozen states
-APP_BASE_DIR = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(__file__)
-CONFIG_FILE: str = os.path.join(APP_BASE_DIR, "config.json")
-
-DEFAULT_HOTKEY_STR: str = "<f9>"
-
-DEFAULT_CONFIG: Dict[str, Any] = {
-    "api_key": "",
-    "api_endpoint": "https://api.openai.com/v1/audio/transcriptions",
-    "model": DEFAULT_TRANSCRIPTION_MODEL,
-    "transcription_temperature": 0.0,
-    "prompt": DEFAULT_TRANSCRIPTION_PROMPT,
-    "hotkey": DEFAULT_HOTKEY_STR,
-    "input_language": "en",
-    "ui_language": "en",
-    "restore_clipboard": True,
-    "debug_logging": True,
-    "file_logging": False,
-    "gain_db": 0,
-    # New Rephrasing Settings
-    "liveprompt_enabled": True,
-    "liveprompt_trigger_words": "prompt, liveprompt",
-    "liveprompt_system_prompt": DEFAULT_LIVEPROMPT_SYSTEM_PROMPT,
-    "rephrase_use_selection_context": True, # This is shared
-    "generic_rephrase_enabled": False,
-    "generic_rephrase_prompt": DEFAULT_GENERIC_REPHRASE_PROMPT,
-    # Shared API settings for rephrasing
-    "rephrasing_api_url": "https://api.openai.com/v1/chat/completions",
-    "rephrasing_api_key": "",
-    "rephrasing_model": DEFAULT_REPHRASING_MODEL,
-    "rephrasing_temperature": 0.7,
-    "post_rephrasing_entries": [],
-    "post_rephrase_hotkey": ""
-}
-
-logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(message)s')
-is_MACOS = sys.platform.startswith('darwin')
-is_WINDOWS = sys.platform.startswith('win')
-
 class MouseFollowerTooltip(QWidget):
     """
     A custom frameless widget that follows the mouse cursor and closes after a timeout.
@@ -216,10 +219,8 @@ class MouseFollowerTooltip(QWidget):
         self.label = QLabel(message, self)
         self.label.setStyleSheet("""
             background-color: rgba(255, 255, 224, 0.95); /* Semi-transparent yellow */
-            color: black;
-            border: 1px solid black;
-            padding: 5px;
-            border-radius: 3px;
+            color: black; border: 1px solid black;
+            padding: 5px; border-radius: 3px;
         """)
         self.label.adjustSize()
         self.resize(self.label.size())
@@ -232,7 +233,7 @@ class MouseFollowerTooltip(QWidget):
             MouseFollowerTooltip._close_timer.stop()
         MouseFollowerTooltip._close_timer = QTimer(self)
         MouseFollowerTooltip._close_timer.setSingleShot(True)
-        MouseFollowerTooltip._close_timer.timeout.connect(self.close)  # Directly connect to close
+        MouseFollowerTooltip._close_timer.timeout.connect(self.close)
         MouseFollowerTooltip._close_timer.start(timeout_ms)
 
         # Timer to update the tooltip's position to follow the mouse
@@ -399,12 +400,12 @@ def estimate_tokens(text: str) -> int:
     return len(TOKEN_PATTERN.findall(text))
 
 # Function which searches a Ressource file either in the PyInstalled Temp folder or in the current directory of the script.
-def resource_path(relative_path: str) -> str:
+def resource_path(*path_segments: str) -> str:
     """
     Get the absolute path to a resource, works for both frozen and non-frozen applications.
 
     Args:
-        relative_path (str): The relative path to the resource.
+        *path_segments (str): The segments of the relative path to the resource.
 
     Returns:
         str: The absolute path to the resource.
@@ -415,7 +416,7 @@ def resource_path(relative_path: str) -> str:
     else:
         # If the application is not frozen, resources are relative to the script.
         base_path = os.path.dirname(__file__)
-    return os.path.join(base_path, relative_path)
+    return os.path.join(base_path, *path_segments)
 
 class TranscriptionWorker(QObject):
     """
@@ -542,6 +543,86 @@ class WhisperTyperApp(QWidget):
     Main application class for the WhisperTyper.
     Manages the GUI, system tray icon, audio recording, and hotkey listener.
     """
+    # --- UI Element Type Hints (for PyCharm/static analysis) ---
+    # This helps the IDE understand the types of widgets loaded from the .ui file,
+    # resolving warnings like "Cannot find reference 'connect' in 'pyqtSignal'".
+    main_layout: QVBoxLayout
+    menu_bar: QMenuBar
+    file_menu: QMenu
+    help_menu: QMenu
+    open_config_action: QAction
+    exit_action: QAction
+    about_action: QAction
+    github_action: QAction
+    tabs: QTabWidget
+    save_button: QPushButton
+    transcription_api_group: QGroupBox
+    api_key_label: QLabel
+    api_key_input: QLineEdit
+    api_endpoint_label: QLabel
+    api_endpoint_input: QLineEdit
+    openai_button: QPushButton
+    groq_button: QPushButton
+    model_label: QLabel
+    model_dropdown: QComboBox
+    model_input: QLineEdit
+    transcription_temp_label_title: QLabel
+    transcription_temp_slider: QSlider
+    transcription_temp_label: QLabel
+    hotkey_label: QLabel
+    hotkey_display: QLineEdit
+    set_hotkey_button: QPushButton
+    input_language_label: QLabel
+    language_input: QComboBox
+    gain_label: QLabel
+    gain_input: QLineEdit
+    transcription_prompt_label: QLabel
+    prompt_input: QTextEdit
+    prompt_token_label: QLabel
+    liveprompt_group: QGroupBox
+    liveprompt_enabled_checkbox: QCheckBox
+    liveprompt_help_button: QPushButton
+    liveprompt_trigger_label: QLabel
+    liveprompt_trigger_words_input: QLineEdit
+    liveprompt_system_prompt_label: QLabel
+    liveprompt_system_prompt_input: QTextEdit
+    rephrase_context_checkbox: QCheckBox
+    generic_rephrase_group: QGroupBox
+    generic_rephrase_enabled_checkbox: QCheckBox
+    generic_rephrase_prompt_label: QLabel
+    generic_rephrase_prompt_input: QTextEdit
+    shared_api_group: QGroupBox
+    rephrasing_api_url_label: QLabel
+    rephrasing_api_url_input: QLineEdit
+    rephrasing_api_key_label: QLabel
+    rephrasing_api_key_input: QLineEdit
+    rephrasing_model_label: QLabel
+    rephrasing_model_input: QLineEdit
+    rephrasing_temp_label_title: QLabel
+    rephrasing_temp_slider: QSlider
+    rephrasing_temp_label: QLabel
+    transformations_tab_description_label: QLabel
+    transformations_info_label: QLabel
+    splitter: QSplitter
+    post_rp_list: QListWidget
+    post_rp_list_placeholder: QWidget # Placeholder that gets replaced
+    caption_label: QLabel
+    post_rp_caption_edit: QLineEdit
+    text_label: QLabel
+    post_rp_text_edit: QTextEdit
+    post_rp_add_btn: QPushButton
+    post_rp_remove_btn: QPushButton
+    pr_hotkey_group: QGroupBox
+    pr_hotkey_label: QLabel
+    pr_hotkey_display: QLineEdit
+    set_pr_hotkey_button: QPushButton
+    ui_language_label: QLabel
+    ui_language_selector: QComboBox
+    restore_clipboard_checkbox: QCheckBox
+    debug_logging_checkbox: QCheckBox
+    file_logging_checkbox: QCheckBox
+    play_g_button: QPushButton
+
     # CORRECTED: Signal for thread-safe GUI updates
     show_tooltip_signal = pyqtSignal(str, int)
     show_floating_window_signal = pyqtSignal(list, str)
@@ -682,26 +763,25 @@ class WhisperTyperApp(QWidget):
 
     def save_config(self) -> None:
         """Saves the current configuration to the JSON file."""
-        # Ensure the ressources directory exists
-        os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
-        with open(CONFIG_FILE, 'w') as f:
-            json.dump(self.config, f, indent=4)
-        logging.info("Configuration saved.")
+        try:
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self.config, f, indent=4)
+            logging.info(f"Configuration saved to {CONFIG_FILE}")
+        except Exception as e:
+            logging.error(f"Failed to save configuration: {e}")
 
     def init_ui(self) -> None:
-        """Initializes the settings window with tabs."""
-        self.setWindowTitle("WhisperTyper - Settings")
+        """Initializes the settings window by loading it from main_window.ui."""
+        # Load the UI from the .ui file
+        ui_path = resource_path("resources", "main_window.ui")
+        uic.loadUi(ui_path, self)
 
-        # Main layout for the entire window. By passing 'self' to the constructor,
-        # this layout is automatically set for the WhisperTyperApp widget.
-        main_layout = QVBoxLayout(self)
+        # --- Menu Bar Setup ---
+        # The menu bar is not part of the .ui file for a QWidget, so we create it manually.
+        self.menu_bar = QMenuBar(self)
+        self.main_layout.insertWidget(0, self.menu_bar) # Insert at the top of the main layout
 
-        # --- Menu Bar ---
-        self.menu_bar = QMenuBar()
-        main_layout.setMenuBar(self.menu_bar)
-
-        # File Menu
-        self.file_menu = self.menu_bar.addMenu("")
+        self.file_menu = self.menu_bar.addMenu("") # Text set in retranslate
         self.open_config_action = QAction("", self)
         self.open_config_action.triggered.connect(self.open_config_file)
         self.file_menu.addAction(self.open_config_action)
@@ -710,8 +790,7 @@ class WhisperTyperApp(QWidget):
         self.exit_action.triggered.connect(self.quit_app)
         self.file_menu.addAction(self.exit_action)
 
-        # Help Menu
-        self.help_menu = self.menu_bar.addMenu("")
+        self.help_menu = self.menu_bar.addMenu("") # Text set in retranslate
         self.about_action = QAction("", self)
         self.about_action.triggered.connect(self.show_about_dialog)
         self.help_menu.addAction(self.about_action)
@@ -719,63 +798,17 @@ class WhisperTyperApp(QWidget):
         self.github_action.triggered.connect(self.open_github_link)
         self.help_menu.addAction(self.github_action)
 
+        # --- Post-UI Load Configuration and Connections ---
 
-        # Create the tab widget
-        self.tabs = QTabWidget()
-        main_layout.addWidget(self.tabs)
-
-        # Create widgets for each tab
-        transcription_tab = QWidget()
-        rephrasing_tab = QWidget()
-        post_rephrasing_tab = QWidget()
-        general_tab = QWidget()
-
-        # Add tabs to the tab widget
-        self.tabs.addTab(transcription_tab, "") # Text set in retranslate_ui
-        self.tabs.addTab(rephrasing_tab, "")
-        self.tabs.addTab(post_rephrasing_tab, "")
-        self.tabs.addTab(general_tab, "")
-
-        # --- Populate Transcription Tab ---
-        transcription_layout = QVBoxLayout(transcription_tab)
-
-        # --- API Settings Group ---
-        self.transcription_api_group = QGroupBox()
-        transcription_layout.addWidget(self.transcription_api_group)
-        api_settings_layout = QVBoxLayout(self.transcription_api_group)
-
-        self.api_key_label = QLabel()
-        api_settings_layout.addWidget(self.api_key_label)
-        self.api_key_input = QLineEdit(self.config["api_key"])
-        self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        api_settings_layout.addWidget(self.api_key_input)
-
-        self.api_endpoint_label = QLabel()
-        api_settings_layout.addWidget(self.api_endpoint_label)
-        self.api_endpoint_input = QLineEdit(self.config["api_endpoint"])
-        api_settings_layout.addWidget(self.api_endpoint_input)
-
-        api_button_layout = QHBoxLayout()
-        self.openai_button = QPushButton()
-        self.groq_button = QPushButton()
-        api_button_layout.addWidget(self.openai_button)
-        api_button_layout.addWidget(self.groq_button)
-        api_button_layout.addStretch(1)
-        api_settings_layout.addLayout(api_button_layout)
+        # Transcription Tab Connections
+        self.api_key_input.setText(self.config["api_key"])
+        self.api_endpoint_input.setText(self.config["api_endpoint"])
         self.openai_button.clicked.connect(
             lambda: self.api_endpoint_input.setText("https://api.openai.com/v1/audio/transcriptions"))
         self.groq_button.clicked.connect(
             lambda: self.api_endpoint_input.setText("https://api.groq.com/openai/v1/audio/transcriptions"))
 
-        self.model_label = QLabel()
-        api_settings_layout.addWidget(self.model_label)
-        model_layout = QHBoxLayout()
-        self.model_dropdown = QComboBox()
         self.model_dropdown.addItems(TRANSCRIPTION_MODEL_OPTIONS)
-        model_layout.addWidget(self.model_dropdown)
-        self.model_input = QLineEdit(visible=False)
-        model_layout.addWidget(self.model_input)
-        api_settings_layout.addLayout(model_layout)
         model_value = self.config["model"]
         if self.model_dropdown.findText(model_value) != -1:
             self.model_dropdown.setCurrentText(model_value)
@@ -784,227 +817,51 @@ class WhisperTyperApp(QWidget):
             self.model_input.setText(model_value)
             self.model_input.setVisible(True)
         self.model_dropdown.currentTextChanged.connect(lambda text: self.model_input.setVisible(text == "Custom"))
-        # Update token counter when model changes (could affect limit applicability)
         self.model_dropdown.currentTextChanged.connect(lambda _t: self._update_prompt_token_counter())
         self.model_input.textChanged.connect(lambda _t: self._update_prompt_token_counter())
 
-        # --- Temperature Slider ---
-        self.transcription_temp_label_title = QLabel()
-        api_settings_layout.addWidget(self.transcription_temp_label_title)
-        temp_layout = QHBoxLayout()
-        self.transcription_temp_slider = QSlider(Qt.Orientation.Horizontal)
         self.transcription_temp_slider.setRange(0, 100)
         self.transcription_temp_slider.setValue(int(self.config["transcription_temperature"] * 100))
-        self.transcription_temp_label = QLabel(f"{self.config['transcription_temperature']:.2f}")
+        self.transcription_temp_label.setText(f"{self.config['transcription_temperature']:.2f}")
         self.transcription_temp_slider.valueChanged.connect(self._update_transcription_temp_label)
-        temp_layout.addWidget(self.transcription_temp_slider)
-        temp_layout.addWidget(self.transcription_temp_label)
-        api_settings_layout.addLayout(temp_layout)
 
-        # --- Hotkey, Language, and Gain Side-by-Side ---
-        controls_layout = QHBoxLayout()
-
-        # Left side: Hotkey
-        hotkey_v_layout = QVBoxLayout()
-        self.hotkey_label = QLabel()
-        hotkey_v_layout.addWidget(self.hotkey_label)
-        hotkey_h_layout = QHBoxLayout()
-        self.hotkey_display = QLineEdit(self.hotkey_str)
-        self.hotkey_display.setReadOnly(True)
-        self.set_hotkey_button = QPushButton()
+        self.hotkey_display.setText(self.hotkey_str)
         self.set_hotkey_button.clicked.connect(self.start_hotkey_capture)
-        hotkey_h_layout.addWidget(self.hotkey_display)
-        hotkey_h_layout.addWidget(self.set_hotkey_button)
-        hotkey_v_layout.addLayout(hotkey_h_layout)
-        controls_layout.addLayout(hotkey_v_layout)
 
-        # Middle: Language
-        lang_v_layout = QVBoxLayout()
-        self.input_language_label = QLabel()
-        lang_v_layout.addWidget(self.input_language_label)
-        self.language_input = QComboBox()
-        # Create a reverse map from ISO code to display name for easy lookup
         self.lang_code_to_name = {v: k for k, v in LANGUAGES.items()}
         self.language_input.addItems(LANGUAGES.keys())
-        # Set current value based on config
         lang_code = self.config["input_language"].lower()
-        display_name = self.lang_code_to_name.get(lang_code, "English") # Default to English if not found
+        display_name = self.lang_code_to_name.get(lang_code, "English")
         self.language_input.setCurrentText(display_name)
-        lang_v_layout.addWidget(self.language_input)
-        controls_layout.addLayout(lang_v_layout)
 
-        # Right side: Gain
-        gain_v_layout = QVBoxLayout()
-        self.gain_label = QLabel()
-        gain_v_layout.addWidget(self.gain_label)
-        # Ensure gain is a float and convert to string for display
-        self.gain_input = QLineEdit(str(self.config["gain_db"]))
-        self.gain_input.setPlaceholderText("0")
-        # Set Tooltip on the Gain Widget:
-        gain_v_layout.addWidget(self.gain_input)
-        controls_layout.addLayout(gain_v_layout)
-
-        transcription_layout.addLayout(controls_layout)
-
-        self.transcription_prompt_label = QLabel()
-        transcription_layout.addWidget(self.transcription_prompt_label)
-        self.prompt_input = QTextEdit(self.config["prompt"], placeholderText="Enter hints for the AI...")
-        transcription_layout.addWidget(self.prompt_input)
-        # Token count label
-        self.prompt_token_label = QLabel("")
-        self.prompt_token_label.setStyleSheet("color: #555;")
-        transcription_layout.addWidget(self.prompt_token_label)
+        self.gain_input.setText(str(self.config["gain_db"]))
+        self.prompt_input.setText(self.config["prompt"])
         self.prompt_input.textChanged.connect(self._update_prompt_token_counter)
-        # Initial update
         QTimer.singleShot(0, self._update_prompt_token_counter)
 
-        transcription_layout.addStretch()  # Pushes widgets to the top
-
-        # --- Populate Rewording Tab ---
-        rephrasing_layout = QVBoxLayout(rephrasing_tab)
-        rephrasing_layout.setSpacing(10) # Add space between groups
-
-        # --- LivePrompting Group ---
-        self.liveprompt_group = QGroupBox()
-        self.liveprompt_group.setStyleSheet("""
-            QGroupBox {
-                border: 1px solid #444;
-                border-radius: 5px;
-                margin-top: 1ex;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 0 3px;
-                border-radius: 3px;
-            }
-        """)
-        rephrasing_layout.addWidget(self.liveprompt_group)
-        liveprompt_layout = QVBoxLayout(self.liveprompt_group)
-
-        liveprompt_enable_layout = QHBoxLayout()
-        self.liveprompt_enabled_checkbox = QCheckBox()
+        # Rephrasing Tab Connections
         self.liveprompt_enabled_checkbox.setChecked(self.config["liveprompt_enabled"])
-        liveprompt_enable_layout.addWidget(self.liveprompt_enabled_checkbox)
-
-        self.liveprompt_help_button = QPushButton("?")
-        self.liveprompt_help_button.setFixedSize(22, 22)
         self.liveprompt_help_button.clicked.connect(self.show_liveprompt_help)
-        liveprompt_enable_layout.addWidget(self.liveprompt_help_button)
-        liveprompt_enable_layout.addStretch()
-        liveprompt_layout.addLayout(liveprompt_enable_layout)
-
-        self.liveprompt_trigger_label = QLabel()
-        liveprompt_layout.addWidget(self.liveprompt_trigger_label)
-        self.liveprompt_trigger_words_input = QLineEdit(self.config["liveprompt_trigger_words"])
-        liveprompt_layout.addWidget(self.liveprompt_trigger_words_input)
-
-        self.liveprompt_system_prompt_label = QLabel()
-        liveprompt_layout.addWidget(self.liveprompt_system_prompt_label)
-        self.liveprompt_system_prompt_input = QTextEdit(self.config["liveprompt_system_prompt"])
-        liveprompt_layout.addWidget(self.liveprompt_system_prompt_input)
-
-        # Context checkbox is part of LivePrompting
-        self.rephrase_context_checkbox = QCheckBox()
+        self.liveprompt_trigger_words_input.setText(self.config["liveprompt_trigger_words"])
+        self.liveprompt_system_prompt_input.setText(self.config["liveprompt_system_prompt"])
         self.rephrase_context_checkbox.setChecked(self.config["rephrase_use_selection_context"])
-        liveprompt_layout.addWidget(self.rephrase_context_checkbox)
 
-        # --- Generic Rephrasing Group ---
-        self.generic_rephrase_group = QGroupBox()
-        self.generic_rephrase_group.setStyleSheet("""
-            QGroupBox {
-                border: 1px solid #444;
-                border-radius: 5px;
-                margin-top: 1ex;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 0 3px;
-                border-radius: 3px;
-            }
-        """)
-        rephrasing_layout.addWidget(self.generic_rephrase_group)
-        generic_rephrase_layout = QVBoxLayout(self.generic_rephrase_group)
-
-        self.generic_rephrase_enabled_checkbox = QCheckBox()
         self.generic_rephrase_enabled_checkbox.setChecked(self.config["generic_rephrase_enabled"])
-        generic_rephrase_layout.addWidget(self.generic_rephrase_enabled_checkbox)
+        self.generic_rephrase_prompt_input.setText(self.config["generic_rephrase_prompt"])
 
-        self.generic_rephrase_prompt_label = QLabel()
-        generic_rephrase_layout.addWidget(self.generic_rephrase_prompt_label)
-        self.generic_rephrase_prompt_input = QTextEdit(self.config["generic_rephrase_prompt"])
-        generic_rephrase_layout.addWidget(self.generic_rephrase_prompt_input)
+        self.rephrasing_api_url_input.setText(self.config["rephrasing_api_url"])
+        self.rephrasing_api_key_input.setText(self.config["rephrasing_api_key"])
+        self.rephrasing_model_input.setText(self.config["rephrasing_model"])
 
-        # --- Shared API Settings ---
-        self.shared_api_group = QGroupBox()
-        self.shared_api_group.setStyleSheet("""
-            QGroupBox {
-                border: 1px solid #444;
-                border-radius: 5px;
-                margin-top: 1ex;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 0 3px;
-                border-radius: 3px;
-            }
-        """)
-        rephrasing_layout.addWidget(self.shared_api_group)
-        shared_api_layout = QVBoxLayout(self.shared_api_group)
-
-        self.rephrasing_api_url_label = QLabel()
-        shared_api_layout.addWidget(self.rephrasing_api_url_label)
-        self.rephrasing_api_url_input = QLineEdit(self.config["rephrasing_api_url"])
-        shared_api_layout.addWidget(self.rephrasing_api_url_input)
-
-        self.rephrasing_api_key_label = QLabel()
-        shared_api_layout.addWidget(self.rephrasing_api_key_label)
-        self.rephrasing_api_key_input = QLineEdit(self.config["rephrasing_api_key"])
-        self.rephrasing_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        shared_api_layout.addWidget(self.rephrasing_api_key_input)
-
-        self.rephrasing_model_label = QLabel()
-        shared_api_layout.addWidget(self.rephrasing_model_label)
-        self.rephrasing_model_input = QLineEdit(self.config["rephrasing_model"])
-        shared_api_layout.addWidget(self.rephrasing_model_input)
-
-        # --- Rephrasing Temperature Slider ---
-        self.rephrasing_temp_label_title = QLabel()
-        shared_api_layout.addWidget(self.rephrasing_temp_label_title)
-        rephrasing_temp_layout = QHBoxLayout()
-        self.rephrasing_temp_slider = QSlider(Qt.Orientation.Horizontal)
         self.rephrasing_temp_slider.setRange(0, 100)
         self.rephrasing_temp_slider.setValue(int(self.config["rephrasing_temperature"] * 100))
-        self.rephrasing_temp_label = QLabel(f"{self.config['rephrasing_temperature']:.2f}")
+        self.rephrasing_temp_label.setText(f"{self.config['rephrasing_temperature']:.2f}")
         self.rephrasing_temp_slider.valueChanged.connect(self._update_rephrasing_temp_label)
-        rephrasing_temp_layout.addWidget(self.rephrasing_temp_slider)
-        rephrasing_temp_layout.addWidget(self.rephrasing_temp_label)
-        shared_api_layout.addLayout(rephrasing_temp_layout)
 
-        rephrasing_layout.addStretch()  # Pushes widgets to the top
-
-        # --- Populate Post Rewording Tab ---
-        # Re-implemented as split view (list + editor)
+        # Transformations Tab Setup
         self.max_post_rephrasing_entries = 10
-        pr_layout = QVBoxLayout(post_rephrasing_tab)
 
-        # New description label for the Transformations tab
-        self.transformations_tab_description_label = QLabel()
-        self.transformations_tab_description_label.setWordWrap(True)
-        self.transformations_tab_description_label.setStyleSheet("margin-bottom: 10px; font-style: italic; color: #aaa;")
-        pr_layout.addWidget(self.transformations_tab_description_label)
-
-        self.transformations_info_label = QLabel()
-        self.transformations_info_label.setWordWrap(True)
-        pr_layout.addWidget(self.transformations_info_label)
-
-        splitter = QSplitter()
-        pr_layout.addWidget(splitter, 1)
-
-        # Left list
-        # Replace simple QListWidget with drag-enabled one
+        # Replace the placeholder QListWidget with our custom drag-enabled one
         class _PostRPList(QListWidget):
             def __init__(self, outer):
                 super().__init__()
@@ -1017,42 +874,18 @@ class WhisperTyperApp(QWidget):
 
             def dropEvent(self, event):
                 super().dropEvent(event)
-                # After visual reorder, sync underlying data list
                 if hasattr(self._outer, '_sync_post_rp_data_from_list'):
                     self._outer._sync_post_rp_data_from_list()
 
+        placeholder = self.post_rp_list_placeholder
         self.post_rp_list = _PostRPList(self)
-        splitter.addWidget(self.post_rp_list)
+        self.splitter.replaceWidget(0, self.post_rp_list)
+        placeholder.deleteLater()
 
-        # Right editor container
-        self.post_rp_editor_container = QWidget()
-        editor_layout = QVBoxLayout(self.post_rp_editor_container)
-        self.caption_label = QLabel()
-        editor_layout.addWidget(self.caption_label)
-        self.post_rp_caption_edit = QLineEdit()
-        editor_layout.addWidget(self.post_rp_caption_edit)
-        self.text_label = QLabel()
-        editor_layout.addWidget(self.text_label)
-        self.post_rp_text_edit = QTextEdit()
-        editor_layout.addWidget(self.post_rp_text_edit, 1)
-        splitter.addWidget(self.post_rp_editor_container)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
 
-        # Buttons row
-        btn_row = QHBoxLayout()
-        self.post_rp_add_btn = QPushButton()
-        self.post_rp_remove_btn = QPushButton()
-        btn_row.addWidget(self.post_rp_add_btn)
-        btn_row.addWidget(self.post_rp_remove_btn)
-        btn_row.addStretch(1)
-        pr_layout.addLayout(btn_row)
-
-        # Data list
-        # FIX: Directly reference the list from config to ensure changes are saved.
-        # Slicing creates a copy, which was the source of the save bug.
         self.post_rephrasing_data: List[Dict[str, str]] = self.config["post_rephrasing_entries"]
-        # Still enforce the limit on adding new items.
         if len(self.post_rephrasing_data) > self.max_post_rephrasing_entries:
              self.post_rephrasing_data = self.post_rephrasing_data[:self.max_post_rephrasing_entries]
              self.config["post_rephrasing_entries"] = self.post_rephrasing_data
@@ -1064,77 +897,29 @@ class WhisperTyperApp(QWidget):
         self.post_rp_add_btn.clicked.connect(self._on_post_rp_add_clicked)
         self.post_rp_remove_btn.clicked.connect(self._on_post_rp_remove_clicked)
         self._update_post_rp_ui_state()
-        # Select first by default if exists
         if self.post_rp_list.count() > 0:
             self.post_rp_list.setCurrentRow(0)
 
-        # --- Post Rephrase Hotkey ---
-        self.pr_hotkey_group = QGroupBox()
-        pr_layout.addWidget(self.pr_hotkey_group)
-        pr_hotkey_layout = QVBoxLayout(self.pr_hotkey_group)
-
-        self.pr_hotkey_label = QLabel()
-        pr_hotkey_layout.addWidget(self.pr_hotkey_label)
-        pr_hotkey_h_layout = QHBoxLayout()
-        self.pr_hotkey_display = QLineEdit(self.config["post_rephrase_hotkey"])
-        self.pr_hotkey_display.setReadOnly(True)
-        self.set_pr_hotkey_button = QPushButton()
+        self.pr_hotkey_display.setText(self.config["post_rephrase_hotkey"])
         self.set_pr_hotkey_button.clicked.connect(self.start_hotkey_capture)
-        pr_hotkey_h_layout.addWidget(self.pr_hotkey_display)
-        pr_hotkey_h_layout.addWidget(self.set_pr_hotkey_button)
-        pr_hotkey_layout.addLayout(pr_hotkey_h_layout)
 
-        # --- Populate General Tab ---
-        general_layout = QVBoxLayout(general_tab)
-
-        # UI Language Selector
-        self.ui_language_label = QLabel()
-        general_layout.addWidget(self.ui_language_label)
-        self.ui_language_selector = QComboBox()
-        self.ui_language_selector.addItems(["English", "Deutsch", "Español", "Français"]) # Add more as json files are created
-
-        # Set current language
+        # General Tab Connections
+        self.ui_language_selector.addItems(["English", "Deutsch", "Español", "Français"])
         lang_map = {"en": "English", "de": "Deutsch", "es": "Español", "fr": "Français"}
         current_lang_name = lang_map.get(self.config.get("ui_language", "en"), "English")
         self.ui_language_selector.setCurrentText(current_lang_name)
-        lang_v_layout.addWidget(self.ui_language_selector)
-        general_layout.addWidget(self.ui_language_selector)
+        self.ui_language_selector.currentTextChanged.connect(self.change_language)
 
-        self.restore_clipboard_checkbox = QCheckBox()
         self.restore_clipboard_checkbox.setChecked(self.config["restore_clipboard"])
-        general_layout.addWidget(self.restore_clipboard_checkbox)
-
-        self.debug_logging_checkbox = QCheckBox()
         self.debug_logging_checkbox.setChecked(self.config["debug_logging"])
-        general_layout.addWidget(self.debug_logging_checkbox)
-
-        # New checkbox for file logging
-        self.file_logging_checkbox = QCheckBox()
         self.file_logging_checkbox.setChecked(self.config["file_logging"])
-        general_layout.addWidget(self.file_logging_checkbox)
-
-        self.play_g_button = QPushButton()
         self.play_g_button.clicked.connect(self.play_latest_recording)
-        general_layout.addWidget(self.play_g_button, alignment=Qt.AlignmentFlag.AlignLeft)
 
-        general_layout.addStretch()  # Pushes widgets to the top
-
-        # --- Save Button (outside tabs) ---
-        self.save_button = QPushButton()
+        # Main Save Button
         self.save_button.clicked.connect(self.save_settings)
-        main_layout.addWidget(self.save_button)
-
-        # --- FIX ---
-        # The following line is removed. Calling setLayout on a widget that
-        # already has a layout (set via the QVBoxLayout(self) constructor)
-        # can lead to crashes.
-        # self.setLayout(main_layout)
-
-        # Make the settings window 50% wider than default
-        self.resize(int(self.sizeHint().width() * 1.28), int(self.sizeHint().height() * 0.8))
 
         # Set window icon
-        icon_path = resource_path("ressources/app_icon.png")
+        icon_path = resource_path("resources", "app_icon.png")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
         else:
@@ -1497,26 +1282,23 @@ class WhisperTyperApp(QWidget):
     def update_logfile_menu_action(self) -> None:
         """Updates the enabled/disabled state of the 'Open Log File' action in the tray menu."""
         if hasattr(self, 'open_log_action'):
-            log_file_path = os.path.join(APP_BASE_DIR, "WhisperTyper.log")
-            log_file_exists = os.path.isfile(log_file_path)
+            log_file_exists = os.path.isfile(LOG_FILE_PATH)
             self.open_log_action.setEnabled(log_file_exists)
 
     def open_log_file(self) -> None:
         """Opens the log file with the system's default application (text editor)."""
-        log_file_path = os.path.join(APP_BASE_DIR, "WhisperTyper.log")
-
-        if not os.path.isfile(log_file_path):
+        if not os.path.isfile(LOG_FILE_PATH):
             self.show_tray_balloon(self.translator.tr("log_file_not_exist_message"), 2000)
             self.update_logfile_menu_action()  # Update menu state
             return
 
         try:
             if is_WINDOWS:
-                os.startfile(log_file_path)
+                os.startfile(LOG_FILE_PATH)
             elif is_MACOS:
-                subprocess.call(['open', log_file_path])
+                subprocess.call(['open', LOG_FILE_PATH])
             else:
-                subprocess.call(['xdg-open', log_file_path])
+                subprocess.call(['xdg-open', LOG_FILE_PATH])
         except Exception as e:
             logging.error(f"Failed to open log file: {e}")
             self.show_tray_balloon(self.translator.tr("log_file_open_fail_message", error=e), 3000)
@@ -1606,7 +1388,7 @@ class WhisperTyperApp(QWidget):
                 logging.warning(f"PyAudio init failed (sounds disabled): {e}")
                 return
         for name in sound_names:
-            path = resource_path(os.path.join("ressources", name))
+            path = resource_path("resources", name)
             if not os.path.isfile(path):
                 logging.debug(f"Sound file missing (skip preload): {path}")
                 continue
@@ -1672,14 +1454,14 @@ class WhisperTyperApp(QWidget):
         Low-latency playback of preloaded short WAV. Falls back to on-demand load.
 
         Args:
-            filename (str): The name of the sound file to play.
+            filename (str): The name of the sound file to play (e.g., 'sound_start.wav').
         """
 
         def _play_cached():
             data_tuple = self.sound_cache.get(filename)
             if not data_tuple:
                 # Fallback: attempt one-off load (slower)
-                path = resource_path(filename)
+                path = resource_path("resources", filename)
                 if not os.path.isfile(path):
                     logging.debug(f"Sound file not found: {path}")
                     return
@@ -1717,7 +1499,7 @@ class WhisperTyperApp(QWidget):
             if self.recording_thread and self.recording_thread.is_alive():
                 self.recording_thread.join()
             logging.info("Recording stopped. Processing audio.")
-            self.play_sound('ressources/sound_end.wav')
+            self.play_sound('sound_end.wav')
             self.process_recording()
         else:
             # Reset context for the new operation
@@ -1737,7 +1519,7 @@ class WhisperTyperApp(QWidget):
             self.recording_thread = threading.Thread(target=self.record_audio, daemon=True)
             self.recording_thread.start()
             # Play start sound immediately (removed artificial sleep)
-            self.play_sound('ressources/sound_start.wav')
+            self.play_sound('sound_start.wav')
             self.show_tray_balloon(self.translator.tr("recording_running_message"), 99999999)
             logging.info("Recording started.")
 
@@ -1757,7 +1539,7 @@ class WhisperTyperApp(QWidget):
         # Reset UI and provide feedback
         self.tray_icon.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
         self.show_tray_balloon(self.translator.tr("recording_canceled_message"), 2000)
-        self.play_sound('ressources/sound_end.wav')
+        self.play_sound('sound_end.wav')
 
     def record_audio(self) -> None:
         """Records audio using PyAudio (16-bit mono)."""
@@ -2293,13 +2075,12 @@ class WhisperTyperApp(QWidget):
         # Add file handler if enabled
         if self.config["file_logging"]:
             try:
-                log_path = os.path.join(APP_BASE_DIR, "WhisperTyper.log")
-                fh = logging.FileHandler(log_path, encoding='utf-8')
+                fh = logging.FileHandler(LOG_FILE_PATH, encoding='utf-8')
                 fh.setLevel(logging.DEBUG)  # always capture full detail in file
                 fh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
                 logger.addHandler(fh)
                 self._file_log_handler = fh
-                logging.info(f"File logging enabled: {log_path}")
+                logging.info(f"File logging enabled: {LOG_FILE_PATH}")
             except Exception as e:
                 logging.error(f"Failed to enable file logging: {e}")
 
@@ -2316,7 +2097,7 @@ class WhisperTyperApp(QWidget):
         api_key = self.api_key_input.text().strip()
         api_key_lc = api_key.lower()
 
-        if 'openai' in endpoint:
+        if 'openai.com' in endpoint:
             if 'openai' not in model_lc:
                 warnings.append("API endpoint contains 'openai', but the selected model does not contain 'openai'.")
             if not api_key_lc.startswith('sk-'):
@@ -2611,6 +2392,8 @@ class WhisperTyperApp(QWidget):
 # GITHUB COPILOT: KEEP THIS CODE TO MAKE THIS APPLICATION RUNNABLE
 # Keep the Main Application Loop to directly run the application
 if __name__ == '__main__':
+    # Suppress verbose DEBUG messages from the pyuic module
+    logging.getLogger('PyQt6.uic').setLevel(logging.WARNING)
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     transcriber_app = WhisperTyperApp()
