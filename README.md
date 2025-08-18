@@ -1,4 +1,10 @@
 <p align="center">
+  <img src="app.png" alt="AppLogo" />
+</p>
+
+--------
+
+<p align="center">
   <!-- GitHub Stars Badge -->
   <a href="https://github.com/bjspi/WhisperTyper" target="_blank">
     <img alt="GitHub stars" src="https://img.shields.io/github/stars/bjspi/WhisperTyper?style=flat-square" />
@@ -25,7 +31,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 - ✍️ **Advanced Rephrasing**: Go beyond simple transcription with powerful and preset text transformations.
 
 <p align="center">
-    <img src="https://github.com/bjspi/WhisperTyper/blob/main/screenshot.jpg" alt="App Screenshot" width="80%" />
+    <img src="screenshots/screenshot.jpg" alt="App Screenshot" width="80%" />
 </p>
 
 ---
@@ -58,18 +64,12 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
     pip install -r requirements.txt
     ```
     > **Note for macOS users**: `PyAudio` has a dependency on `PortAudio`. If you encounter installation errors, please install it first using [Homebrew](https://brew.sh/):
-    > `brew install portaudio`
+    > `brew install portaudio`. See full [macOS installation instructions](#installation-on-macos) below.
     
 3.  Run the application, for headless operation on Windows, use pythonw instead of python:
     ```bash
-    python WhisterTyper.py
+    python run.py
     ```
-
-## Tech Stack
-<p align="center">
-  <img alt="Python" src="https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white" />
-  <img alt="PyQt" src="https://img.shields.io/badge/PyQt-41CD52?style=flat-square&logo=qt&logoColor=white" />
-</p>
 
 ## Installation on MacOS
 
@@ -90,16 +90,21 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
     - Click the **+** button and add the path to your Python executable (from step 2).
     - If you are using a virtual environment, add the path to the `python` executable inside your virtual environment's `bin` directory.
     - Example path: `/Users/yourusername/.pyenv/versions/3.11.4/bin/python3`
-   ![macOS Accessibility](MacOS_accessibility.jpg)
+   ![macOS Accessibility](screenshots/MacOS_accessibility.jpg)
 
 5. Start the application using your Python interpreter:
     ```bash
-    python WhisterTyper.py
+    python run.py
     ```
 
 6. When using the hotkey for the first time, macOS will prompt for microphone access. Allow it.
-    - Example prompt:
-      ![macOS Audio Permission](MacOS_audio.jpg)
+![macOS Audio Permission](screenshots/MacOS_audio.jpg)
+
+## Tech Stack
+<p align="center">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white" />
+  <img alt="PyQt" src="https://img.shields.io/badge/PyQt-41CD52?style=flat-square&logo=qt&logoColor=white" />
+</p>
 
 ## Usage
 

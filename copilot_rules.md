@@ -4,9 +4,7 @@
 - **Type Hints:** All Python functions and methods must include explicit type hints for all arguments and return values. Follow PEP 484.
 - **Preserve Comments:** Do not modify or remove my existing comments unless specifically asked to. Refactor the code around the comments.
 - **Docstrings:** Generate Google-style docstrings for all functions, including `Args:` and `Returns:` sections.
-- **Keep the Main Application Loop to directly run the application**
 - **Preserve the top menu bar** with its "File" and "Help" entries.
-- **UI Definition:** The main window layout is defined in `main_window.ui` and loaded at runtime. Do not rebuild the UI manually in Python code.
-- Ensure that the file `WhisperTyper.py` remains runnable / executable after modifications.
-- Keep the main application loop intact to allow direct execution of the application.
-- MUST DO: KEEP THE `if __name__ == '__main__'` clause WITHIN THE FILE `WhisperTyper.py`
+- **UI Definition:** The main window layout is defined in `app/resources/main_window.ui` and loaded at runtime. Do not rebuild the UI manually in Python code.
+- **Entry Point:** The application is launched from `run.py` in the project root.
+- **File Structure:** The main application logic resides in `app/WhisterTyper.py`. Resource files (icons, sounds, UI) are located in subdirectories within the `app` folder.

@@ -6,11 +6,11 @@ import json
 import threading
 import tempfile
 import time
+import glob
 from datetime import datetime
 from typing import List, Dict, Any, Set, Optional
-
-# Logging
 import logging
+logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(message)s')
 
 # GUI and System Tray
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel, QLineEdit,
@@ -35,6 +35,52 @@ import math
 # API Request and Text Output
 import requests
 import copykitten
+
+# Suppress verbose DEBUG messages from the pyuic module
+logging.getLogger('PyQt6.uic').setLevel(logging.WARNING)
+
+is_MACOS = sys.platform.startswith('darwin')
+is_WINDOWS = sys.platform.startswith('win')
+
+def get_system_language_2char():
+    """
+    Returns a 2-character language code (e.g., 'en', 'de').
+    All English variants (en-US, en_GB, etc.) return 'en'.
+    """
+    lang = None
+    if is_WINDOWS:
+        try:
+            import ctypes
+            windll = ctypes.windll.kernel32
+            lang_id = windll.GetUserDefaultUILanguage()
+            import locale
+            lang = locale.windows_locale.get(lang_id, 'en')
+        except Exception:
+            lang = os.environ.get('LANG', 'en')
+    elif is_MACOS:
+        try:
+            output = subprocess.check_output(
+                ["defaults", "read", "-g", "AppleLanguages"],
+                universal_newlines=True
+            )
+            import re
+            match = re.search(r'"([a-zA-Z\-]+)"', output)
+            if match:
+                lang = match.group(1)
+        except Exception:
+            lang = os.environ.get('LANG', 'en')
+    else:
+        lang = os.environ.get('LANG', 'en')
+
+    if not lang:
+        return 'en'
+    lang = lang.replace('_', '-').lower()
+    if lang.startswith('en'):
+        return 'en'
+    return lang.split('-')[0]
+
+SYS_LANG = get_system_language_2char()
+logging.info(f"Detected system language: {SYS_LANG}")
 
 # --- Default Prompts ---
 DEFAULT_TRANSCRIPTION_PROMPT = """
@@ -80,46 +126,52 @@ LANGUAGES = {
 }
 
 # --- Configuration ---
-# Define the application's base directory for both frozen and non-frozen states
-APP_BASE_DIR = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(__file__)
-CONFIG_FILE: str = os.path.join(APP_BASE_DIR, "config.json")
-LOG_FILE_PATH: str = os.path.join(APP_BASE_DIR, "WhisperTyper.log")
+# Get user's home directory in a cross-platform way
+USER_HOME_DIR = os.path.expanduser("~")
+# Define the dedicated folder for config and logs
+APP_DATA_DIR = os.path.join(USER_HOME_DIR, ".WhisperTyper")
+# Ensure the directory exists
+os.makedirs(APP_DATA_DIR, exist_ok=True)
 
+CONFIG_FILE: str = os.path.join(APP_DATA_DIR, "config.json")
+LOG_FILE_PATH: str = os.path.join(APP_DATA_DIR, "WhisperTyper.log")
 DEFAULT_HOTKEY_STR: str = "<f9>"
+
+UI_LANG_FILES = [os.path.splitext(os.path.basename(x))[0] for x in glob.glob(os.path.join(os.path.dirname(__file__), 'lang', '*.json'))]
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "api_key": "",
     "api_endpoint": "https://api.openai.com/v1/audio/transcriptions",
     "model": DEFAULT_TRANSCRIPTION_MODEL,
     "transcription_temperature": 0.0,
-    "prompt": DEFAULT_TRANSCRIPTION_PROMPT,
+    "prompt": DEFAULT_TRANSCRIPTION_PROMPT.strip(),
     "hotkey": DEFAULT_HOTKEY_STR,
-    "input_language": "en",
-    "ui_language": "en",
+    "input_language": SYS_LANG if SYS_LANG in LANGUAGES.values() else "en",  # Default to system language or 'en'
+    "ui_language": SYS_LANG if SYS_LANG in UI_LANG_FILES else "en",  # Default to system language or 'en'
     "restore_clipboard": True,
     "debug_logging": True,
-    "file_logging": False,
-    "gain_db": 0,
+    "file_logging": True,
+    "gain_db": 10,
     "systray_double_click_copy": True, # New option
+
     # New Rephrasing Settings
     "liveprompt_enabled": True,
     "liveprompt_trigger_words": "prompt, liveprompt",
-    "liveprompt_system_prompt": DEFAULT_LIVEPROMPT_SYSTEM_PROMPT,
+    "liveprompt_system_prompt": DEFAULT_LIVEPROMPT_SYSTEM_PROMPT.strip(),
     "rephrase_use_selection_context": True, # This is shared
     "generic_rephrase_enabled": False,
-    "generic_rephrase_prompt": DEFAULT_GENERIC_REPHRASE_PROMPT,
+    "generic_rephrase_prompt": DEFAULT_GENERIC_REPHRASE_PROMPT.strip(),
     # Shared API settings for rephrasing
     "rephrasing_api_url": "https://api.openai.com/v1/chat/completions",
     "rephrasing_api_key": "",
     "rephrasing_model": DEFAULT_REPHRASING_MODEL,
     "rephrasing_temperature": 0.7,
     "post_rephrasing_entries": [],
-    "post_rephrase_hotkey": ""
+    "post_rephrase_hotkey": "",
+    # macOS Permissions
+    "macos_accessibility_info_shown": False,
+    "macos_microphone_info_shown": False
 }
-
-logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(message)s')
-is_MACOS = sys.platform.startswith('darwin')
-is_WINDOWS = sys.platform.startswith('win')
 
 
 class TranslationManager:
@@ -146,7 +198,7 @@ class TranslationManager:
         if getattr(sys, 'frozen', False):
             return sys._MEIPASS
         else:
-            # In a normal environment, this file is in the project root.
+            # In a normal environment, resources are relative to this file's directory.
             return os.path.dirname(__file__)
 
     def set_language(self, lang_code: str) -> None:
@@ -414,7 +466,7 @@ def resource_path(*path_segments: str) -> str:
         # If the application is frozen (e.g., using PyInstaller), resources are in a temp folder.
         base_path = sys._MEIPASS
     else:
-        # If the application is not frozen, resources are relative to the script.
+        # If the application is not frozen, resources are relative to this script's directory.
         base_path = os.path.dirname(__file__)
     return os.path.join(base_path, *path_segments)
 
@@ -627,6 +679,7 @@ class WhisperTyperApp(QWidget):
     # CORRECTED: Signal for thread-safe GUI updates
     show_tooltip_signal = pyqtSignal(str, int)
     show_floating_window_signal = pyqtSignal(list, str)
+    show_permission_dialog_signal = pyqtSignal(str, str, str)
 
     def __init__(self) -> None:
         """Initializes the application."""
@@ -679,6 +732,7 @@ class WhisperTyperApp(QWidget):
         # Connect the signal to the slot for safe cross-thread communication
         self.show_tooltip_signal.connect(self._show_tooltip_slot)
         self.show_floating_window_signal.connect(self._show_floating_window_slot)
+        self.show_permission_dialog_signal.connect(self._show_permission_dialog_slot)
 
         self.tray_icon.setToolTip(self.translator.tr("tray_ready_tooltip", hotkey=self.hotkey_str))
         logging.info(f"Application started. Press '{self.hotkey_str}' to start/stop recording.")
@@ -707,6 +761,61 @@ class WhisperTyperApp(QWidget):
             selected_text=selected_text,
             on_button_click_callback=self.on_floating_button_clicked
         )
+
+    def _show_permission_dialog_slot(self, title: str, text: str, settings_url: str) -> None:
+        """
+        Shows the macOS permission information dialog. This runs in the main GUI thread.
+        Args:
+            title (str): The dialog title.
+            text (str): The dialog message.
+            settings_url (str): The URL to open system settings.
+        """
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Icon.Information)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(text)
+        ok_button = msg_box.addButton(self.translator.tr("ok_button"), QMessageBox.ButtonRole.AcceptRole)
+        open_instructions_button = None
+        if settings_url:
+            # Use the new translation key for the GitHub instructions button
+            open_instructions_button = msg_box.addButton(self.translator.tr("macos_github_instructions_button"), QMessageBox.ButtonRole.ActionRole)
+
+        msg_box.exec()
+
+        # Check which button was clicked after the dialog is closed
+        if msg_box.clickedButton() == open_instructions_button:
+            QDesktopServices.openUrl(QUrl(settings_url))
+
+    def _check_and_warn_macos_permissions(self, permission_type: str) -> None:
+        """
+        Checks if on macOS and if a permission warning is needed.
+        If so, emits a signal to show the warning dialog in the main thread.
+        This function is non-blocking and safe to call from any thread.
+        Args:
+            permission_type (str): 'accessibility' or 'microphone'.
+        """
+        if not is_MACOS:
+            return
+
+        config_key = f"macos_{permission_type}_info_shown"
+        if not self.config.get(config_key, False):
+            # Mark as shown immediately to prevent repeated dialogs
+            self.config[config_key] = True
+            self.save_config()
+
+            # The URL now points to the GitHub installation guide for both cases.
+            url = "https://github.com/bjspi/WhisperTyper?tab=readme-ov-file#installation-on-macos"
+
+            if permission_type == 'accessibility':
+                title = self.translator.tr("macos_accessibility_title")
+                text = self.translator.tr("macos_accessibility_text")
+            elif permission_type == 'microphone':
+                title = self.translator.tr("macos_microphone_title")
+                text = self.translator.tr("macos_microphone_text")
+            else:
+                return
+
+            self.show_permission_dialog_signal.emit(title, text, url)
 
     def show_tray_balloon(self, message: str, timeout_ms: int = 2000) -> None:
         """
@@ -966,7 +1075,9 @@ class WhisperTyperApp(QWidget):
         # Menus
         # NOTE TO USER: Please add the following keys to your language files:
         # "menu_file", "menu_file_open_config", "menu_file_exit", "menu_help", "menu_help_about", "menu_help_github",
-        # "about_dialog_title", "about_dialog_text"
+        # "about_dialog_title", "about_dialog_text",
+        # "macos_accessibility_title", "macos_accessibility_text", "macos_microphone_title", "macos_microphone_text",
+        # "ok_button", "macos_github_instructions_button"
         self.file_menu.setTitle(self.translator.tr("menu_file"))
         self.open_config_action.setText(self.translator.tr("menu_file_open_config"))
         self.exit_action.setText(self.translator.tr("menu_file_exit"))
@@ -1137,6 +1248,8 @@ class WhisperTyperApp(QWidget):
 
     def start_hotkey_capture(self) -> None:
         """Initiates the process of listening for a new hotkey."""
+        self._check_and_warn_macos_permissions('accessibility')
+
         sender = self.sender()
         if sender == self.set_hotkey_button:
             target_widget = self.hotkey_display
@@ -1522,6 +1635,8 @@ class WhisperTyperApp(QWidget):
             self.play_sound('sound_end.wav')
             self.process_recording()
         else:
+            self._check_and_warn_macos_permissions('microphone')
+
             # Reset context for the new operation
             self.current_transcription_context = ""
             # Check if context from selection should be added at the start
@@ -2427,12 +2542,10 @@ class WhisperTyperApp(QWidget):
             self.prompt_token_label.setText(self.translator.tr("token_counter_label", tokens=tokens))
             self.prompt_token_label.setStyleSheet("color: #555;")
 
-# GITHUB COPILOT: KEEP THIS CODE TO MAKE THIS APPLICATION RUNNABLE
-# Keep the Main Application Loop to directly run the application
-if __name__ == '__main__':
-    # Suppress verbose DEBUG messages from the pyuic module
-    logging.getLogger('PyQt6.uic').setLevel(logging.WARNING)
+def run_app():
+    """Runs the WhisperTyper application."""
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     transcriber_app = WhisperTyperApp()
     sys.exit(app.exec())
+
