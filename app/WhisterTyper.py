@@ -8,7 +8,7 @@ import tempfile
 import time
 import glob
 from datetime import datetime
-from typing import List, Dict, Any, Set, Optional
+from typing import List, Dict, Any, Set, Optional, LiteralString
 import logging
 logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(message)s')
 
@@ -452,7 +452,7 @@ def estimate_tokens(text: str) -> int:
     return len(TOKEN_PATTERN.findall(text))
 
 # Function which searches a Ressource file either in the PyInstalled Temp folder or in the current directory of the script.
-def resource_path(*path_segments: str) -> str:
+def resource_path(*path_segments: str) -> LiteralString | str | bytes:
     """
     Get the absolute path to a resource, works for both frozen and non-frozen applications.
 
@@ -2026,57 +2026,56 @@ class WhisperTyperApp(QWidget):
 
     def get_selected_text(self) -> str:
         """
-        Retrieves the currently selected text from any application via Pressing Ctrl+C to copy
-        to clipboard and then reading it.
+        Retrieves the currently selected text from any application by copying it to the clipboard.
+        This method temporarily clears the clipboard to ensure that it captures the new selection,
+        even if the selected text was already in the clipboard.
 
-        If no text is selected, it would yield the current Clipboard content - this is recognized
-        and avoided
-
-        Restores clipboard content if configured.
+        Restores original clipboard content if configured.
 
         Returns:
-            str: The selected text, or an empty string if nothing is selected.
+            str: The selected text, or an empty string if nothing is selected or an error occurs.
         """
-        try:
-            restore = self.config["restore_clipboard"]
-            old_clipboard = ""
-            try:
-                old_clipboard = copykitten.paste() if restore else None
-            except Exception:
-                # If clipboard is busy, we can proceed assuming it's empty for comparison
-                logging.warning("Could not read initial clipboard state. Assuming empty.")
+        self._check_and_warn_macos_permissions('accessibility')
+        selected_text = ""
+        original_clipboard = ""
+        restore = self.config["restore_clipboard"]
 
-            # Use Ctrl+C to copy selected text to clipboard
+        try:
+            # 1. Store original clipboard content if it needs to be restored.
+            if restore:
+                try:
+                    original_clipboard = copykitten.paste()
+                except Exception:
+                    logging.warning("Could not read initial clipboard state for restoration.")
+
+            # 2. Clear the clipboard to reliably detect if the copy command succeeds.
+            copykitten.copy("")
+
+            # 3. Simulate Ctrl+C to copy selected text.
             self._simulate_key_combination('c')
 
-            # --- New: Wait for clipboard to update with new content ---
-            selected_text = ""
-            max_wait_ms = 500  # Max wait 0.5 seconds
-            wait_interval_ms = 20 # Check every 20ms
-            elapsed_ms = 0
-            while elapsed_ms < max_wait_ms:
-                time.sleep(wait_interval_ms / 1000.0)
-                elapsed_ms += wait_interval_ms
-                try:
-                    current_clipboard = copykitten.paste()
-                    # If clipboard content changed, we assume it's the selection
-                    if current_clipboard != old_clipboard:
-                        selected_text = current_clipboard
-                        break
-                except Exception:
-                    # Ignore errors, clipboard might be temporarily busy. Continue polling.
-                    pass
+            # 4. Wait a moment for the OS to process the copy command.
+            time.sleep(0.1)
+
+            # 5. Get the new clipboard content.
+            selected_text = copykitten.paste()
 
             if not selected_text:
-                logging.debug("No new text selected (clipboard content did not change).")
+                logging.debug("No text selected (clipboard is empty after copy action).")
 
-            if restore and old_clipboard is not None:
-                copykitten.copy(old_clipboard)
-                logging.debug("Clipboard content restored.")
-            return selected_text.strip()
         except Exception as e:
             logging.error(f"Failed to retrieve selected text: {e}")
-            return ""
+            selected_text = "" # Ensure it's empty on error
+        finally:
+            # 6. Restore the original clipboard content if the setting is enabled.
+            if restore:
+                try:
+                    copykitten.copy(original_clipboard)
+                    logging.debug("Clipboard content restored.")
+                except Exception as e:
+                    logging.error(f"Failed to restore clipboard: {e}")
+
+        return selected_text.strip()
 
     def insert_transcribed_text(self, text: str) -> None:
         """
