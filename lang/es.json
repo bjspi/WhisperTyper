@@ -113,5 +113,11 @@
   "about_dialog_title": "Acerca de WhisperTyper",
   "about_dialog_text": "WhisperTyper\n\nUna herramienta sencilla para transcribir su voz a texto y reformularlo utilizando varios modelos de IA.",
   "transformations_tab_description": "Aquí puede definir transformaciones de texto personalizadas. Cuando presione el atajo de teclado configurado con texto seleccionado, aparecerá un menú con sus leyendas definidas. Al hacer clic en un botón, se reformulará el texto seleccionado utilizando el prompt correspondiente. Esta función utiliza la 'Configuración de API compartida' de la pestaña 'Reformular'.",
-  "systray_double_click_copy_checkbox": "Habilitar doble clic en el icono de SysTray para copiar la transcripción"
+  "systray_double_click_copy_checkbox": "Habilitar doble clic en el icono de SysTray para copiar la transcripción",
+  "macos_accessibility_title": "Se requiere permiso de accesibilidad",
+  "macos_accessibility_text": "WhisperTyper necesita permiso para monitorear la entrada del teclado para los atajos globales. Vaya a Ajustes del Sistema > Privacidad y Seguridad > Accesibilidad y actívelo para esta aplicación. Es posible que la aplicación deba reiniciarse.",
+  "macos_microphone_title": "Se requiere permiso de micrófono",
+  "macos_microphone_text": "WhisperTyper necesita permiso para acceder a su micrófono para grabar. Vaya a Ajustes del Sistema > Privacidad y Seguridad > Micrófono y actívelo para esta aplicación. Es posible que la aplicación deba reiniciarse.",
+  "ok_button": "Aceptar",
+  "open_settings_button": "Abrir Ajustes"
 }

@@ -119,5 +119,11 @@
   "about_dialog_title": "Über WhisperTyper",
   "about_dialog_text": "WhisperTyper\n\nEin einfaches Werkzeug, um Ihre Stimme in Text zu transkribieren und ihn mit verschiedenen KI-Modellen umzuformulieren.",
   "transformations_tab_description": "Hier können Sie benutzerdefinierte Texttransformationen definieren. Wenn Sie den konfigurierten Hotkey bei markiertem Text drücken, erscheint ein Menü mit Ihren definierten Beschriftungen. Ein Klick auf eine Schaltfläche formuliert den markierten Text mit dem entsprechenden Prompt um. Diese Funktion verwendet die 'Gemeinsamen API-Einstellungen' aus dem 'Umformulieren'-Tab.",
-  "systray_double_click_copy_checkbox": "Doppelklick auf SysTray-Icon zum Kopieren des Transkripts aktivieren"
+  "systray_double_click_copy_checkbox": "Doppelklick auf SysTray-Icon zum Kopieren des Transkripts aktivieren",
+  "macos_accessibility_title": "Berechtigung für Bedienungshilfen erforderlich",
+  "macos_accessibility_text": "WhisperTyper benötigt die Berechtigung, Tastatureingaben für globale Hotkeys zu überwachen. Bitte gehen Sie zu Systemeinstellungen > Datenschutz & Sicherheit > Bedienungshilfen und aktivieren Sie sie für diese Anwendung. Die App muss möglicherweise neu gestartet werden.",
+  "macos_microphone_title": "Mikrofonberechtigung erforderlich",
+  "macos_microphone_text": "WhisperTyper benötigt die Berechtigung, auf Ihr Mikrofon für Aufnahmen zuzugreifen. Bitte gehen Sie zu Systemeinstellungen > Datenschutz & Sicherheit > Mikrofon und aktivieren Sie sie für diese Anwendung. Die App muss möglicherweise neu gestartet werden.",
+  "ok_button": "OK",
+  "open_settings_button": "Einstellungen öffnen"
 }

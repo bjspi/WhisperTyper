@@ -71,6 +71,36 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
   <img alt="PyQt" src="https://img.shields.io/badge/PyQt-41CD52?style=flat-square&logo=qt&logoColor=white" />
 </p>
 
+## Installation on MacOS
+
+1. Install PortAudio using Homebrew:
+    ```bash
+    brew install portaudio
+    ```
+2. Locate your default Python environment (it may be managed by pyenv or another tool). You can check with:
+    ```bash
+    which python3
+    ```
+3. Install the required Python packages - this will install the requirements for the Python version you found in step 2:
+    ```bash
+    pip install -r requirements.txt
+    ```
+4. Add your Python interpreter to the **Accessibility** permissions:
+    - Go to **System Settings** \> **Privacy & Security** \> **Accessibility**.
+    - Click the **+** button and add the path to your Python executable (from step 2).
+    - If you are using a virtual environment, add the path to the `python` executable inside your virtual environment's `bin` directory.
+    - Example path: `/Users/yourusername/.pyenv/versions/3.11.4/bin/python3`
+   ![macOS Accessibility](MacOS_accessibility.jpg)
+
+5. Start the application using your Python interpreter:
+    ```bash
+    python WhisterTyper.py
+    ```
+
+6. When using the hotkey for the first time, macOS will prompt for microphone access. Allow it.
+    - Example prompt:
+      ![macOS Audio Permission](MacOS_audio.jpg)
+
 ## Usage
 
 1.  Run the application. On Windows, you can use `pythonw.exe WhisterTyper.py` to run it without a console window.

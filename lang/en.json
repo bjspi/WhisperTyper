@@ -113,5 +113,11 @@
   "about_dialog_title": "About WhisperTyper",
   "about_dialog_text": "WhisperTyper\n\nA simple tool to transcribe your voice to text and rephrase it using various AI models.",
   "transformations_tab_description": "Here you can define custom text transformations. When you press the configured hotkey with text selected, a menu with your defined captions will appear. Clicking a button will rephrase the selected text using the corresponding prompt. This feature uses the 'Shared API Settings' from the 'Rephrasing' tab.",
-  "systray_double_click_copy_checkbox": "Enable double click on SysTray to copy transcript"
+  "systray_double_click_copy_checkbox": "Enable double click on SysTray to copy transcript",
+  "macos_accessibility_title": "Accessibility Permission Required",
+  "macos_accessibility_text": "WhisperTyper needs permission to monitor keyboard input for global hotkeys. Please go to System Settings > Privacy & Security > Accessibility and enable it for this application. The app might need to be restarted.",
+  "macos_microphone_title": "Microphone Permission Required",
+  "macos_microphone_text": "WhisperTyper needs permission to access your microphone for recording. Please go to System Settings > Privacy & Security > Microphone and enable it for this application. The app might need to be restarted.",
+  "ok_button": "OK",
+  "open_settings_button": "Open Settings"
 }
