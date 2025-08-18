@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel, QLineEd
                              QPushButton, QSystemTrayIcon, QMenu,
                              QMessageBox, QTextEdit, QStyle, QHBoxLayout, QComboBox, QCheckBox, QTabWidget, QScrollArea,
                              QFrame, QListWidget, QListWidgetItem, QSplitter, QAbstractItemView, QSlider, QGroupBox,
-                             QMenuBar)
+                             QMenuBar, QSpinBox)
 from PyQt6.QtCore import QObject, pyqtSignal, QThread, QTimer, Qt, QPoint, QUrl
 from PyQt6.QtGui import QIcon, QCloseEvent, QCursor, QAction, QDesktopServices
 from PyQt6 import uic
@@ -156,7 +156,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
     # New Rephrasing Settings
     "liveprompt_enabled": True,
-    "liveprompt_trigger_words": "prompt, liveprompt",
+    "liveprompt_trigger_words": "prompt, ",
+    "liveprompt_trigger_word_scan_depth": 5,
     "liveprompt_system_prompt": DEFAULT_LIVEPROMPT_SYSTEM_PROMPT.strip(),
     "rephrase_use_selection_context": True, # This is shared
     "generic_rephrase_enabled": False,
@@ -636,6 +637,8 @@ class WhisperTyperApp(QWidget):
     liveprompt_help_button: QPushButton
     liveprompt_trigger_label: QLabel
     liveprompt_trigger_words_input: QLineEdit
+    liveprompt_trigger_scan_depth_label: QLabel
+    liveprompt_trigger_scan_depth_input: QSpinBox
     liveprompt_system_prompt_label: QLabel
     liveprompt_system_prompt_input: QTextEdit
     rephrase_context_checkbox: QCheckBox
@@ -737,6 +740,10 @@ class WhisperTyperApp(QWidget):
         self.tray_icon.setToolTip(self.translator.tr("tray_ready_tooltip", hotkey=self.hotkey_str))
         logging.info(f"Application started. Press '{self.hotkey_str}' to start/stop recording.")
         self.show_tray_balloon(self.translator.tr("tray_started_message"), 2000)
+
+        # Initial state update for menu actions
+        self.update_logfile_menu_action()
+        self.update_play_last_recording_action()
 
     def _show_tooltip_slot(self, message: str, timeout_ms: int) -> None:
         """
@@ -891,11 +898,24 @@ class WhisperTyperApp(QWidget):
         # The menu bar is not part of the .ui file for a QWidget, so we create it manually.
         self.menu_bar = QMenuBar(self)
         self.main_layout.insertWidget(0, self.menu_bar) # Insert at the top of the main layout
+        # Move menu higher and to the left by adjusting layout margins
+        self.main_layout.setContentsMargins(0, 0, 0, 5)
 
         self.file_menu = self.menu_bar.addMenu("") # Text set in retranslate
         self.open_config_action = QAction("", self)
         self.open_config_action.triggered.connect(self.open_config_file)
         self.file_menu.addAction(self.open_config_action)
+
+        # Add "Open Log File" from systray
+        self.open_log_file_action = QAction("", self)
+        self.open_log_file_action.triggered.connect(self.open_log_file)
+        self.file_menu.addAction(self.open_log_file_action)
+
+        # Add "Play Last Recording" from systray
+        self.play_last_recording_action = QAction("", self)
+        self.play_last_recording_action.triggered.connect(self.play_latest_recording)
+        self.file_menu.addAction(self.play_last_recording_action)
+
         self.file_menu.addSeparator()
         self.exit_action = QAction("", self)
         self.exit_action.triggered.connect(self.quit_app)
@@ -954,6 +974,7 @@ class WhisperTyperApp(QWidget):
         self.liveprompt_enabled_checkbox.setChecked(self.config["liveprompt_enabled"])
         self.liveprompt_help_button.clicked.connect(self.show_liveprompt_help)
         self.liveprompt_trigger_words_input.setText(self.config["liveprompt_trigger_words"])
+        self.liveprompt_trigger_scan_depth_input.setValue(self.config["liveprompt_trigger_word_scan_depth"])
         self.liveprompt_system_prompt_input.setText(self.config["liveprompt_system_prompt"])
         self.rephrase_context_checkbox.setChecked(self.config["rephrase_use_selection_context"])
 
@@ -1080,6 +1101,8 @@ class WhisperTyperApp(QWidget):
         # "ok_button", "macos_github_instructions_button"
         self.file_menu.setTitle(self.translator.tr("menu_file"))
         self.open_config_action.setText(self.translator.tr("menu_file_open_config"))
+        self.open_log_file_action.setText(self.translator.tr("tray_log_action")) # Re-use systray translation
+        self.play_last_recording_action.setText(self.translator.tr("tray_play_action")) # Re-use systray translation
         self.exit_action.setText(self.translator.tr("menu_file_exit"))
         self.help_menu.setTitle(self.translator.tr("menu_help"))
         self.about_action.setText(self.translator.tr("menu_help_about"))
@@ -1154,6 +1177,12 @@ class WhisperTyperApp(QWidget):
         lp_trigger_tooltip = self.translator.tr("liveprompt_trigger_words_tooltip")
         self.liveprompt_trigger_label.setToolTip(lp_trigger_tooltip)
         self.liveprompt_trigger_words_input.setToolTip(lp_trigger_tooltip)
+
+        # NOTE TO USER: Please add "liveprompt_trigger_scan_depth_label" and "liveprompt_trigger_scan_depth_tooltip" to your language files.
+        self.liveprompt_trigger_scan_depth_label.setText(self.translator.tr("liveprompt_trigger_scan_depth_label"))
+        lp_scan_depth_tooltip = self.translator.tr("liveprompt_trigger_scan_depth_tooltip")
+        self.liveprompt_trigger_scan_depth_label.setToolTip(lp_scan_depth_tooltip)
+        self.liveprompt_trigger_scan_depth_input.setToolTip(lp_scan_depth_tooltip)
 
         self.liveprompt_system_prompt_label.setText(self.translator.tr("liveprompt_system_prompt_label"))
         lp_prompt_tooltip = self.translator.tr("liveprompt_system_prompt_tooltip")
@@ -1399,6 +1428,7 @@ class WhisperTyperApp(QWidget):
 
         # Initial state update for log file action
         self.update_logfile_menu_action()
+        self.update_play_last_recording_action()
 
     def on_tray_icon_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         """
@@ -1417,6 +1447,19 @@ class WhisperTyperApp(QWidget):
         if hasattr(self, 'open_log_action'):
             log_file_exists = os.path.isfile(LOG_FILE_PATH)
             self.open_log_action.setEnabled(log_file_exists)
+            if hasattr(self, 'open_log_file_action'): # Also update the main menu action
+                self.open_log_file_action.setEnabled(log_file_exists)
+
+    def update_play_last_recording_action(self) -> None:
+        """Updates the enabled/disabled state of the 'Play Last Recording' action."""
+        if hasattr(self, 'play_action'):
+            temp_dir = tempfile.gettempdir()
+            files = [f for f in os.listdir(temp_dir) if
+                     f.startswith("whispertyper_recording_") and f.endswith(".wav")]
+            exists = len(files) > 0
+            self.play_action.setEnabled(exists)
+            if hasattr(self, 'play_last_recording_action'): # Also update the main menu action
+                self.play_last_recording_action.setEnabled(exists)
 
     def open_log_file(self) -> None:
         """Opens the log file with the system's default application (text editor)."""
@@ -1753,6 +1796,7 @@ class WhisperTyperApp(QWidget):
             # Enable the play action in the tray menu now that a file exists
             if hasattr(self, 'play_action'):
                 self.play_action.setEnabled(True)
+            self.update_play_last_recording_action()
         except Exception as e:
             logging.error(f"Failed to write WAV file: {e}")
             self.show_tray_balloon("Failed to save audio.", 3000)
@@ -1888,10 +1932,14 @@ class WhisperTyperApp(QWidget):
         if self.config["liveprompt_enabled"]:
             trigger_words_str = self.config.get("liveprompt_trigger_words", "").lower()
             trigger_words = [word.strip() for word in trigger_words_str.split(',') if word.strip()]
+            scan_depth = self.config.get("liveprompt_trigger_word_scan_depth", 5)
 
             if trigger_words:
-                processed_lower = processed.lower()
-                if any(trigger in processed_lower for trigger in trigger_words):
+                # Check for trigger words only within the first 'scan_depth' words
+                words_to_check = processed.split()[:scan_depth]
+                text_to_check = " ".join(words_to_check).lower()
+
+                if any(trigger in text_to_check for trigger in trigger_words):
                     live_prompt_triggered = True
                     try:
                         self.show_tray_balloon(self.translator.tr("rephrasing_transcript_message", processed_text=processed), 3000)
@@ -2430,6 +2478,7 @@ class WhisperTyperApp(QWidget):
         # Rephrasing settings
         self.config["liveprompt_enabled"] = self.liveprompt_enabled_checkbox.isChecked()
         self.config["liveprompt_trigger_words"] = self.liveprompt_trigger_words_input.text()
+        self.config["liveprompt_trigger_word_scan_depth"] = self.liveprompt_trigger_scan_depth_input.value()
         self.config["liveprompt_system_prompt"] = self.liveprompt_system_prompt_input.toPlainText()
         self.config["rephrase_use_selection_context"] = self.rephrase_context_checkbox.isChecked()
         self.config["generic_rephrase_enabled"] = self.generic_rephrase_enabled_checkbox.isChecked()
@@ -2464,6 +2513,9 @@ class WhisperTyperApp(QWidget):
         self.show_tray_balloon(self.translator.tr("settings_saved_message", hotkey=self.hotkey_str), 2000)
         # Apply logging changes (level + file handler)
         self.apply_logging_configuration()
+        # Update menu item states
+        self.update_logfile_menu_action()
+        self.update_play_last_recording_action()
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """

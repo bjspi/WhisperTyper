@@ -308,7 +308,31 @@
            </widget>
           </item>
           <item>
-           <widget class="QLineEdit" name="liveprompt_trigger_words_input"/>
+           <layout class="QHBoxLayout" name="trigger_words_layout">
+            <item>
+             <widget class="QLineEdit" name="liveprompt_trigger_words_input"/>
+            </item>
+            <item>
+             <widget class="QLabel" name="liveprompt_trigger_scan_depth_label">
+              <property name="text">
+               <string>Scan first X words:</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="liveprompt_trigger_scan_depth_input">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>99</number>
+              </property>
+              <property name="value">
+               <number>5</number>
+              </property>
+             </widget>
+            </item>
+           </layout>
           </item>
           <item>
            <widget class="QLabel" name="liveprompt_system_prompt_label">
