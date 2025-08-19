@@ -1,5 +1,6 @@
 PyQt6
 pyaudio
 pynput
+pyautogui # Alternative to Pynput for Copy/Paste on MacOS
 requests
 copykitten

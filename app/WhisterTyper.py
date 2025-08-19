@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel, QLineEd
                              QPushButton, QSystemTrayIcon, QMenu,
                              QMessageBox, QTextEdit, QStyle, QHBoxLayout, QComboBox, QCheckBox, QTabWidget, QScrollArea,
                              QFrame, QListWidget, QListWidgetItem, QSplitter, QAbstractItemView, QSlider, QGroupBox,
-                             QMenuBar, QSpinBox)
+                             QMenuBar, QSpinBox, QSizePolicy)
 from PyQt6.QtCore import QObject, pyqtSignal, QThread, QTimer, Qt, QPoint, QUrl
 from PyQt6.QtGui import QIcon, QCloseEvent, QCursor, QAction, QDesktopServices
 from PyQt6 import uic
@@ -35,6 +35,7 @@ import math
 # API Request and Text Output
 import requests
 import copykitten
+import pyautogui # For alternative key simulation
 
 # Suppress verbose DEBUG messages from the pyuic module
 logging.getLogger('PyQt6.uic').setLevel(logging.WARNING)
@@ -135,7 +136,6 @@ os.makedirs(APP_DATA_DIR, exist_ok=True)
 
 CONFIG_FILE: str = os.path.join(APP_DATA_DIR, "config.json")
 LOG_FILE_PATH: str = os.path.join(APP_DATA_DIR, "WhisperTyper.log")
-DEFAULT_HOTKEY_STR: str = "<f9>"
 
 UI_LANG_FILES = [os.path.splitext(os.path.basename(x))[0] for x in glob.glob(os.path.join(os.path.dirname(__file__), 'lang', '*.json'))]
 
@@ -145,7 +145,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "model": DEFAULT_TRANSCRIPTION_MODEL,
     "transcription_temperature": 0.0,
     "prompt": DEFAULT_TRANSCRIPTION_PROMPT.strip(),
-    "hotkey": DEFAULT_HOTKEY_STR,
+    "hotkey": "<ctrl>+x" if is_MACOS else "<caps_lock>+<ctrl_l>",
     "input_language": SYS_LANG if SYS_LANG in LANGUAGES.values() else "en",  # Default to system language or 'en'
     "ui_language": SYS_LANG if SYS_LANG in UI_LANG_FILES else "en",  # Default to system language or 'en'
     "restore_clipboard": True,
@@ -153,6 +153,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "file_logging": True,
     "gain_db": 10,
     "systray_double_click_copy": True, # New option
+    "alt_clipboard_lib": is_MACOS, # Use alternative on macOS by default
 
     # New Rephrasing Settings
     "liveprompt_enabled": True,
@@ -168,7 +169,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "rephrasing_model": DEFAULT_REPHRASING_MODEL,
     "rephrasing_temperature": 0.7,
     "post_rephrasing_entries": [],
-    "post_rephrase_hotkey": "",
+    "post_rephrase_hotkey": "<ctrl>+c" if is_MACOS else "<f9>",
     # macOS Permissions
     "macos_accessibility_info_shown": False,
     "macos_microphone_info_shown": False
@@ -596,6 +597,35 @@ class WhisperTyperApp(QWidget):
     Main application class for the WhisperTyper.
     Manages the GUI, system tray icon, audio recording, and hotkey listener.
     """
+    # --- Stylesheets for dynamic group box border ---
+    NORMAL_GROUP_STYLE = """
+        QGroupBox#{group_name} {{
+            border: 1px solid #444;
+            border-radius: 5px;
+            margin-top: 1ex;
+        }}
+        QGroupBox#{group_name}::title {{
+            subcontrol-origin: margin;
+            subcontrol-position: top left;
+            padding: 0 3px;
+            border-radius: 3px;
+        }}
+    """
+
+    HIGHLIGHT_GROUP_STYLE = """
+        QGroupBox#{group_name} {{
+            border: 2px solid red;
+            border-radius: 5px;
+            margin-top: 1ex;
+        }}
+        QGroupBox#{group_name}::title {{
+            subcontrol-origin: margin;
+            subcontrol-position: top left;
+            padding: 0 3px;
+            border-radius: 3px;
+        }}
+    """
+
     # --- UI Element Type Hints (for PyCharm/static analysis) ---
     # This helps the IDE understand the types of widgets loaded from the .ui file,
     # resolving warnings like "Cannot find reference 'connect' in 'pyqtSignal'".
@@ -656,6 +686,7 @@ class WhisperTyperApp(QWidget):
     rephrasing_temp_label_title: QLabel
     rephrasing_temp_slider: QSlider
     rephrasing_temp_label: QLabel
+    test_rephrasing_api_button: QPushButton
     transformations_tab_description_label: QLabel
     transformations_info_label: QLabel
     splitter: QSplitter
@@ -677,6 +708,7 @@ class WhisperTyperApp(QWidget):
     debug_logging_checkbox: QCheckBox
     file_logging_checkbox: QCheckBox
     systray_double_click_copy_checkbox: QCheckBox # New checkbox
+    alt_clipboard_lib_checkbox: QCheckBox
     play_g_button: QPushButton
 
     # CORRECTED: Signal for thread-safe GUI updates
@@ -744,6 +776,8 @@ class WhisperTyperApp(QWidget):
         # Initial state update for menu actions
         self.update_logfile_menu_action()
         self.update_play_last_recording_action()
+        self._update_rephrase_api_group_style() # Set initial style
+        self._update_transcription_api_group_style() # Set initial style
 
     def _show_tooltip_slot(self, message: str, timeout_ms: int) -> None:
         """
@@ -894,6 +928,14 @@ class WhisperTyperApp(QWidget):
         ui_path = resource_path("resources", "main_window.ui")
         uic.loadUi(ui_path, self)
 
+        # --- Tab 3 (Transformations) Layout Adjustments ---
+        # Set the labels to take up minimum vertical space
+        self.transformations_tab_description_label.setSizePolicy(self.transformations_tab_description_label.sizePolicy().horizontalPolicy(), QSizePolicy.Policy.Maximum)
+        self.transformations_info_label.setSizePolicy(self.transformations_info_label.sizePolicy().horizontalPolicy(), QSizePolicy.Policy.Maximum)
+        # Ensure the splitter takes up all remaining space
+        self.splitter.setSizePolicy(self.splitter.sizePolicy().horizontalPolicy(), QSizePolicy.Policy.Expanding)
+
+
         # --- Menu Bar Setup ---
         # The menu bar is not part of the .ui file for a QWidget, so we create it manually.
         self.menu_bar = QMenuBar(self)
@@ -939,10 +981,15 @@ class WhisperTyperApp(QWidget):
         self.groq_button.clicked.connect(
             lambda: self.api_endpoint_input.setText("https://api.groq.com/openai/v1/audio/transcriptions"))
 
+        # Connect for live validation
+        self.api_key_input.textChanged.connect(self._update_transcription_api_group_style)
+        self.api_endpoint_input.textChanged.connect(self._update_transcription_api_group_style)
+
         self.model_dropdown.addItems(TRANSCRIPTION_MODEL_OPTIONS)
         model_value = self.config["model"]
         if self.model_dropdown.findText(model_value) != -1:
             self.model_dropdown.setCurrentText(model_value)
+            self.model_input.setVisible(False)
         else:
             self.model_dropdown.setCurrentText("Custom")
             self.model_input.setText(model_value)
@@ -958,6 +1005,12 @@ class WhisperTyperApp(QWidget):
 
         self.hotkey_display.setText(self.hotkey_str)
         self.set_hotkey_button.clicked.connect(self.start_hotkey_capture)
+        if is_MACOS:
+            self.set_hotkey_button.setEnabled(False)
+            self.set_hotkey_button.clicked.disconnect()
+            self.set_hotkey_button.clicked.connect(self._show_macos_hotkey_warning)
+            hotkey_tooltip_text = self.translator.tr("macos_hotkey_tooltip")
+            self.hotkey_display.setToolTip(hotkey_tooltip_text)
 
         self.lang_code_to_name = {v: k for k, v in LANGUAGES.items()}
         self.language_input.addItems(LANGUAGES.keys())
@@ -981,14 +1034,26 @@ class WhisperTyperApp(QWidget):
         self.generic_rephrase_enabled_checkbox.setChecked(self.config["generic_rephrase_enabled"])
         self.generic_rephrase_prompt_input.setText(self.config["generic_rephrase_prompt"])
 
+        # Connect checkboxes to update the API group styling
+        self.liveprompt_enabled_checkbox.stateChanged.connect(self._update_rephrase_api_group_style)
+        self.generic_rephrase_enabled_checkbox.stateChanged.connect(self._update_rephrase_api_group_style)
+
         self.rephrasing_api_url_input.setText(self.config["rephrasing_api_url"])
         self.rephrasing_api_key_input.setText(self.config["rephrasing_api_key"])
         self.rephrasing_model_input.setText(self.config["rephrasing_model"])
+
+        # Connect text inputs to update the API group styling
+        self.rephrasing_api_url_input.textChanged.connect(self._update_rephrase_api_group_style)
+        self.rephrasing_api_key_input.textChanged.connect(self._update_rephrase_api_group_style)
+        self.rephrasing_model_input.textChanged.connect(self._update_rephrase_api_group_style)
 
         self.rephrasing_temp_slider.setRange(0, 100)
         self.rephrasing_temp_slider.setValue(int(self.config["rephrasing_temperature"] * 100))
         self.rephrasing_temp_label.setText(f"{self.config['rephrasing_temperature']:.2f}")
         self.rephrasing_temp_slider.valueChanged.connect(self._update_rephrasing_temp_label)
+
+        # Connect the new test button
+        self.test_rephrasing_api_button.clicked.connect(self._on_test_rephrasing_api_clicked)
 
         # Transformations Tab Setup
         self.max_post_rephrasing_entries = 10
@@ -1032,8 +1097,17 @@ class WhisperTyperApp(QWidget):
         if self.post_rp_list.count() > 0:
             self.post_rp_list.setCurrentRow(0)
 
+        # Connect changes in the main API key to the rephrase group style check
+        self.api_key_input.textChanged.connect(self._update_rephrase_api_group_style)
+
         self.pr_hotkey_display.setText(self.config["post_rephrase_hotkey"])
         self.set_pr_hotkey_button.clicked.connect(self.start_hotkey_capture)
+        if is_MACOS:
+            self.set_pr_hotkey_button.setEnabled(False)
+            self.set_pr_hotkey_button.clicked.disconnect()
+            self.set_pr_hotkey_button.clicked.connect(self._show_macos_hotkey_warning)
+            hotkey_tooltip_text = self.translator.tr("macos_hotkey_tooltip")
+            self.pr_hotkey_display.setToolTip(hotkey_tooltip_text)
 
         # General Tab Connections
         self.ui_language_selector.addItems(["English", "Deutsch", "Español", "Français"])
@@ -1046,6 +1120,7 @@ class WhisperTyperApp(QWidget):
         self.debug_logging_checkbox.setChecked(self.config["debug_logging"])
         self.file_logging_checkbox.setChecked(self.config["file_logging"])
         self.systray_double_click_copy_checkbox.setChecked(self.config["systray_double_click_copy"])
+        self.alt_clipboard_lib_checkbox.setChecked(self.config["alt_clipboard_lib"])
 
         self.play_g_button.clicked.connect(self.play_latest_recording)
 
@@ -1217,6 +1292,10 @@ class WhisperTyperApp(QWidget):
         self.rephrasing_temp_label_title.setToolTip(temp_tooltip)
         self.rephrasing_temp_slider.setToolTip(temp_tooltip)
 
+        # Test API Button
+        self.test_rephrasing_api_button.setText(self.translator.tr("test_api_button"))
+        self.test_rephrasing_api_button.setToolTip(self.translator.tr("test_api_button_tooltip"))
+
         # Transformations Tab
         # NOTE TO USER: Please add the following key "transformations_tab_description" to your language files (de.json, en.json, etc.)
         # Example for en.json:
@@ -1246,6 +1325,8 @@ class WhisperTyperApp(QWidget):
         self.systray_double_click_copy_checkbox.setText(self.translator.tr("systray_double_click_copy_checkbox"))
         self.play_g_button.setText(self.translator.tr("play_last_recording_button"))
         self.play_g_button.setToolTip(self.translator.tr("play_last_recording_tooltip"))
+        self.alt_clipboard_lib_checkbox.setText(self.translator.tr("alt_clipboard_lib_checkbox"))
+        self.alt_clipboard_lib_checkbox.setToolTip(self.translator.tr("alt_clipboard_lib_tooltip"))
 
         # Save Button
         self.save_button.setText(self.translator.tr("save_button"))
@@ -1267,6 +1348,14 @@ class WhisperTyperApp(QWidget):
         self.config["ui_language"] = lang_code
         self.retranslate_ui()
 
+    def _show_macos_hotkey_warning(self) -> None:
+        """Shows a message box explaining manual hotkey entry on macOS."""
+        QMessageBox.information(
+            self,
+            self.translator.tr("macos_hotkey_title"),
+            self.translator.tr("macos_hotkey_text")
+        )
+
     def _update_transcription_temp_label(self, value: int) -> None:
         """Updates the label for the transcription temperature slider."""
         self.transcription_temp_label.setText(f"{value / 100.0:.2f}")
@@ -1274,6 +1363,91 @@ class WhisperTyperApp(QWidget):
     def _update_rephrasing_temp_label(self, value: int) -> None:
         """Updates the label for the rephrasing temperature slider."""
         self.rephrasing_temp_label.setText(f"{value / 100.0:.2f}")
+
+    def _on_test_rephrasing_api_clicked(self) -> None:
+        """Tests the rephrasing API settings by sending a simple request."""
+        api_url = self.rephrasing_api_url_input.text().strip()
+        api_key = self.rephrasing_api_key_input.text().strip() or self.api_key_input.text().strip()
+        model = self.rephrasing_model_input.text().strip()
+
+        if not all([api_url, api_key, model]):
+            QMessageBox.warning(
+                self,
+                self.translator.tr("api_test_fail_title"),
+                self.translator.tr("rephrase_api_settings_missing")
+            )
+            return
+
+        # Disable button to prevent multiple clicks
+        self.test_rephrasing_api_button.setEnabled(False)
+        self.test_rephrasing_api_button.setText(self.translator.tr("api_test_testing_button"))
+        QApplication.processEvents() # Update UI
+
+        try:
+            response_text = self.rephrase_text_with_gpt(
+                system_prompt="You are a test assistant.",
+                user_prompt="Reply with only the word 'Success'.",
+                api_url=api_url,
+                api_key=api_key,
+                model=model,
+                temperature=0.0
+            )
+            if "success" in response_text.lower():
+                QMessageBox.information(
+                    self,
+                    self.translator.tr("api_test_success_title"),
+                    self.translator.tr("api_test_success_text", response=response_text)
+                )
+            else:
+                QMessageBox.warning(
+                    self,
+                    self.translator.tr("api_test_fail_title"),
+                    self.translator.tr("api_test_unexpected_response_text", response=response_text)
+                )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                self.translator.tr("api_test_fail_title"),
+                self.translator.tr("api_test_exception_text", error=str(e))
+            )
+        finally:
+            # Re-enable button
+            self.test_rephrasing_api_button.setEnabled(True)
+            self.test_rephrasing_api_button.setText(self.translator.tr("test_api_button"))
+
+    def _update_transcription_api_group_style(self) -> None:
+        """Highlights the transcription API groupbox if its settings are incomplete."""
+        url_missing = not self.api_endpoint_input.text().strip()
+        key_missing = not self.api_key_input.text().strip()
+        settings_incomplete = url_missing or key_missing
+
+        if settings_incomplete:
+            self.transcription_api_group.setStyleSheet(
+                self.HIGHLIGHT_GROUP_STYLE.format(group_name="transcription_api_group")
+            )
+        else:
+            self.transcription_api_group.setStyleSheet(
+                self.NORMAL_GROUP_STYLE.format(group_name="transcription_api_group")
+            )
+
+    def _update_rephrase_api_group_style(self) -> None:
+        """Highlights the shared API groupbox if its settings are incomplete by directly setting the stylesheet."""
+        # Check if any of the required fields are empty.
+        # This validation is for the UI highlight only and is intentionally strict.
+        url_missing = not self.rephrasing_api_url_input.text().strip()
+        # Per user request, this check MUST NOT use the fallback key from tab 1.
+        # The rephrasing key field must be filled on its own.
+        key_missing = not self.rephrasing_api_key_input.text().strip()
+        model_missing = not self.rephrasing_model_input.text().strip()
+
+        settings_incomplete = url_missing or key_missing or model_missing
+
+        # Directly set the stylesheet for the group box. This is more reliable
+        # than using dynamic properties and repolishing.
+        if settings_incomplete:
+            self.shared_api_group.setStyleSheet(self.HIGHLIGHT_GROUP_STYLE.format(group_name="shared_api_group"))
+        else:
+            self.shared_api_group.setStyleSheet(self.NORMAL_GROUP_STYLE.format(group_name="shared_api_group"))
 
     def start_hotkey_capture(self) -> None:
         """Initiates the process of listening for a new hotkey."""
@@ -1408,6 +1582,10 @@ class WhisperTyperApp(QWidget):
         self.open_log_action = tray_menu.addAction(self.translator.tr("tray_log_action"))
         self.open_log_action.triggered.connect(self.open_log_file)
         # Will be enabled/disabled based on log file existence
+
+        # Add GitHub link
+        github_action = tray_menu.addAction(self.translator.tr("menu_help_github"))
+        github_action.triggered.connect(self.open_github_link)
 
         # Create "Cancel Recording" action
         self.cancel_action = QAction(self.translator.tr("tray_cancel_action"), self)
@@ -1583,7 +1761,8 @@ class WhisperTyperApp(QWidget):
         """Iterate through cached sounds and ensure an output stream is open for each format."""
         #logging.debug("Pre-opening audio streams for cached sounds...")
         for sound_data in self.sound_cache.values():
-            sampwidth, channels, rate, _ = sound_data
+            # Unpacking the sound data tuple with 4 entries... so needed is not needed but sound_data has 4 entries...
+            sampwidth, channels, rate, needed = sound_data
             try:
                 # This will get an existing stream or create and cache a new one
                 self._get_output_stream(sampwidth, channels, rate)
@@ -2063,14 +2242,29 @@ class WhisperTyperApp(QWidget):
     def _simulate_key_combination(self, char: str) -> None:
         """
         Simulates pressing a key combination like Ctrl+C or Cmd+C.
+        Uses either pynput or pyautogui based on user configuration.
 
         Args:
             char (str): The character key to press (e.g., 'c', 'v').
         """
-        modifier = keyboard.Key.cmd if is_MACOS else keyboard.Key.ctrl
-        with self.keyboard_controller.pressed(modifier):
-            self.keyboard_controller.press(char)
-            self.keyboard_controller.release(char)
+        use_alt_lib = self.config.get("alt_clipboard_lib", False)
+
+        if use_alt_lib:
+            logging.debug("Using pyautogui for key simulation.")
+            modifier = 'command' if is_MACOS else 'ctrl'
+            try:
+                pyautogui.hotkey(modifier, char)
+            except Exception as e:
+                logging.error(f"pyautogui key simulation failed: {e}")
+        else:
+            logging.debug("Using pynput for key simulation.")
+            modifier = keyboard.Key.cmd if is_MACOS else keyboard.Key.ctrl
+            try:
+                with self.keyboard_controller.pressed(modifier):
+                    self.keyboard_controller.press(char)
+                    self.keyboard_controller.release(char)
+            except Exception as e:
+                logging.error(f"pynput key simulation failed: {e}")
 
     def get_selected_text(self) -> str:
         """
@@ -2170,6 +2364,12 @@ class WhisperTyperApp(QWidget):
 
     def trigger_post_rephrase_window(self) -> None:
         """Checks for selected text and shows the floating button window if text is present."""
+        # Check for API settings before proceeding
+        if not self.config.get("rephrasing_api_url") or not self.config.get("rephrasing_api_key") or not self.config.get("rephrasing_model"):
+            logging.warning("Post-rephrase hotkey pressed, but API settings are missing.")
+            self.show_tray_balloon(self.translator.tr("rephrase_api_settings_missing"), 3000)
+            return
+
         selected_text = self.get_selected_text()
         if not selected_text:
             logging.info("Post-rephrase hotkey pressed, but no text was selected.")
@@ -2232,8 +2432,15 @@ class WhisperTyperApp(QWidget):
         Args:
             rephrased_text (str): The text returned by the AI.
         """
-        self.insert_transcribed_text(rephrased_text)
-        logging.info("Successfully inserted rephrased text.")
+        # On macOS, pasting can be unreliable if the app loses focus.
+        # It's safer to copy to clipboard and notify the user.
+        if is_MACOS:
+            copykitten.copy(rephrased_text)
+            self.show_tray_balloon(self.translator.tr("rephrasing_finished_macos_message"), 3500)
+            logging.info(f"Rephrased text placed on clipboard for macOS user: {rephrased_text}")
+        else:
+            self.insert_transcribed_text(rephrased_text)
+            logging.info("Successfully inserted rephrased text.")
 
     def on_rephrasing_error(self, error_message: str) -> None:
         """
@@ -2294,14 +2501,15 @@ class WhisperTyperApp(QWidget):
         model_lc = model_raw.strip().lower()
         api_key = self.api_key_input.text().strip()
         api_key_lc = api_key.lower()
+        is_custom_model = self.model_dropdown.currentText() == "Custom"
 
         if 'openai.com' in endpoint:
-            if 'openai' not in model_lc:
+            if not is_custom_model and 'openai' not in model_lc:
                 warnings.append("API endpoint contains 'openai', but the selected model does not contain 'openai'.")
             if not api_key_lc.startswith('sk-'):
                 warnings.append("OpenAI API Key should start with 'sk-'.")
         if 'groq' in endpoint:
-            if 'groq' not in model_lc:
+            if not is_custom_model and 'groq' not in model_lc:
                 warnings.append("API endpoint contains 'groq', but the selected model does not contain 'groq'.")
             if not api_key_lc.startswith('gsk'):
                 warnings.append("Groq API Key should start with 'gsk'.")
@@ -2411,6 +2619,7 @@ class WhisperTyperApp(QWidget):
         # Re-populate the visual list and select the new item
         self._load_post_rp_entries_into_list()
         self.post_rp_list.setCurrentRow(len(self.post_rephrasing_data) - 1)
+        self._update_rephrase_api_group_style() # Update style after adding
 
     def _on_post_rp_remove_clicked(self) -> None:
         """Removes the currently selected entry."""
@@ -2432,6 +2641,7 @@ class WhisperTyperApp(QWidget):
             else:
                 # The list is now empty, clear the editor
                 self._load_pr_editor_for_row(-1)
+            self._update_rephrase_api_group_style() # Update style after removing
 
     def _update_post_rp_ui_state(self) -> None:
         """Enables/disables add/remove buttons based on item count."""
@@ -2474,6 +2684,8 @@ class WhisperTyperApp(QWidget):
         self.config["file_logging"] = self.file_logging_checkbox.isChecked()
         # Systray double-click
         self.config["systray_double_click_copy"] = self.systray_double_click_copy_checkbox.isChecked()
+        # Alternative clipboard lib
+        self.config["alt_clipboard_lib"] = self.alt_clipboard_lib_checkbox.isChecked()
 
         # Rephrasing settings
         self.config["liveprompt_enabled"] = self.liveprompt_enabled_checkbox.isChecked()
@@ -2506,8 +2718,18 @@ class WhisperTyperApp(QWidget):
             self.config["hotkey"] = self.hotkey_str
             self.post_rephrase_hotkey_str = pending_pr_hotkey_str
             self.config["post_rephrase_hotkey"] = self.post_rephrase_hotkey_str
-            # Re-initialize the listener with the new key set
-            self.init_manual_hotkey_listener()
+
+            if is_MACOS:
+                # On macOS, dynamically restarting the listener is problematic due to accessibility permissions.
+                # It's safer to ask the user to restart the app.
+                QMessageBox.information(
+                    self,
+                    self.translator.tr("macos_hotkey_restart_title"),
+                    self.translator.tr("macos_hotkey_restart_text")
+                )
+            else:
+                # On other systems, we can safely re-initialize the listener.
+                self.init_manual_hotkey_listener()
 
         self.save_config()
         self.show_tray_balloon(self.translator.tr("settings_saved_message", hotkey=self.hotkey_str), 2000)
@@ -2599,4 +2821,3 @@ def run_app():
     app.setQuitOnLastWindowClosed(False)
     transcriber_app = WhisperTyperApp()
     sys.exit(app.exec())
-

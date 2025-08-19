@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>640</width>
+    <width>700</width>
     <height>750</height>
    </rect>
   </property>
@@ -146,7 +146,7 @@
              <item>
               <widget class="QLineEdit" name="hotkey_display">
                <property name="readOnly">
-                <bool>true</bool>
+                <bool>false</bool>
                </property>
               </widget>
              </item>
@@ -242,6 +242,93 @@
        <property name="spacing">
         <number>10</number>
        </property>
+       <item>
+        <widget class="QGroupBox" name="shared_api_group">
+         <property name="title">
+          <string>Shared API Settings (for all rephrasing features)</string>
+         </property>
+         <layout class="QVBoxLayout" name="shared_api_layout">
+          <item>
+           <layout class="QHBoxLayout" name="rephrasing_url_model_layout">
+            <item>
+             <layout class="QVBoxLayout" name="rephrasing_url_v_layout">
+              <item>
+               <widget class="QLabel" name="rephrasing_api_url_label">
+                <property name="text">
+                 <string>API URL:</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLineEdit" name="rephrasing_api_url_input"/>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <layout class="QVBoxLayout" name="rephrasing_model_v_layout">
+              <item>
+               <widget class="QLabel" name="rephrasing_model_label">
+                <property name="text">
+                 <string>Model:</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLineEdit" name="rephrasing_model_input"/>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QLabel" name="rephrasing_api_key_label">
+            <property name="text">
+             <string>API Key (optional, uses transcription key if empty):</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="rephrasing_api_key_input">
+            <property name="echoMode">
+             <enum>QLineEdit::Password</enum>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="rephrasing_temp_label_title">
+            <property name="text">
+             <string>Temperature:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="rephrasing_temp_layout">
+            <item>
+             <widget class="QSlider" name="rephrasing_temp_slider">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="rephrasing_temp_label">
+              <property name="text">
+               <string>0.70</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QPushButton" name="test_rephrasing_api_button">
+            <property name="text">
+             <string>Test API</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
        <item>
         <widget class="QGroupBox" name="liveprompt_group">
          <property name="styleSheet">
@@ -396,89 +483,6 @@
         </widget>
        </item>
        <item>
-        <widget class="QGroupBox" name="shared_api_group">
-         <property name="styleSheet">
-          <string>
-            QGroupBox {
-                border: 1px solid #444;
-                border-radius: 5px;
-                margin-top: 1ex;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 0 3px;
-                border-radius: 3px;
-            }
-        </string>
-         </property>
-         <property name="title">
-          <string>Shared API Settings (for all rephrasing features)</string>
-         </property>
-         <layout class="QVBoxLayout" name="shared_api_layout">
-          <item>
-           <widget class="QLabel" name="rephrasing_api_url_label">
-            <property name="text">
-             <string>API URL:</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QLineEdit" name="rephrasing_api_url_input"/>
-          </item>
-          <item>
-           <widget class="QLabel" name="rephrasing_api_key_label">
-            <property name="text">
-             <string>API Key (optional, uses transcription key if empty):</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QLineEdit" name="rephrasing_api_key_input">
-            <property name="echoMode">
-             <enum>QLineEdit::Password</enum>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QLabel" name="rephrasing_model_label">
-            <property name="text">
-             <string>Model:</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QLineEdit" name="rephrasing_model_input"/>
-          </item>
-          <item>
-           <widget class="QLabel" name="rephrasing_temp_label_title">
-            <property name="text">
-             <string>Temperature:</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <layout class="QHBoxLayout" name="rephrasing_temp_layout">
-            <item>
-             <widget class="QSlider" name="rephrasing_temp_slider">
-              <property name="orientation">
-               <enum>Qt::Horizontal</enum>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLabel" name="rephrasing_temp_label">
-              <property name="text">
-               <string>0.70</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </item>
-         </layout>
-        </widget>
-       </item>
-       <item>
         <spacer name="verticalSpacer_2">
          <property name="orientation">
           <enum>Qt::Vertical</enum>
@@ -500,6 +504,12 @@
       <layout class="QVBoxLayout" name="pr_layout">
        <item>
         <widget class="QLabel" name="transformations_tab_description_label">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
          <property name="text">
           <string>Description Text</string>
          </property>
@@ -513,6 +523,12 @@
        </item>
        <item>
         <widget class="QLabel" name="transformations_info_label">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
          <property name="text">
           <string>Info Text</string>
          </property>
@@ -523,6 +539,12 @@
        </item>
        <item>
         <widget class="QSplitter" name="splitter">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
          <property name="orientation">
           <enum>Qt::Horizontal</enum>
          </property>
@@ -602,7 +624,7 @@
             <item>
              <widget class="QLineEdit" name="pr_hotkey_display">
               <property name="readOnly">
-               <bool>true</bool>
+               <bool>false</bool>
               </property>
              </widget>
             </item>
@@ -660,6 +682,13 @@
         <widget class="QCheckBox" name="systray_double_click_copy_checkbox">
          <property name="text">
           <string>Enable double click on SysTray to copy transcript</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="alt_clipboard_lib_checkbox">
+         <property name="text">
+          <string>Use alternative library for Copy/Paste (Better compatibility on MacOS)</string>
          </property>
         </widget>
        </item>

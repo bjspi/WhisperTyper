@@ -8,3 +8,4 @@
 - **UI Definition:** The main window layout is defined in `app/resources/main_window.ui` and loaded at runtime. Do not rebuild the UI manually in Python code.
 - **Entry Point:** The application is launched from `run.py` in the project root.
 - **File Structure:** The main application logic resides in `app/WhisterTyper.py`. Resource files (icons, sounds, UI) are located in subdirectories within the `app` folder.
+- **Preserve `run_app`:** The `run_app` function in `WhisterTyper.py` must be preserved exactly as is.

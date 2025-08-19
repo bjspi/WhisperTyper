@@ -28,7 +28,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 - 🚀 **Live Prompting**: Turn your voice into AI commands on the fly within any text field.
 - ⌨️ **Clipboard Safe**: Doesnt hijack your clipboard, restores your previous clipboard contents after pasting
 - 🔧 **Custom APIs**: Supports OpenAI, Groq, and any Whisper-compatible API
-- ✍️ **Advanced Rephrasing**: Go beyond simple transcription with powerful and preset text transformations.
+- ✍️ **Preset-based Rephrasing**: Go beyond simple transcription with custom preset-based AI text-transformations.
 
 <p align="center">
     <img src="screenshots/screenshot.jpg" alt="App Screenshot" width="80%" />
@@ -63,15 +63,25 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
     ```bash
     pip install -r requirements.txt
     ```
-    > **Note for macOS users**: `PyAudio` has a dependency on `PortAudio`. If you encounter installation errors, please install it first using [Homebrew](https://brew.sh/):
-    > `brew install portaudio`. See full [macOS installation instructions](#installation-on-macos) below.
+    > **Note for macOS users**: See full [macOS installation instructions](#installation-on-macos) below.
     
-3.  Run the application, for headless operation on Windows, use pythonw instead of python:
+3.  Run the application, for headless operation on Windows, use `pythonw` instead of python:
     ```bash
     python run.py
+    # or
+    pythonw run.py
     ```
 
 ## Installation on MacOS
+
+This tool is tested to nearly 100% work on macOS, but it requires some additional steps to ensure proper functionality, especially for microphone access and audio input. 
+As is, the UI-button to change the Hotkey does not work, i.e. instead of setting a new Hotkey from the GUI, you'd have to either manually set them 
+in the config.json OR by editing the Hotkey input fields directly. After changing the Hotkeys, you'll have to restart the application just once to re-init the Listeners.
+Anyway, you'll have to do this just once whenever you want to change the Hotkeys.
+
+When accessing the selected text from the active Application to use it for the rephrasing transformation feature, the focus under MacOS gets lost, so automatically 
+pasting and thereby overwriting the selected text does not work. You'll have to manually paste the rephrased text into the active application after the 
+rephrasing transformation is done.
 
 1. Install PortAudio using Homebrew:
     ```bash
@@ -85,12 +95,14 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
     ```bash
     pip install -r requirements.txt
     ```
-4. Add your Python interpreter to the **Accessibility** permissions:
+4. Add your Python interpreter and Terminal to the **Accessibility** permissions as well as the microphone permissions:
     - Go to **System Settings** \> **Privacy & Security** \> **Accessibility**.
     - Click the **+** button and add the path to your Python executable (from step 2).
     - If you are using a virtual environment, add the path to the `python` executable inside your virtual environment's `bin` directory.
     - Example path: `/Users/yourusername/.pyenv/versions/3.11.4/bin/python3`
-   ![macOS Accessibility](screenshots/MacOS_accessibility.jpg)
+   <p align="center">
+        <img src="screenshots/MacOS_accessibility.jpg" alt="App Screenshot" width="80%" />
+    </p>
 
 5. Start the application using your Python interpreter:
     ```bash
@@ -98,7 +110,10 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
     ```
 
 6. When using the hotkey for the first time, macOS will prompt for microphone access. Allow it.
-![macOS Audio Permission](screenshots/MacOS_audio.jpg)
+
+<p align="center">
+    <img src="screenshots/MacOS_audio.jpg" alt="App Screenshot" width="60%" />
+</p>
 
 ## Tech Stack
 <p align="center">
