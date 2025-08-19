@@ -19,12 +19,13 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel, QLineEd
                              QFrame, QListWidget, QListWidgetItem, QSplitter, QAbstractItemView, QSlider, QGroupBox,
                              QMenuBar, QSpinBox, QSizePolicy)
 from PyQt6.QtCore import QObject, pyqtSignal, QThread, QTimer, Qt, QPoint, QUrl
-from PyQt6.QtGui import QIcon, QCloseEvent, QCursor, QAction, QDesktopServices
+from PyQt6.QtGui import QIcon, QCloseEvent, QCursor, QAction, QDesktopServices, QKeyEvent
 from PyQt6 import uic
 from functools import partial
 
-# Global Hotkey
+# Global Hotkey // and alternative clipboard library
 from pynput import keyboard
+import pyautogui
 
 # Audio Recording & Playback with PyAudio (replaces sounddevice/numpy/scipy/pygame)
 import pyaudio
@@ -35,7 +36,6 @@ import math
 # API Request and Text Output
 import requests
 import copykitten
-import pyautogui # For alternative key simulation
 
 # Suppress verbose DEBUG messages from the pyuic module
 logging.getLogger('PyQt6.uic').setLevel(logging.WARNING)
@@ -342,84 +342,83 @@ class MouseFollowerTooltip(QWidget):
         MouseFollowerTooltip(message, timeout_ms)
 
 class FloatingButtonWindow(QWidget):
-    """A frameless window with buttons that appears near the mouse."""
+    """Cross‑platform floating button palette near the cursor."""
     _instance: Optional['FloatingButtonWindow'] = None
 
     def __init__(self, buttons: List[Dict[str, str]], selected_text: str, on_button_click_callback):
-        """
-        Initializes the floating button window.
-
-        Args:
-            buttons (List[Dict[str, str]]): A list of dicts, each with 'caption' and 'text'.
-            selected_text (str): The text that was selected when the window was triggered.
-            on_button_click_callback (callable): Function to call when a button is clicked.
-        """
-        super().__init__()
+        # Close previous instance
         if FloatingButtonWindow._instance:
             FloatingButtonWindow._instance.close()
+        super().__init__()
         FloatingButtonWindow._instance = self
 
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        # Platform specific flags:
+        # macOS: Dialog improves stacking; avoid focus stealing issues; stays on top.
+        # Windows/Linux: Tool avoids taskbar entry; Frameless + StayOnTop; show without activation.
+        if is_MACOS:
+            flags = (Qt.WindowType.FramelessWindowHint |
+                     Qt.WindowType.Dialog |
+                     Qt.WindowType.WindowStaysOnTopHint)
+        else:
+            flags = (Qt.WindowType.FramelessWindowHint |
+                     Qt.WindowType.Tool |
+                     Qt.WindowType.WindowStaysOnTopHint)
+        self.setWindowFlags(flags)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(3)
+        # Determine if we auto-close on focus loss (avoid on macOS due to premature closes).
+        self._close_on_focus_out = not is_MACOS
+
         self.setStyleSheet("""
-            FloatingButtonWindow {
-                background-color: rgba(30, 30, 30, 0.85);
-                border: 1px solid #555;
-                border-radius: 4px;
+            QWidget {
+                background-color: rgba(45, 45, 45, 0.95);
+                border: 1px solid #666;
+                border-radius: 8px;
+                color: white;
             }
             QPushButton {
-                background-color: #333;
-                color: white;
-                border: 1px solid #666;
-                padding: 4px 8px;
-                border-radius: 3px;
+                background-color: #3a3a3a;
+                border: 1px solid #555;
+                padding: 4px 7px;
+                border-radius: 5px;
                 text-align: left;
+                font-size: 12px;
             }
             QPushButton:hover {
-                background-color: #444;
+                background-color: #4a4a4a;
                 border-color: #888;
             }
             QPushButton:pressed {
-                background-color: #222;
+                background-color: #2a2a2a;
             }
-            /* Style for the new close button */
             QPushButton#closeButton {
                 font-family: "Arial", sans-serif;
                 font-weight: bold;
-                font-size: 12px;
-                min-width: 18px;
-                max-width: 18px;
-                min-height: 18px;
-                max-height: 18px;
-                padding: 0px;
+                font-size: 14px;
+                min-width: 22px; max-width: 22px;
+                min-height: 22px; max-height: 22px;
+                padding: 0px 0px 2px 0px;
                 text-align: center;
-                border-radius: 9px;
+                border-radius: 11px;
                 background-color: #555;
-                border: 1px solid #777;
+                border: 1px solid #666;
             }
-            QPushButton#closeButton:hover {
-                background-color: #777;
-            }
-            QPushButton#closeButton:pressed {
-                background-color: #444;
-            }
+            QPushButton#closeButton:hover { background-color: #777; }
         """)
 
-        # Top bar with close button
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(5)
+
         top_bar_layout = QHBoxLayout()
-        top_bar_layout.setContentsMargins(0, 0, 0, 2) # Add some space below the button
+        top_bar_layout.setContentsMargins(0, 0, 0, 4)
         top_bar_layout.addStretch()
-        close_button = QPushButton("x")
-        close_button.setObjectName("closeButton") # For specific styling
-        close_button.setToolTip("Close")
+        close_button = QPushButton("×")
+        close_button.setObjectName("closeButton")
+        close_button.setToolTip("Close (Esc)")
         close_button.clicked.connect(self.close)
         top_bar_layout.addWidget(close_button)
-        top_bar_layout.addStretch()
         layout.addLayout(top_bar_layout)
 
         for button_info in buttons:
@@ -427,14 +426,34 @@ class FloatingButtonWindow(QWidget):
             prompt_text = button_info.get("text", "")
             btn = QPushButton(caption)
             btn.clicked.connect(partial(on_button_click_callback, prompt_text, selected_text, self))
-            layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignLeft)
+            layout.addWidget(btn)
 
-        self.move(QCursor.pos() + QPoint(10, 10))
+        self._position_near_cursor()
         self.show()
 
+    def _position_near_cursor(self):
+        """Position window near cursor and clamp inside available screen."""
+        pos = QCursor.pos() + QPoint(15, 15)
+        screen = QApplication.screenAt(pos) or QApplication.primaryScreen()
+        if screen:
+            geo = screen.availableGeometry()
+            self.adjustSize()
+            w, h = self.width(), self.height()
+            x = min(max(pos.x(), geo.left()), geo.right() - w)
+            y = min(max(pos.y(), geo.top()), geo.bottom() - h)
+            self.move(x, y)
+        else:
+            self.move(pos)
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() == Qt.Key.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(event)
+
     def focusOutEvent(self, event):
-        """Close the window when it loses focus."""
-        self.close()
+        if self._close_on_focus_out:
+            self.close()
         super().focusOutEvent(event)
 
     def closeEvent(self, event):
@@ -1857,6 +1876,14 @@ class WhisperTyperApp(QWidget):
             self.play_sound('sound_end.wav')
             self.process_recording()
         else:
+            # Check if API settings are complete before starting recording
+            api_url = self.api_endpoint_input.text().strip()
+            api_key = self.api_key_input.text().strip()
+            if not api_url or not api_key:
+                # Show warning message box
+                self.show_tray_balloon(self.translator.tr("recording_no_api_keys"), 2000)
+                return
+
             self._check_and_warn_macos_permissions('microphone')
 
             # Reset context for the new operation

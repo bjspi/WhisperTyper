@@ -139,5 +139,6 @@
   "macos_hotkey_restart_text": "Le raccourci clavier a été modifié. Veuillez redémarrer l'application pour que le nouveau raccourci soit actif.",
   "rephrasing_finished_macos_message": "Reformulation terminée. Texte copié dans le presse-papiers.",
   "alt_clipboard_lib_checkbox": "Utiliser une bibliothèque alternative pour Copier/Coller (Meilleure compatibilité sur macOS)",
-  "alt_clipboard_lib_tooltip": "Si les actions de copier/coller ne sont pas fiables, cette bibliothèque (pyautogui) pourrait mieux fonctionner. C'est une solution de contournement courante pour les problèmes de compatibilité sur macOS."
+  "alt_clipboard_lib_tooltip": "Si les actions de copier/coller ne sont pas fiables, cette bibliothèque (pyautogui) pourrait mieux fonctionner. C'est une solution de contournement courante pour les problèmes de compatibilité sur macOS.",
+  "recording_no_api_keys": "Impossible de démarrer l'enregistrement : la clé API ou le point de terminaison n'est pas défini."
 }

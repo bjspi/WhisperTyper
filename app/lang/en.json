@@ -139,5 +139,6 @@
   "macos_hotkey_restart_text": "The hotkey has been changed. Please restart the application for the new hotkey to become active.",
   "rephrasing_finished_macos_message": "Rephrasing complete. Text copied to clipboard.",
   "alt_clipboard_lib_checkbox": "Use alternative library for Copy/Paste (Better compatibility on macOS)",
-  "alt_clipboard_lib_tooltip": "If copy/paste actions are unreliable, this library (pyautogui) might work better. It's a common workaround for macOS compatibility issues."
+  "alt_clipboard_lib_tooltip": "If copy/paste actions are unreliable, this library (pyautogui) might work better. It's a common workaround for macOS compatibility issues.",
+  "recording_no_api_keys": "Cannot start recording: API Key or Endpoint is not set."
 }

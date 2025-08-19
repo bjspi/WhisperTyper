@@ -139,5 +139,6 @@
   "macos_hotkey_restart_text": "Der Hotkey wurde geändert. Bitte starten Sie die Anwendung neu, damit der neue Hotkey aktiv wird.",
   "rephrasing_finished_macos_message": "Umformulierung abgeschlossen. Text in die Zwischenablage kopiert.",
   "alt_clipboard_lib_checkbox": "Alternative Bibliothek für Kopieren/Einfügen verwenden (Bessere Kompatibilität unter macOS)",
-  "alt_clipboard_lib_tooltip": "Wenn Kopier-/Einfügeaktionen unzuverlässig sind, könnte diese Bibliothek (pyautogui) besser funktionieren. Dies ist eine gängige Lösung für Kompatibilitätsprobleme unter macOS."
+  "alt_clipboard_lib_tooltip": "Wenn Kopier-/Einfügeaktionen unzuverlässig sind, könnte diese Bibliothek (pyautogui) besser funktionieren. Dies ist eine gängige Lösung für Kompatibilitätsprobleme unter macOS.",
+  "recording_no_api_keys": "Aufnahme kann nicht gestartet werden: API-Schlüssel oder Endpunkt ist nicht festgelegt."
 }
