@@ -101,7 +101,7 @@
   "could_not_play_file_message": "Could not play file: {error}",
   "validation_warning_title": "Validation Warnings",
   "validation_warning_text": "There seem to be issues with your settings (warnings only / will still save):",
-  "settings_saved_message": "Settings saved.\nHotkey: {hotkey}",
+  "settings_saved_message": "Settings saved.",
   "quit_dialog_title": "Quit Application",
   "quit_dialog_text": "Are you sure you want to quit?",
   "token_counter_label": "Prompt Tokens (estimated): {tokens}",

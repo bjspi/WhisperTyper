@@ -101,7 +101,7 @@
   "could_not_play_file_message": "Impossible de lire le fichier : {error}",
   "validation_warning_title": "Avertissements de validation",
   "validation_warning_text": "Il semble y avoir des problèmes avec vos paramètres (avertissements seulement / sera quand même enregistré) :",
-  "settings_saved_message": "Paramètres enregistrés.\nRaccourci : {hotkey}",
+  "settings_saved_message": "Paramètres enregistrés.",
   "quit_dialog_title": "Quitter l'application",
   "quit_dialog_text": "Êtes-vous sûr de vouloir quitter ?",
   "token_counter_label": "Jetons d'invite (estimés) : {tokens}",

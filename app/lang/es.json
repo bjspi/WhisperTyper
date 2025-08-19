@@ -101,7 +101,7 @@
   "could_not_play_file_message": "No se pudo reproducir el archivo: {error}",
   "validation_warning_title": "Advertencias de validación",
   "validation_warning_text": "Parece haber problemas con su configuración (solo advertencias / se guardará de todos modos):",
-  "settings_saved_message": "Configuración guardada.\nAtajo: {hotkey}",
+  "settings_saved_message": "Configuración guardada.",
   "quit_dialog_title": "Salir de la aplicación",
   "quit_dialog_text": "¿Está seguro de que desea salir?",
   "token_counter_label": "Tokens de prompt (estimados): {tokens}",

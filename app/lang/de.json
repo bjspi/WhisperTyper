@@ -101,7 +101,7 @@
   "could_not_play_file_message": "Konnte Datei nicht abspielen: {error}",
   "validation_warning_title": "Validierungswarnungen",
   "validation_warning_text": "Es scheint Probleme mit Ihren Einstellungen zu geben (nur Warnungen / wird trotzdem gespeichert):",
-  "settings_saved_message": "Einstellungen gespeichert.\nHotkey: {hotkey}",
+  "settings_saved_message": "Einstellungen gespeichert.",
   "quit_dialog_title": "Anwendung beenden",
   "quit_dialog_text": "Sind Sie sicher, dass Sie beenden möchten?",
   "token_counter_label": "Prompt-Tokens (geschätzt): {tokens}",

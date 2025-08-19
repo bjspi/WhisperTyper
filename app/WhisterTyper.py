@@ -1594,6 +1594,10 @@ class WhisperTyperApp(QWidget):
         show_action = tray_menu.addAction(self.translator.tr("tray_settings_action"))
         show_action.triggered.connect(self.show)
 
+        # Add "Open Config" Link
+        config_action = tray_menu.addAction(self.translator.tr("menu_file_open_config"))
+        config_action.triggered.connect(self.open_config_file)
+
         copy_action = tray_menu.addAction(self.translator.tr("tray_copy_action"))
         copy_action.triggered.connect(self.copy_last_transcription_to_clipboard)
 
