@@ -1048,7 +1048,12 @@ class WhisperTyperApp(QWidget):
         self.liveprompt_trigger_words_input.setText(self.config["liveprompt_trigger_words"])
         self.liveprompt_trigger_scan_depth_input.setValue(self.config["liveprompt_trigger_word_scan_depth"])
         self.liveprompt_system_prompt_input.setText(self.config["liveprompt_system_prompt"])
-        self.rephrase_context_checkbox.setChecked(self.config["rephrase_use_selection_context"])
+        if is_MACOS:
+            # On macOS, we don't use the context checkbox due to permission issues ...
+            self.rephrase_context_checkbox.setChecked(False)
+            self.rephrase_context_checkbox.setVisible(False)
+        else:
+            self.rephrase_context_checkbox.setChecked(self.config["rephrase_use_selection_context"])
 
         self.generic_rephrase_enabled_checkbox.setChecked(self.config["generic_rephrase_enabled"])
         self.generic_rephrase_prompt_input.setText(self.config["generic_rephrase_prompt"])

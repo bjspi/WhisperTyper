@@ -115,6 +115,13 @@ rephrasing transformation is done.
     <img src="screenshots/MacOS_audio.jpg" alt="App Screenshot" width="60%" />
 </p>
 
+7. Optionally, you can create a `.app` bundle for easier access and separated Permissions-management:
+    - You'd need to install pyinstaller via pip:
+    ```bash
+    pip install pyinstaller
+    ```
+    - Then run `pyinstaller --windowed run.py` and adding the `--name` and `--icon` options to customize the app name and icon as well as adding the resouce files into the mix.
+   
 ## Tech Stack
 <p align="center">
   <img alt="Python" src="https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white" />
