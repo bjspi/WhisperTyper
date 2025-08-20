@@ -22,7 +22,8 @@ venv.bak/
 .idea/
 .vscode/
 history/
-deploy/
+deploy/build/
+deploy/dist/
 /voice_transcriber.log
 /WhisperTyper.log
 /app/resources/app_icon.png2

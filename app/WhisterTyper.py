@@ -190,18 +190,14 @@ class TranslationManager:
         self.language: str = ''
         self.set_language(initial_language)
 
-    def get_base_path(self) -> str:
+    def get_base_path(self) -> LiteralString | str | bytes:
         """
         Gets the base path for resource files, compatible with PyInstaller.
 
         Returns:
             str: The absolute base path.
         """
-        if getattr(sys, 'frozen', False):
-            return sys._MEIPASS
-        else:
-            # In a normal environment, resources are relative to this file's directory.
-            return os.path.dirname(__file__)
+        return resource_path()
 
     def set_language(self, lang_code: str) -> None:
         """
@@ -479,16 +475,26 @@ def resource_path(*path_segments: str) -> LiteralString | str | bytes:
 
     Args:
         *path_segments (str): The segments of the relative path to the resource.
+                              If no segments are provided, returns the base path.
 
     Returns:
         str: The absolute path to the resource.
     """
     if getattr(sys, 'frozen', False):
-        # If the application is frozen (e.g., using PyInstaller), resources are in a temp folder.
-        base_path = sys._MEIPASS
+        # Running in a bundle (bundled / executable)
+        if hasattr(sys, '_MEIPASS'):
+            # One-file bundle: resources are in the temporary folder in the subdirectorys...
+            base_path = os.path.join(sys._MEIPASS, "app")
+        else:
+            # One-directory bundle: resources are in the executable's directory, but in a subfolder _internal
+            base_path = os.path.join(os.path.dirname(sys.executable), "app")
     else:
-        # If the application is not frozen, resources are relative to this script's directory.
+        # Running in a normal Python environment
         base_path = os.path.dirname(__file__)
+
+    if not path_segments:
+        return base_path
+
     return os.path.join(base_path, *path_segments)
 
 class TranscriptionWorker(QObject):

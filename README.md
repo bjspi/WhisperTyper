@@ -83,45 +83,50 @@ When accessing the selected text from the active Application to use it for the r
 pasting and thereby overwriting the selected text does not work. You'll have to manually paste the rephrased text into the active application after the 
 rephrasing transformation is done.
 
-1. Install PortAudio using Homebrew:
+1. Install PortAudio using Homebrew. This is necessary in any case.
     ```bash
     brew install portaudio
     ```
-2. Locate your default Python environment (it may be managed by pyenv or another tool). You can check with:
-    ```bash
-    which python3
-    ```
-3. Install the required Python packages - this will install the requirements for the Python version you found in step 2:
-    ```bash
-    pip install -r requirements.txt
-    ```
-4. Add your Python interpreter and Terminal to the **Accessibility** permissions as well as the microphone permissions:
-    - Go to **System Settings** \> **Privacy & Security** \> **Accessibility**.
-    - Click the **+** button and add the path to your Python executable (from step 2).
-    - If you are using a virtual environment, add the path to the `python` executable inside your virtual environment's `bin` directory.
-    - Example path: `/Users/yourusername/.pyenv/versions/3.11.4/bin/python3`
-   <p align="center">
-        <img src="screenshots/MacOS_accessibility.jpg" alt="App Screenshot" width="80%" />
-    </p>
 
-5. Start the application using your Python interpreter:
-    ```bash
-    python run.py
-    ```
+2. Install the required Python packages - this will install the requirements for the Python version you found in step 2:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-6. When using the hotkey for the first time, macOS will prompt for microphone access. Allow it.
+3. Either directly run from sources: Needs a workaround for permissions management:
+   1. Locate your default Python environment (it may be managed by pyenv or another tool). You can check with:
+       ```bash
+       which python3
+       ```
+   
+   2. Add your Python interpreter and Terminal to the **Accessibility** permissions as well as the microphone permissions:
+       - Go to **System Settings** \> **Privacy & Security** \> **Accessibility**.
+       - Click the **+** button and add the path to your Python executable (from step 2).
+       - If you are using a virtual environment, add the path to the `python` executable inside your virtual environment's `bin` directory.
+       - Example path: `/Users/yourusername/.pyenv/versions/3.11.4/bin/python3`
+      <p align="center">
+           <img src="screenshots/MacOS_accessibility.jpg" alt="App Screenshot" width="80%" />
+       </p>
 
-<p align="center">
-    <img src="screenshots/MacOS_audio.jpg" alt="App Screenshot" width="60%" />
-</p>
-
-7. Optionally, you can create a `.app` bundle for easier access and separated Permissions-management:
-    - You'd need to install pyinstaller via pip:
+   3. Start the application using your Python interpreter:
+       ```bash
+       python run.py
+       ```
+4. Optionally, you can create an App-bundle for easier access and separated Permissions-management:
+   1. You'd need to install pyinstaller via pip:
     ```bash
     pip install pyinstaller
     ```
-    - Then run `pyinstaller --windowed run.py` and adding the `--name` and `--icon` options to customize the app name and icon as well as adding the resouce files into the mix.
-   
+   2. Then under directory deploy, `chmod +x deploy_mac.sh` and run the script. The app icons are already prepared as Iconset for Usage under MacOS, so you should not need to worry about any details creating the app bundle.
+    ```bash
+    ./deploy_mac.sh
+    ```
+
+5. In any case, when using your configured hotkey for the first time, macOS will prompt for microphone access. Allow it.
+    <p align="center">
+        <img src="screenshots/MacOS_audio.jpg" alt="App Screenshot" width="50%" />
+    </p>
+
 ## Tech Stack
 <p align="center">
   <img alt="Python" src="https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white" />
