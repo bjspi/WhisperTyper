@@ -1,6 +1,8 @@
+<h2 align="center">Transform your voice into text and AI prompts</h2>
 <p align="center">
-  <img src="screenshots/app.png" alt="AppLogo" />
+    <img src="screenshots/app.png" alt="AppLogo" />
 </p>
+
 
 --------
 
