@@ -5,15 +5,14 @@
 --------
 
 <p align="center">
-    <!-- GitHub Stars Badge -->
-    <a href="https://github.com/bjspi/WhisperTyper" target="_blank">
-        <img alt="GitHub stars" src="https://img.shields.io/github/stars/bjspi/WhisperTyper?style=flat-square" />
-    </a>
-
-    <!-- Platform Support Badges -->
-    <img alt="macOS" src="https://img.shields.io/badge/-macOS-black?style=flat-square&logo=apple&logoColor=white" />
-    <img alt="Windows" src="https://img.shields.io/badge/-Windows-blue?style=flat-square&logo=windows&logoColor=white" />
-    <img alt="Linux" src="https://img.shields.io/badge/-Linux-yellow?style=flat-square&logo=linux&logoColor=white" />
+<!-- GitHub Stars Badge -->
+<a href="https://github.com/bjspi/WhisperTyper" target="_blank">
+    <img alt="GitHub stars" src="https://img.shields.io/github/stars/bjspi/WhisperTyper?style=flat-square" />
+</a>
+<!-- Platform Support Badges -->
+<img alt="macOS" src="https://img.shields.io/badge/-macOS-black?style=flat-square&logo=apple&logoColor=white" />
+<img alt="Windows" src="https://img.shields.io/badge/-Windows-blue?style=flat-square&logo=windows&logoColor=white" />
+<img alt="Linux" src="https://img.shields.io/badge/-Linux-yellow?style=flat-square&logo=linux&logoColor=white" />
 </p>
 
 # Overview
