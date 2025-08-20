@@ -149,10 +149,13 @@ if is_MACOS:
         coll,
         name='WhisterTyper.app',
         icon=APP_ICON,
-        bundle_identifier='com.yourcompany.whistertyper',
+        bundle_identifier='gh.bjspi.whistertyper',
         info_plist={
             'NSHighResolutionCapable': 'True',
             'CFBundleShortVersionString': '1.0.0',
+            'NSMicrophoneUsageDescription': 'This app requires microphone access to record audio for transcription.',
+            'NSAccessibilityUsageDescription': 'This app needs permission for global hotkeys and clipboard management (e.g., to start transcription and copy results).',
+            'NSInputMonitoringUsageDescription': 'This app requires permission to monitor keyboard input to detect global hotkeys for starting and stopping transcription.',
         },
     )
 elif DEPLOY_AS_DIRECTORY:
