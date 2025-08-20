@@ -81,14 +81,13 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 
 ## Installation on MacOS
 
-This tool is tested to nearly 100% work on macOS, but it requires some additional steps to ensure proper functionality, especially for microphone access and audio input. 
-As is, the UI-button to change the Hotkey does not work, i.e. instead of setting a new Hotkey from the GUI, you'd have to either manually set them 
-in the config.json OR by editing the Hotkey input fields directly. After changing the Hotkeys, you'll have to restart the application just once to re-init the Listeners.
-Anyway, you'll have to do this just once whenever you want to change the Hotkeys.
+This tool is tested to nearly 100% work on macOS, but it requires some additional steps to ensure proper functionality, especially for microphone access / audio input as well as hotkey-functionality.
+The best way to get it working is to download the sources, install PortAudio and the requirements (Steps 1 and 2 below) and then packaging it into a App Bundle using PyInstaller. The packaged app can and must then be added to InputMonitoring and Accessibility permissions in System Settings. This is necessary to allow the app to access the microphone and to register global hotkeys.
+This way, 99.9% of the functionality should work as expected as confirmed by a friend of mine.
 
-When accessing the selected text from the active Application to use it for the rephrasing transformation feature, the focus under MacOS gets lost, so automatically 
-pasting and thereby overwriting the selected text does not work. You'll have to manually paste the rephrased text into the active application after the 
-rephrasing transformation is done.
+As is, the only thing not working is the UI-button to change the Hotkey wihch leads to a crash on MacOS because of a Background Thread trying to access Inputbuttons. Therefore I have deactivated this button for MacOS which is just a tiny inconvenience, i.e. instead of setting a new Hotkey by pressing the Hotkey, you'd have to manually set them 
+by editing the Hotkey input fields in the GUI directly (e.g. <Ctrl>+C). After changing the Hotkeys, you'll have to restart the application just once to re-init the Listeners.
+Anyway, you'll have to do this just once whenever you want to change the Hotkeys.
 
 1. Install PortAudio using Homebrew. This is necessary in any case.
     ```bash

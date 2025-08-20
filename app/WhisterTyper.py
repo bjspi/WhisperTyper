@@ -80,6 +80,18 @@ def get_system_language_2char():
         return 'en'
     return lang.split('-')[0]
 
+# For MacOS, showing the FloatingButtonWindow will steal the Focus of the current active app.
+# To avoid this, we need to activate the app again after showing the window using osascript with the
+# following functions.
+def get_active_app_name():
+    # Holt den Namen der aktuell aktiven App
+    script = 'tell application "System Events" to get name of first application process whose frontmost is true'
+    return subprocess.check_output(['osascript', '-e', script]).decode().strip()
+def activate_app(app_name):
+    # Aktiviert die App mit dem gegebenen Namen
+    script = f'tell application "{app_name}" to activate'
+    subprocess.call(['osascript', '-e', script])
+
 SYS_LANG = get_system_language_2char()
 logging.info(f"Detected system language: {SYS_LANG}")
 
@@ -740,6 +752,9 @@ class WhisperTyperApp(QWidget):
     show_tooltip_signal = pyqtSignal(str, int)
     show_floating_window_signal = pyqtSignal(list, str)
     show_permission_dialog_signal = pyqtSignal(str, str, str)
+
+    # MacOS:
+    macos_active_application: Optional[str] = None
 
     def __init__(self) -> None:
         """Initializes the application."""
@@ -2375,6 +2390,9 @@ class WhisperTyperApp(QWidget):
         if not text:
             return
 
+        # Ensure the user is prompted for permissions on macOS before trying to paste.
+        self._check_and_warn_macos_permissions('accessibility')
+
         logging.debug("Inserting transcribed text via clipboard paste for reliability.")
         try:
             restore = self.config["restore_clipboard"]
@@ -2411,6 +2429,10 @@ class WhisperTyperApp(QWidget):
             logging.warning("Post-rephrase hotkey pressed, but API settings are missing.")
             self.show_tray_balloon(self.translator.tr("rephrase_api_settings_missing"), 3000)
             return
+
+        if is_MACOS:
+            logging.debug(f"Trying to get currently active window/application on macOS via osascript")
+            self.macos_active_application = get_active_app_name()
 
         selected_text = self.get_selected_text()
         if not selected_text:
@@ -2464,7 +2486,6 @@ class WhisperTyperApp(QWidget):
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         thread.finished.connect(lambda t=thread, w=worker: self._cleanup_rephrasing_worker(t, w))
-
         thread.start()
 
     def on_rephrasing_finished(self, rephrased_text: str) -> None:
@@ -2477,9 +2498,13 @@ class WhisperTyperApp(QWidget):
         # On macOS, pasting can be unreliable if the app loses focus.
         # It's safer to copy to clipboard and notify the user.
         if is_MACOS:
-            copykitten.copy(rephrased_text)
-            self.show_tray_balloon(self.translator.tr("rephrasing_finished_macos_message"), 3500)
-            logging.info(f"Rephrased text placed on clipboard for macOS user: {rephrased_text}")
+            if self.macos_active_application:
+                # Try to reactivate the original app using osascript
+                activate_app(self.macos_active_application)
+                self.insert_transcribed_text(rephrased_text)
+            else: # Fallback in case the app name could not be determined using osascript beforehand
+                copykitten.copy(rephrased_text)
+                self.show_tray_balloon(self.translator.tr("rephrasing_finished_macos_message"), 3500)
         else:
             self.insert_transcribed_text(rephrased_text)
             logging.info("Successfully inserted rephrased text.")
