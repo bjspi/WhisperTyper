@@ -23,7 +23,7 @@ from PyQt6.QtGui import QIcon, QCloseEvent, QCursor, QAction, QDesktopServices, 
 from PyQt6 import uic
 from functools import partial
 
-# Global Hotkey // and alternative clipboard library
+# Global Hotkey / and alternative clipboard library
 from pynput import keyboard
 import pyautogui
 

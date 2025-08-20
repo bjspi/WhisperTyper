@@ -5,19 +5,27 @@
 --------
 
 <p align="center">
-  <!-- GitHub Stars Badge -->
-  <a href="https://github.com/bjspi/WhisperTyper" target="_blank">
-    <img alt="GitHub stars" src="https://img.shields.io/github/stars/bjspi/WhisperTyper?style=flat-square" />
-  </a>
+    <!-- GitHub Stars Badge -->
+    <a href="https://github.com/bjspi/WhisperTyper" target="_blank">
+        <img alt="GitHub stars" src="https://img.shields.io/github/stars/bjspi/WhisperTyper?style=flat-square" />
+    </a>
 
-  <!-- Platform Support Badges -->
-<img alt="macOS" src="https://img.shields.io/badge/-macOS-black?style=flat-square&logo=apple&logoColor=white" />
-<img alt="Windows" src="https://img.shields.io/badge/-Windows-blue?style=flat-square&logo=windows&logoColor=white" />
-<img alt="Linux" src="https://img.shields.io/badge/-Linux-yellow?style=flat-square&logo=linux&logoColor=white" />
+    <!-- Platform Support Badges -->
+    <img alt="macOS" src="https://img.shields.io/badge/-macOS-black?style=flat-square&logo=apple&logoColor=white" />
+    <img alt="Windows" src="https://img.shields.io/badge/-Windows-blue?style=flat-square&logo=windows&logoColor=white" />
+    <img alt="Linux" src="https://img.shields.io/badge/-Linux-yellow?style=flat-square&logo=linux&logoColor=white" />
 </p>
 
-# AI-based Voice Transcriber & Live Prompter
+# Overview
+- [Introduction](#ai-based-voice-transcriber--live-prompter)
+- [Key-Features](#key-features)
+- [Installation on Windows](#installation)
+- [Installation on MacOS](#installation-on-macos)
+- [Updating](#updating)
+- [Tech Stack](#tech-stack)
+- [Usage](#usage)
 
+# AI-based Voice Transcriber & Live Prompter
 A powerful, cross-platform voice-to-text application that integrates seamlessly into your workflow. 
 Use your voice to type, rephrase text, or even prompt AI models on-the-fly, all controlled by a simple hotkey and running discreetly in your system tray.
 
@@ -88,9 +96,14 @@ rephrasing transformation is done.
     brew install portaudio
     ```
 
-2. Install the required Python packages - this will install the requirements for the Python version you found in step 2:
+2. Install the required Python packages - this will install the requirements. If you want to work with a isolated virtual environment, you can create one first and activate it.
    ```bash
-   pip install -r requirements.txt
+   # Create a virtual environment (optional but recommended)
+    python3 -m venv venv
+    source venv/bin/activate  # Activate the virtual 
+   
+   # Install the required packages (not optional)
+    pip install -r requirements.txt
    ```
 
 3. Either directly run from sources: Needs a workaround for permissions management:
@@ -110,11 +123,19 @@ rephrasing transformation is done.
 
    3. Start the application using your Python interpreter:
        ```bash
+      # Optionally activate your virtual environment if you created one
+       source venv/bin/activate  # If you created a virtual environment
+      
+      # Run the application
        python run.py
        ```
 4. Optionally, you can create an App-bundle for easier access and separated Permissions-management:
    1. You'd need to install pyinstaller via pip:
     ```bash
+    # If you are using a virtual environment, make sure it is activated
+    source venv/bin/activate
+   
+    # Install pyinstaller globally or in your virtual environment
     pip install pyinstaller
     ```
    2. Then under directory deploy, `chmod +x deploy_mac.sh` and run the script. The app icons are already prepared as Iconset for Usage under MacOS, so you should not need to worry about any details creating the app bundle.
@@ -126,6 +147,23 @@ rephrasing transformation is done.
     <p align="center">
         <img src="screenshots/MacOS_audio.jpg" alt="App Screenshot" width="50%" />
     </p>
+
+## Updating
+To update the application, simply pull the latest changes from the repository if you've originally cloned it. If you downloaded the ZIP file, download the latest version and replace your old files with the new ones.
+```bash
+git pull origin main
+```
+
+Optionally if you run it as App Bundle under MacOS you can also run the deploy script again to update the app bundle:
+```bash
+# Optionally activate your virtual environment if you created one
+source venv/bin/activate 
+
+# Navigate to the deploy directory and create a new app bundle
+cd deploy
+chmod +x deploy_mac.sh
+./deploy_mac.sh
+```
 
 ## Tech Stack
 <p align="center">
