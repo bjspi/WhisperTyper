@@ -9,6 +9,8 @@ import os
 import glob
 import sys
 
+is_MACOS = sys.platform == 'darwin'
+
 # --- Configuration Switch ---
 # Set to True to build a one-folder bundle (a directory).
 # Set to False to build a one-file executable.
@@ -26,7 +28,7 @@ def find_icon_file(root_path, icon_name):
 # SPECPATH is a global variable from PyInstaller. Project root is one level up from the 'deploy' dir.
 project_root = os.path.abspath(os.path.join(os.path.dirname(SPECPATH), '..'))
 
-if sys.platform == "darwin":
+if is_MACOS:
     icon_filename = 'app_icon.icns'
 else:
     icon_filename = 'app_icon.ico'
@@ -77,7 +79,6 @@ other_excludes = [
     'unittest', # Not needed for deployment
 ]
 
-
 def get_app_data_files():
     """
     Recursively find all files in ../app and prepare them for PyInstaller's 'datas'.
@@ -115,8 +116,47 @@ a.binaries[:] = [x for x in a.binaries if 'opengl32sw.dll' not in os.path.basena
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-if DEPLOY_AS_DIRECTORY:
-    # This creates a one-folder bundle
+if is_MACOS:
+    # Create a macOS .app bundle
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name='WhisterTyper',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        console=False,
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+        icon=APP_ICON,
+    )
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.datas,
+        strip=False,
+        upx=True,
+        upx_exclude=[],
+        name='WhisterTyper',
+    )
+    app = BUNDLE(
+        coll,
+        name='WhisterTyper.app',
+        icon=APP_ICON,
+        bundle_identifier='com.yourcompany.whistertyper',
+        info_plist={
+            'NSHighResolutionCapable': 'True',
+            'CFBundleShortVersionString': '1.0.0',
+        },
+    )
+elif DEPLOY_AS_DIRECTORY:
+    # This creates a one-folder bundle for Windows/Linux
     exe = EXE(
         pyz,
         a.scripts,
@@ -145,7 +185,7 @@ if DEPLOY_AS_DIRECTORY:
         name='WhisterTyper',
     )
 else:
-    # This creates a one-file executable
+    # This creates a one-file executable for Windows/Linux
     exe = EXE(
         pyz,
         a.scripts,
