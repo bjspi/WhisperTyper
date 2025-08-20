@@ -81,13 +81,9 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 
 ## Installation on MacOS
 
-This tool is tested to nearly 100% work on macOS, but it requires some additional steps to ensure proper functionality, especially for microphone access / audio input as well as hotkey-functionality.
-The best way to get it working is to download the sources, install PortAudio and the requirements (Steps 1 and 2 below) and then packaging it into a App Bundle using PyInstaller. The packaged app can and must then be added to InputMonitoring and Accessibility permissions in System Settings. This is necessary to allow the app to access the microphone and to register global hotkeys.
-This way, 99.9% of the functionality should work as expected as confirmed by a friend of mine.
+This tool is fully functional on macOS but requires additional setup for microphone and hotkey access. For the best experience, creating a standalone App Bundle using PyInstaller is recommended. This allows you to grant the necessary Input Monitoring and Accessibility permissions in System Settings, ensuring seamless operation.
 
-As is, the only thing not working is the UI-button to change the Hotkey wihch leads to a crash on MacOS because of a Background Thread trying to access Inputbuttons. Therefore I have deactivated this button for MacOS which is just a tiny inconvenience, i.e. instead of setting a new Hotkey by pressing the Hotkey, you'd have to manually set them 
-by editing the Hotkey input fields in the GUI directly (e.g. <Ctrl>+C). After changing the Hotkeys, you'll have to restart the application just once to re-init the Listeners.
-Anyway, you'll have to do this just once whenever you want to change the Hotkeys.
+Known Issue: The hotkey-setting button in the UI is disabled on macOS to prevent a crash. To change hotkeys, please edit the input fields in the settings menu directly and restart the application for the changes to take effect.
 
 1. Install PortAudio using Homebrew. This is necessary in any case.
     ```bash
