@@ -32,12 +32,12 @@ Use your voice to type, rephrase text, or even prompt AI models on-the-fly, all 
 
 This tool is designed for developers, writers, and anyone who wants to leverage the power of AI to type faster and smarter.
 
-- 🤫 **Discreet Systray Operation**: Runs quietly in the background.
-- 🎤 **Global Voice Typing**: Transcribe your voice into any application with a single hotkey.
-- 🚀 **Live Prompting**: Turn your voice into AI commands on the fly within any text field.
-- ⌨️ **Clipboard Safe**: Doesnt hijack your clipboard, restores your previous clipboard contents after pasting
-- 🔧 **Custom APIs**: Supports OpenAI, Groq, and any Whisper-compatible API
-- ✍️ **Preset-based Rephrasing**: Go beyond simple transcription with custom preset-based AI text-transformations.
+- 🤫 **Systray Icon**: Runs quietly in the background without clustering the Taskbar
+- 🎤 **Voice Typing**: Transcribe your voice into any application with a single hotkey.
+- 🚀 **Live Prompting**: Turn your voice into AI commands on the fly (_e.g. say: "`this is a prompt; write birthday wishes for my friend`" and the AI will type it out for you_)
+- ⌨️ **Clipboard Safe**: Doesnt hijack your clipboard
+- 🔧 **Custom APIs**: Supports OpenAI, Groq, and many more...
+- ✍️ **Preset-based Rephrasing**: Go beyond transcription with custom presets for text-transformation (_select text in any editable field and use your hotkey to rephrase it_)
 
 <p align="center">
     <img src="screenshots/screenshot.jpg" alt="App Screenshot" width="80%" />
