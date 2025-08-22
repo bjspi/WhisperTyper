@@ -76,7 +76,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 
 ## ⬇️ Download & Installation
 
-1.  Clone the repository (or download the ZIP file):
+1.  Clone the repository (or download the ZIP file). Cloning will simplify the update later on.
     ```bash
     git clone https://github.com/bjspi/WhisperTyper.git
     cd WhisperTyper
@@ -87,7 +87,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
     ```
     > **Note for macOS users**: See full [macOS installation instructions](#installation-on-macos) below.
     
-3.  Run the application, for headless operation on Windows, use `pythonw` instead of python:
+3.  Run the application, for headless operation on Windows, use `pythonw` instead of python -> No window will be shown on the Taskbar.
     ```bash
     python run.py
     # or
@@ -115,7 +115,23 @@ Known Issue: The hotkey-setting button in the UI is disabled on macOS to prevent
     pip install -r requirements.txt
    ```
 
-3. Either directly run from sources: Needs a workaround for permissions management:
+3. This is the recommended way on MacOS for proper permission Management: Create an App-bundle for easier access and separated Permissions-management:
+   1. You'd need to install pyinstaller via pip:
+    ```bash
+    # If you are using a virtual environment, make sure it is activated
+    source venv/bin/activate
+   
+    # Install pyinstaller globally or in your virtual environment
+    pip install pyinstaller
+    ```
+   2. Then under directory deploy, `chmod +x deploy_mac.sh` and run the script. The app icons are already prepared as Iconset for Usage under MacOS, so you should not need to worry about any details creating the app bundle.
+    ```bash
+    ./deploy_mac.sh
+    ```
+   
+   3. In the `dist` folder you'll find the AppBundle. Run it and grant access to the microphone and Input Monitoring when prompted. 
+   
+4. Alternative to step 3, you could directly run from sources. This needs a workaround for permissions management:
    1. Locate your default Python environment (it may be managed by pyenv or another tool). You can check with:
        ```bash
        which python3
@@ -138,20 +154,6 @@ Known Issue: The hotkey-setting button in the UI is disabled on macOS to prevent
       # Run the application
        python run.py
        ```
-4. Optionally, you can create an App-bundle for easier access and separated Permissions-management:
-   1. You'd need to install pyinstaller via pip:
-    ```bash
-    # If you are using a virtual environment, make sure it is activated
-    source venv/bin/activate
-   
-    # Install pyinstaller globally or in your virtual environment
-    pip install pyinstaller
-    ```
-   2. Then under directory deploy, `chmod +x deploy_mac.sh` and run the script. The app icons are already prepared as Iconset for Usage under MacOS, so you should not need to worry about any details creating the app bundle.
-    ```bash
-    ./deploy_mac.sh
-    ```
-
 5. In any case, when using your configured hotkey for the first time, macOS will prompt for microphone access. Allow it.
     <p align="center">
         <img src="readme/MacOS_audio.jpg" alt="App Screenshot" width="50%" />
