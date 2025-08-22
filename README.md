@@ -174,11 +174,11 @@ chmod +x deploy_mac.sh
 ./deploy_mac.sh
 ```
 
-## Tech Stack
-<p align="center">
-  <img alt="Python" src="https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white" />
-  <img alt="PyQt" src="https://img.shields.io/badge/PyQt-41CD52?style=flat-square&logo=qt&logoColor=white" />
-</p>
+[//]: # (## 🧑‍💻 Tech Stack)
+[//]: # (<p align="center">)
+[//]: # (  <img alt="Python" src="https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white" />)
+[//]: # (  <img alt="PyQt" src="https://img.shields.io/badge/PyQt-41CD52?style=flat-square&logo=qt&logoColor=white" />)
+[//]: # (</p>)
 
 ## 🤝  Contributing
 Feel free to contribute to this project! Whether it's fixing bugs, adding features, or improving documentation, 
