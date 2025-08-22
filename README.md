@@ -1,6 +1,6 @@
 <h2 align="center">Transform your voice into text and AI prompts</h2>
 <p align="center">
-    <img src="readme_images/app.png" alt="AppLogo" />
+    <img src="readme/app.png" alt="AppLogo" />
 </p>
 
 
@@ -43,16 +43,16 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 
 <p align="center">
     <a href="readme_images/screenshots/01.jpg" target="_blank">
-        <img src="readme_images/screenshots/01.jpg" alt="App Screenshot 1" width="40%" />
+        <img src="readme/screenshots/01.jpg" alt="App Screenshot 1" width="40%" />
     </a>&nbsp;
-    <a href="readme_images/screenshots/02.jpg" target="_blank">
-        <img src="readme_images/screenshots/02.jpg" alt="App Screenshot 2" width="40%" />
+    <a href="readme/screenshots/02.jpg" target="_blank">
+        <img src="readme/screenshots/02.jpg" alt="App Screenshot 2" width="40%" />
     </a>&nbsp;
-    <a href="readme_images/screenshots/03.jpg" target="_blank">
-        <img src="readme_images/screenshots/03.jpg" alt="App Screenshot 3" width="40%" />
+    <a href="readme/screenshots/03.jpg" target="_blank">
+        <img src="readme/screenshots/03.jpg" alt="App Screenshot 3" width="40%" />
     </a>&nbsp;
-    <a href="readme_images/screenshots/04.jpg" target="_blank">
-        <img src="readme_images/screenshots/04.jpg" alt="App Screenshot 4" width="40%" />
+    <a href="readme/screenshots/04.jpg" target="_blank">
+        <img src="readme/screenshots/04.jpg" alt="App Screenshot 4" width="40%" />
     </a>&nbsp;
 </p>
 
@@ -127,7 +127,7 @@ Known Issue: The hotkey-setting button in the UI is disabled on macOS to prevent
        - If you are using a virtual environment, add the path to the `python` executable inside your virtual environment's `bin` directory.
        - Example path: `/Users/yourusername/.pyenv/versions/3.11.4/bin/python3`
       <p align="center">
-           <img src="readme_images/MacOS_accessibility.jpg" alt="App Screenshot" width="80%" />
+           <img src="readme/MacOS_accessibility.jpg" alt="App Screenshot" width="80%" />
        </p>
 
    3. Start the application using your Python interpreter:
@@ -154,7 +154,7 @@ Known Issue: The hotkey-setting button in the UI is disabled on macOS to prevent
 
 5. In any case, when using your configured hotkey for the first time, macOS will prompt for microphone access. Allow it.
     <p align="center">
-        <img src="readme_images/MacOS_audio.jpg" alt="App Screenshot" width="50%" />
+        <img src="readme/MacOS_audio.jpg" alt="App Screenshot" width="50%" />
     </p>
 
 ## ↗️ Updating
