@@ -3,8 +3,7 @@
     <img src="readme/app.png" alt="AppLogo" />
 </p>
 
-
---------
+---
 
 <p align="center">
 <!-- GitHub Stars Badge -->
@@ -16,15 +15,17 @@
 <img alt="Windows" src="https://img.shields.io/badge/-Windows-blue?style=flat-square&logo=windows&logoColor=white" />
 <img alt="Linux" src="https://img.shields.io/badge/-Linux-yellow?style=flat-square&logo=linux&logoColor=white" />
 </p>
+<p align="center">
+  <a href="#ai-based-voice-transcriber--live-prompter">Introduction</a> &#124;
+  <a href="#key-features">Key-Features</a> &#124;
+  <a href="#installation">Installation on Windows</a> &#124;
+  <a href="#installation-on-macos">Installation on MacOS</a> &#124;
+  <a href="#updating">Updating</a> &#124;
+  <a href="#tech-stack">Tech Stack</a> &#124;
+  <a href="#usage">Usage</a>
+</p>
 
-# Overview
-- [Introduction](#ai-based-voice-transcriber--live-prompter)
-- [Key-Features](#key-features)
-- [Installation on Windows](#installation)
-- [Installation on MacOS](#installation-on-macos)
-- [Updating](#updating)
-- [Tech Stack](#tech-stack)
-- [Usage](#usage)
+---
 
 # 📖  AI-based Voice Transcriber & Live Prompter
 A powerful, cross-platform voice-to-text application that integrates seamlessly into your workflow. 
@@ -55,8 +56,6 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
         <img src="readme/screenshots/04.jpg" alt="App Screenshot 4" width="40%" />
     </a>&nbsp;
 </p>
-
----
 
 ## 💖 Key Features
 
