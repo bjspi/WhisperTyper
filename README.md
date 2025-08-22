@@ -43,7 +43,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 ## 📱 Screenshots
 
 <p align="center">
-    <a href="readme_images/screenshots/01.jpg" target="_blank">
+    <a href="readme/screenshots/01.jpg" target="_blank">
         <img src="readme/screenshots/01.jpg" alt="App Screenshot 1" width="40%" />
     </a>&nbsp;
     <a href="readme/screenshots/02.jpg" target="_blank">
