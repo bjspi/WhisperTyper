@@ -16,13 +16,13 @@
 <img alt="Linux" src="https://img.shields.io/badge/-Linux-yellow?style=flat-square&logo=linux&logoColor=white" />
 </p>
 <p align="center">
-  <a href="#ai-based-voice-transcriber--live-prompter">Introduction</a> &#124;
-  <a href="#key-features">Key-Features</a> &#124;
-  <a href="#installation">Installation on Windows</a> &#124;
-  <a href="#installation-on-macos">Installation on MacOS</a> &#124;
-  <a href="#updating">Updating</a> &#124;
-  <a href="#tech-stack">Tech Stack</a> &#124;
-  <a href="#usage">Usage</a>
+  <a href="#--ai-based-voice-transcriber--live-prompter">Introduction</a> &#124;
+  <a href="#--screenshots">Screenshots</a> &#124;
+  <a href="#-key-features">Key-Features</a> &#124;
+  <a href="#%EF%B8%8F-download--installation">Installation on Windows</a> &#124;
+  <a href="#%EF%B8%8F-installation-on-macos">Installation on MacOS</a> &#124;
+  <a href="#%EF%B8%8F-updating">Updating</a> &#124;
+  <a href="#--contributing">Contributing</a>
 </p>
 
 ---
