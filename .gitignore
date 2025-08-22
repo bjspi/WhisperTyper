@@ -27,3 +27,4 @@ deploy/dist/
 /voice_transcriber.log
 /WhisperTyper.log
 /app/resources/app_icon.png2
+/start_hidden.cmd

@@ -26,31 +26,44 @@
 - [Tech Stack](#tech-stack)
 - [Usage](#usage)
 
-# AI-based Voice Transcriber & Live Prompter
+# 📖  AI-based Voice Transcriber & Live Prompter
 A powerful, cross-platform voice-to-text application that integrates seamlessly into your workflow. 
 Use your voice to type, rephrase text, or even prompt AI models on-the-fly, all controlled by a simple hotkey and running discreetly in your system tray.
 
 This tool is designed for developers, writers, and anyone who wants to leverage the power of AI to type faster and smarter.
 
-- 🤫 **Systray Icon**: Runs quietly in the background without clustering the Taskbar
 - 🎤 **Voice Typing**: Transcribe your voice into any application with a single hotkey.
-- 🚀 **Live Prompting**: Turn your voice into AI commands on the fly (_e.g. say: "`this is a prompt; write birthday wishes for my friend`" and the AI will type it out for you_)
-- ⌨️ **Clipboard Safe**: Doesnt hijack your clipboard
-- 🔧 **Custom APIs**: Supports OpenAI, Groq, and many more...
+- 🚀 **Live Voice Prompting**: Turn your voice into AI commands on the fly (_e.g. say: "`this is a prompt; write birthday wishes for my friend`" and the AI will type it out for you_)
 - ✍️ **Preset-based Rephrasing**: Go beyond transcription with custom presets for text-transformation (_select text in any editable field and use your hotkey to rephrase it_)
+- 🔧 **Custom APIs**: Supports OpenAI, Groq, and many more...
+- 🤫 **Systray Icon**: Runs quietly in the background without clustering the Taskbar
+- ⌨️ **Clipboard Safe**: Doesnt hijack your clipboard
+
+## 📱 Screenshots
 
 <p align="center">
-    <img src="screenshots/screenshot.jpg" alt="App Screenshot" width="80%" />
+    <a href="readme_images/screenshots/01.jpg" target="_blank">
+        <img src="readme_images/screenshots/01.jpg" alt="App Screenshot 1" width="40%" />
+    </a>&nbsp;
+    <a href="readme_images/screenshots/02.jpg" target="_blank">
+        <img src="readme_images/screenshots/02.jpg" alt="App Screenshot 2" width="40%" />
+    </a>&nbsp;
+    <a href="readme_images/screenshots/03.jpg" target="_blank">
+        <img src="readme_images/screenshots/03.jpg" alt="App Screenshot 3" width="40%" />
+    </a>&nbsp;
+    <a href="readme_images/screenshots/04.jpg" target="_blank">
+        <img src="readme_images/screenshots/04.jpg" alt="App Screenshot 4" width="40%" />
+    </a>&nbsp;
 </p>
 
 ---
 
-## Key Features
+## 💖 Key Features
 
 -   **Global Voice Typing**: Transcribe your voice into any application with a single hotkey.
 -   **AI-Powered**: Supports OpenAI (Whisper, GPT models), Groq and any other Whisper-API with identical API-design for fast and accurate transcription and rephrasing.
 -   **LivePrompting**: A revolutionary feature! Use trigger words to turn your speech directly into a prompt for an AI, which then types out the result.
-    -   *Example*: Speak `"prompt write a short poem about rain"` and the AI will type the poem for you (based on your rephrasing prompt)
+    -   *Example*: Speak `"prompt, write a short poem about rain"` and the AI will type the poem for you (based on your rephrasing prompt)
 -   **Context-Aware Rephrasing**: Automatically use text you've highlighted on your screen as context for your voice prompts.
 -   **Clipboard Safe**: Your clipboard is sacred. The app restores its previous content after pasting, so you never lose what you had copied. This is a major advantage over other tools that hijack your clipboard.
 -   **Discreet Operation**: Runs quietly in the system tray without cluttering your taskbar (e.g., using `pythonw.exe` on Windows).
@@ -61,7 +74,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 -   **Multi-Language UI**: The application interface is available in English, German, Spanish, and French.
 -   **Cross-Platform**: Works on Windows, macOS, and Linux.
 
-## Installation
+## ⬇️ Download & Installation
 
 1.  Clone the repository (or download the ZIP file):
     ```bash
@@ -81,7 +94,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
     pythonw run.py
     ```
 
-## Installation on MacOS
+## ⬇️🍏 Installation on MacOS
 
 This tool is fully functional on macOS but requires additional setup for microphone and hotkey access. For the best experience, creating a standalone App Bundle using PyInstaller is recommended. This allows you to grant the necessary Input Monitoring and Accessibility permissions in System Settings, ensuring seamless operation.
 
@@ -141,10 +154,10 @@ Known Issue: The hotkey-setting button in the UI is disabled on macOS to prevent
 
 5. In any case, when using your configured hotkey for the first time, macOS will prompt for microphone access. Allow it.
     <p align="center">
-        <img src="screenshots/MacOS_audio.jpg" alt="App Screenshot" width="50%" />
+        <img src="readme_images/MacOS_audio.jpg" alt="App Screenshot" width="50%" />
     </p>
 
-## Updating
+## ↗️ Updating
 To update the application, simply pull the latest changes from the repository if you've originally cloned it. If you downloaded the ZIP file, download the latest version and replace your old files with the new ones.
 ```bash
 git pull origin main
@@ -167,13 +180,8 @@ chmod +x deploy_mac.sh
   <img alt="PyQt" src="https://img.shields.io/badge/PyQt-41CD52?style=flat-square&logo=qt&logoColor=white" />
 </p>
 
-## Usage
+## 🤝  Contributing
+Feel free to contribute to this project! Whether it's fixing bugs, adding features, or improving documentation, 
+your contributions are welcome. 
 
-1.  Run the application. On Windows, you can use `pythonw.exe WhisterTyper.py` to run it without a console window.
-2.  An icon will appear in your system tray. Right-click it to access the settings.
-3.  In the **Settings** window:
-    -   **Transcription Tab**: Enter your API keys, select your preferred AI model, and set your recording hotkey.
-    -   **Rephrase / LivePrompt Tab**: Enable rephrasing, set your trigger words, and write a default prompt to guide the AI.
-    -   **General Tab**: Choose your UI language.
-4.  Save your settings. The window will hide, and the app will run in the background.
-5.  Click into any text field in any application and use your hotkey to start typing with your voice!
+Please follow the standard GitHub workflow: fork the repository, make your changes, and submit a pull request.
