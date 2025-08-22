@@ -1,6 +1,6 @@
 <h2 align="center">Transform your voice into text and AI prompts</h2>
 <p align="center">
-    <img src="screenshots/app.png" alt="AppLogo" />
+    <img src="readme_images/app.png" alt="AppLogo" />
 </p>
 
 
@@ -127,7 +127,7 @@ Known Issue: The hotkey-setting button in the UI is disabled on macOS to prevent
        - If you are using a virtual environment, add the path to the `python` executable inside your virtual environment's `bin` directory.
        - Example path: `/Users/yourusername/.pyenv/versions/3.11.4/bin/python3`
       <p align="center">
-           <img src="screenshots/MacOS_accessibility.jpg" alt="App Screenshot" width="80%" />
+           <img src="readme_images/MacOS_accessibility.jpg" alt="App Screenshot" width="80%" />
        </p>
 
    3. Start the application using your Python interpreter:
