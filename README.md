@@ -17,7 +17,7 @@
 </p>
 <p align="center">
   <a href="#--ai-based-voice-transcriber--live-prompter">Introduction</a> &#124;
-  <a href="#--screenshots">Screenshots</a> &#124;
+  <a href="#-screenshots">Screenshots</a> &#124;
   <a href="#-key-features">Key-Features</a> &#124;
   <a href="#%EF%B8%8F-download--installation">Installation on Windows</a> &#124;
   <a href="#%EF%B8%8F-installation-on-macos">Installation on MacOS</a> &#124;
