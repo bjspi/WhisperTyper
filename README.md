@@ -6,7 +6,12 @@
 ---
 
 <p align="center">
-<!-- Quality Badges -->
+<a href="https://github.com/bjspi/WhisperTyper/actions/workflows/ci.yml">
+    <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/bjspi/WhisperTyper/ci.yml?branch=main&style=flat-square&label=CI&logo=github" />
+</a>
+<a href="https://github.com/bjspi/WhisperTyper/releases/latest">
+    <img alt="Latest Release" src="https://img.shields.io/github/v/release/bjspi/WhisperTyper?style=flat-square&color=blue" />
+</a>
 <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white" />
 <a href="LICENSE">
     <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-green?style=flat-square" />
@@ -14,22 +19,28 @@
 <a href="https://github.com/astral-sh/ruff">
     <img alt="Linted with Ruff" src="https://img.shields.io/badge/lint-ruff-261230?style=flat-square" />
 </a>
-</p>
-<p align="center">
-<!-- Platform Support Badges -->
+<img alt="Checked with mypy" src="https://img.shields.io/badge/types-mypy-2A6DB2?style=flat-square" />
 <img alt="macOS" src="https://img.shields.io/badge/-macOS-black?style=flat-square&logo=apple&logoColor=white" />
-<img alt="Windows" src="https://img.shields.io/badge/-Windows-blue?style=flat-square&logo=windows&logoColor=white" />
-<img alt="Linux" src="https://img.shields.io/badge/-Linux-yellow?style=flat-square&logo=linux&logoColor=white" />
+<img alt="Windows" src="https://img.shields.io/badge/-Windows-0078D4?style=flat-square&logo=windows&logoColor=white" />
+<img alt="Linux" src="https://img.shields.io/badge/-Linux-FCC624?style=flat-square&logo=linux&logoColor=black" />
 </p>
+
 <p align="center">
-  <a href="#--ai-based-voice-transcriber--live-prompter">Introduction</a> &#124;
-  <a href="#-screenshots">Screenshots</a> &#124;
-  <a href="#-key-features">Key-Features</a> &#124;
-  <a href="#%EF%B8%8F-download--installation">Installation on Windows</a> &#124;
-  <a href="#%EF%B8%8F-installation-on-macos">Installation on MacOS</a> &#124;
-  <a href="#%EF%B8%8F-updating">Updating</a> &#124;
-  <a href="#-architecture--development">Development</a> &#124;
-  <a href="#--contributing">Contributing</a>
+  <a href="#--ai-based-voice-transcriber--live-prompter"><b>Introduction</b></a>
+  &nbsp;·&nbsp;
+  <a href="#-key-features"><b>Features</b></a>
+  &nbsp;·&nbsp;
+  <a href="#-screenshots"><b>Screenshots</b></a>
+  &nbsp;·&nbsp;
+  <a href="#%EF%B8%8F-download--installation"><b>Installation</b></a>
+  &nbsp;·&nbsp;
+  <a href="#%EF%B8%8F-installation-on-macos"><b>macOS</b></a>
+  &nbsp;·&nbsp;
+  <a href="#%EF%B8%8F-updating"><b>Updating</b></a>
+  &nbsp;·&nbsp;
+  <a href="#-architecture--development"><b>Development</b></a>
+  &nbsp;·&nbsp;
+  <a href="#--contributing"><b>Contributing</b></a>
 </p>
 
 ---
@@ -49,20 +60,56 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 
 ## 📱 Screenshots
 
-<p align="center">
-    <a href="screenshots/app/01.jpg" target="_blank">
-        <img src="screenshots/app/01.jpg" alt="App Screenshot 1" width="40%" />
-    </a>&nbsp;
-    <a href="screenshots/app/02.jpg" target="_blank">
-        <img src="screenshots/app/02.jpg" alt="App Screenshot 2" width="40%" />
-    </a>&nbsp;
-    <a href="screenshots/app/03.jpg" target="_blank">
-        <img src="screenshots/app/03.jpg" alt="App Screenshot 3" width="40%" />
-    </a>&nbsp;
-    <a href="screenshots/app/04.jpg" target="_blank">
-        <img src="screenshots/app/04.jpg" alt="App Screenshot 4" width="40%" />
-    </a>&nbsp;
-</p>
+<table>
+  <tr>
+    <td align="center" width="50%" valign="top">
+      <a href="screenshots/app/settings-transcription.jpg" target="_blank">
+        <img src="screenshots/app/settings-transcription.jpg" alt="Transcription settings: API endpoint, model, hotkey, microphone options" />
+      </a>
+      <br />
+      <sub><b>🎤 Transcription</b> — Bring your own Whisper API (OpenAI, Groq, or any compatible endpoint), pick model &amp; temperature, set your global hotkey with optional push-to-talk, boost quiet microphones with volume gain, and keep the mic pre-warmed for instant recording starts. FFmpeg is auto-detected to enable transcribing video files.</sub>
+    </td>
+    <td align="center" width="50%" valign="top">
+      <a href="screenshots/app/settings-rephrase-liveprompt.jpg" target="_blank">
+        <img src="screenshots/app/settings-rephrase-liveprompt.jpg" alt="Rephrase and LivePrompt settings: chat API, trigger words, system prompt" />
+      </a>
+      <br />
+      <sub><b>🚀 Rephrase / LivePrompt</b> — Configure the chat-completions API used for rephrasing, and define trigger words that turn your speech into a live AI command: start a recording with <i>“prompt, …”</i> and the AI's answer is typed right where your cursor is.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%" valign="top">
+      <a href="screenshots/app/settings-transformations.jpg" target="_blank">
+        <img src="screenshots/app/settings-transformations.jpg" alt="Transformations settings: custom rephrasing presets" />
+      </a>
+      <br />
+      <sub><b>✍️ Transformations</b> — Up to 10 custom one-click presets (translate, summarize, polish an e-mail, …). Select text in any application, press the post-rephrase hotkey, and pick the transformation from a popup menu.</sub>
+    </td>
+    <td align="center" width="50%" valign="top">
+      <a href="screenshots/app/settings-general.jpg" target="_blank">
+        <img src="screenshots/app/settings-general.jpg" alt="General settings: UI language, theme, proxy, clipboard and logging options" />
+      </a>
+      <br />
+      <sub><b>🔧 General</b> — UI language (EN/DE/ES/FR), light/dark/system theme, input device, proxy support, log retention, and the clipboard-safe mode that restores your clipboard after every paste.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%" valign="top">
+      <a href="screenshots/app/tray-menu.jpg" target="_blank">
+        <img src="screenshots/app/tray-menu.jpg" alt="System tray menu with all quick actions" width="70%" />
+      </a>
+      <br />
+      <sub><b>🤫 System Tray</b> — The whole app lives in a tray icon: copy or re-transcribe the last recording, transcribe audio/video files, jump to the log, and self-update via <i>git pull</i> — all one click away.</sub>
+    </td>
+    <td align="center" width="50%" valign="top">
+      <a href="screenshots/app/liveprompt-help.jpg" target="_blank">
+        <img src="screenshots/app/liveprompt-help.jpg" alt="Built-in help tooltip explaining the LivePrompting feature" />
+      </a>
+      <br />
+      <sub><b>💡 Built-in help</b> — Every non-obvious option explains itself: hover the <b>?</b> markers to learn how features like LivePrompting work, without leaving the app.</sub>
+    </td>
+  </tr>
+</table>
 
 ## 💖 Key Features
 
@@ -88,8 +135,9 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 > Linux) there is no need to build an .exe — the app runs perfectly from the Python
 > sources, and a git clone unlocks the **built-in self-update**: WhisperTyper checks the
 > repository in the background, shows a green dot on the tray menu's *Update* entry when
-> a new version is available, and updates itself with one click. A ZIP download works
-> too, but you lose the self-update. (On macOS an App Bundle is recommended instead —
+> a new version is available, and updates itself with one click. Alternatively, grab the
+> ready-to-run ZIP from the [latest release](https://github.com/bjspi/WhisperTyper/releases/latest)
+> — but you lose the self-update. (On macOS an App Bundle is recommended instead —
 > for permissions reasons, see the [macOS instructions](docs/INSTALL_MACOS.md).)
 
 1.  Clone the repository:
@@ -137,7 +185,7 @@ You can of course also update manually at any time:
 git pull origin main
 ```
 
-If you downloaded the ZIP file instead, download the latest version and replace your old files with the new ones.
+If you downloaded the ZIP file instead, grab the [latest release](https://github.com/bjspi/WhisperTyper/releases/latest) and replace your old files with the new ones.
 
 If you run WhisperTyper as an App Bundle on macOS, see
 [docs/INSTALL_MACOS.md](docs/INSTALL_MACOS.md#updating-the-app-bundle) for rebuilding the
