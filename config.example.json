@@ -1,0 +1,66 @@
+{
+  "api_key": "YOUR_API_KEY_HERE",
+  "api_endpoint": "https://api.groq.com/openai/v1/audio/transcriptions",
+  "model": "whisper-large-v3 (groq)",
+  "transcription_temperature": 0.0,
+  "max_upload_mb": 24,
+  "min_audio_bitrate_kbps": 80,
+  "prompt": "Das Folgende ist eine Transkription einer Spracheingabe. Die Transkription sollte nahezu perfekt mit dem Original übereinstimmen, lediglich Füllwörter und Pausen/Leerstellen sollten entfernt werden. Bitte achten Sie auf Rechtschreibung, Großschreibung und sinnvolle Zeichensetzung, einschließlich Punkte und Kommas. Ich verwende auch \"denglische\" (eingedeutschte) englische Begriffe, insbesondere aus dem Technologie- und IT-Bereich, aus den Bereichen Gadgets, Smartphones, KI und Python-Programmierung.",
+  "hotkey": "<f9>",
+  "input_language": "de",
+  "ui_language": "de",
+  "restore_clipboard": false,
+  "debug_logging": true,
+  "file_logging": true,
+  "gain_db": 10.0,
+  "systray_double_click_copy": true,
+  "alt_clipboard_lib": true,
+  "liveprompt_enabled": true,
+  "liveprompt_trigger_words": "prompt, Befehl",
+  "liveprompt_trigger_word_scan_depth": 5,
+  "liveprompt_system_prompt": "Du bist ein Assistent, der Anweisungen präzise ausführt. Deine Antwort muss sich strikt auf das Ergebnis der Anweisung des Benutzers beschränken. Generiere ausschließlich die reine, direkte Antwort ohne jegliche Einleitungen, Erklärungen, Entschuldigungen oder zusammenfassende Bemerkungen. Sollte der Name des Verfasser nötig sein, ist das \"Joscha\". In seltenen Fällen wirst du auch die Firma des Verfassers nennen müssen. Diese ist \"Smartzone\"",
+  "rephrase_use_selection_context": false,
+  "generic_rephrase_enabled": false,
+  "generic_rephrase_prompt": "Das Folgende ist die Transkription einer Spracheingabe. Deine Aufgabe ist es, diese in eine prägnante, klare und logisch strukturierte Nachricht umzuwandeln. Der wichtigste Fokus liegt auf der Reduktion auf das Wesentliche: Wandle umständliche, dem Sprechen geschuldete Formulierungen in ihre direkte Kernaussage um. Entferne überflüssige Einleitungen, verbale Denkpausen und Floskeln, die keinen Informationswert haben. Ein konkretes Beispiel dafür: Statt: \"Also, wenn ich mir das so überlege, dann denke ich,...\" Schreibe: \"Ich denke,...\" Optimiere darüber hinaus den Satzbau und die Reihenfolge der Gedanken für maximale Verständlichkeit. Achte auf perfekte Rechtschreibung und eine sinnvolle Zeichensetzung. Entscheidend ist: Mein persönlicher, lockerer Tonfall muss erhalten bleiben. Das Ergebnis soll direkt und auf den Punkt sein, aber nicht unpersönlich oder roboterhaft klingen. Erkenne und verwende auch meine 'eingedeutschten' englischen Begriffe aus der Tech- und IT-Szene (Gadgets, Smartphones, KI, Python-Programmierung etc.) korrekt.",
+  "rephrasing_api_url": "https://api.groq.com/openai/v1/chat/completions",
+  "rephrasing_api_key": "YOUR_API_KEY_HERE",
+  "rephrasing_model": "openai/gpt-oss-120b",
+  "rephrasing_temperature": 0.7,
+  "post_rephrasing_entries": [
+    {
+      "caption": "Korrigieren",
+      "text": "Verbessere die Rechtschreibung und Grammatik in diesem Text. Lasse den Stil und Ton der Nachricht unverändert. Gib nur den umformulierten Text zurück. "
+    },
+    {
+      "caption": "kompakt",
+      "text": "Schreibe den folgenden Text prägnanter und kompakter. Entferne Füllwörter, redundante Phrasen und unnötige Sätze, aber erhalte die Kernaussage. Gib nur den gekürzten Text zurück. \n\n"
+    },
+    {
+      "caption": "Emojis + Korrektur",
+      "text": "Füge passende Emojis in den folgenden Text ein, um ihn freundlicher und ausdrucksstärker zu machen. Platziere die Emojis sinnvoll am Ende von Sätzen oder neben Schlüsselbegriffen. Übertreibe es nicht. Korrigiere zudem Tippfehler und einfache Rechtschreibfehler, ohne den Text zu verfremden. Gib nur den Text mit den Emojis zurück."
+    },
+    {
+      "caption": "Englisch (Chat)",
+      "text": "Übersetze den folgenden deutschen Text in einfaches, natürlich klingendes Englisch im Stil einer Chat-Nachricht. Gib nur den übersetzten Text zurück.\n"
+    },
+    {
+      "caption": "Englisch & Chinesisch",
+      "text": "Übersetze den folgenden Text in zwei Sprachen und formatiere die Ausgabe exakt wie folgt, ohne zusätzlichen erklärenden Text: 1. Zuerst in einfaches, leicht verständliches Englisch. 2. Danach in vereinfachtes Chinesisch (Mandarin). English: [Hier die englische Übersetzung] Chinese: [Hier die chinesische Übersetzung]"
+    },
+    {
+      "caption": "Englisch (gehoben)",
+      "text": "Übersetze den folgenden deutschen Text in professionelles, natürlich klingendes Englisch. Sollten Unterschrift oder Firmenname nötig sein, sind dies \"Joscha\" und \"Smartzone\". Gib nur den übersetzten Text zurück.\n\n"
+    },
+    {
+      "caption": "Chinesisch",
+      "text": "Übersetze den folgenden Text in vereinfachtes Chinesisch (Mandarin). Gib nur den übersetzten Text zurück."
+    },
+    {
+      "caption": "professionell",
+      "text": "Formuliere den folgenden Text höflicher, professioneller und klarer. Korrigiere alle Rechtschreib- oder Grammatikfehler. Der Tonfall sollte für einen formellen Geschäftskontext geeignet sein. Gib nur den umformulierten Text zurück. Sollten Unterschrift oder Firmenname nötig sein, sind dies \"Joscha\" und \"Smartzone\"."
+    }
+  ],
+  "post_rephrase_hotkey": "<f10>",
+  "macos_accessibility_info_shown": true,
+  "macos_microphone_info_shown": true
+}

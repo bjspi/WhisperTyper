@@ -1,0 +1,10 @@
+# Runtime dependencies — kept in sync with [project.dependencies] in pyproject.toml.
+# For development (tests, lint, type-checks) use:  pip install -e ".[dev]"
+PyQt6
+pyaudio
+pynput
+pyautogui # Alternative to pynput for copy/paste on macOS
+requests
+copykitten
+ftfy # robust mojibake repair (fixes UTF-8 mis-decoded as cp1252/latin-1, e.g. "Ãœ" -> "Ü")
+audioop-lts; python_version >= "3.13" # backport of stdlib audioop (removed in Py 3.13)

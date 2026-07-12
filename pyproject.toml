@@ -1,0 +1,103 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "whispertyper"
+description = "Cross-platform voice-to-text and live AI prompting from your system tray."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "bjspi" }]
+requires-python = ">=3.10"
+keywords = ["whisper", "speech-to-text", "transcription", "voice-typing", "openai", "groq", "tray", "hotkey"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: X11 Applications :: Qt",
+  "Intended Audience :: End Users/Desktop",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dynamic = ["version"]
+dependencies = [
+  "PyQt6",
+  "pyaudio",
+  "pynput",
+  "pyautogui",
+  "requests",
+  "copykitten",
+  # Robust mojibake repair (fixes UTF-8 mis-decoded as cp1252/latin-1, e.g. "Ãœ" -> "Ü").
+  "ftfy",
+  # stdlib `audioop` was removed in Python 3.13; this backport restores it.
+  "audioop-lts; python_version >= \"3.13\"",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "ruff>=0.8",
+  "mypy>=1.13",
+  "types-requests",
+]
+
+[project.urls]
+Homepage = "https://github.com/bjspi/WhisperTyper"
+Repository = "https://github.com/bjspi/WhisperTyper"
+Issues = "https://github.com/bjspi/WhisperTyper/issues"
+
+[project.gui-scripts]
+whispertyper = "run:main"
+
+[tool.setuptools]
+py-modules = ["run"]
+
+[tool.setuptools.dynamic]
+# Single source of truth for the version: app/__init__.py
+version = { attr = "app.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+  # audioop is deprecated in 3.12 and replaced by the audioop-lts backport on 3.13+.
+  "ignore:'audioop' is deprecated:DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 140
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "D", "ANN"]
+# E402: deliberate late/conditional imports. Opinionated docstring-style + any-type rules
+# are relaxed; the *presence* of docstrings (D1xx) and type hints (ANN0/2xx) is enforced.
+ignore = ["E402", "E501", "ANN401", "D203", "D212", "D213", "D401", "D404", "D413",
+          "D200", "D205", "D202", "D411", "D415", "D400", "D417"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test names describe themselves; docstrings and -> None annotations add nothing there.
+"tests/*" = ["D101", "D102", "D103", "ANN"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+follow_imports = "silent"
+
+# Mixins are duck-typed fragments recombined into one QWidget subclass; checking them
+# in isolation floods attr-defined for shared self.* members. The composed class is the
+# real unit under test (exercised at runtime).
+[[tool.mypy.overrides]]
+module = "app.mixins.*"
+disable_error_code = ["attr-defined", "has-type", "no-redef", "misc"]
