@@ -1,0 +1,5 @@
+# Excluded from `git archive` — keeps the release ZIP end-user only.
+.github/        export-ignore
+tests/          export-ignore
+.gitattributes  export-ignore
+.gitignore      export-ignore

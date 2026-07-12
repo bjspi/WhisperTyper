@@ -1,0 +1,47 @@
+name: Release
+
+# Pushing a version tag (e.g. v0.5.0) runs the full CI suite and, only if it
+# passes, publishes a GitHub Release with auto-generated notes and a clean,
+# ready-to-run source ZIP (dev files stripped via .gitattributes export-ignore).
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Publish GitHub Release
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches app version
+        run: |
+          VERSION=$(sed -nE 's/^__version__ = "(.+)"$/\1/p' app/__init__.py)
+          if [ "v${VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match app/__init__.py version ${VERSION}"
+            exit 1
+          fi
+
+      - name: Build source ZIP
+        run: git archive --format=zip --prefix "WhisperTyper/" -o "WhisperTyper-${GITHUB_REF_NAME}.zip" "${GITHUB_REF_NAME}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "WhisperTyper ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --verify-tag \
+            "WhisperTyper-${GITHUB_REF_NAME}.zip#WhisperTyper ${GITHUB_REF_NAME} — ready-to-run sources (zip)"
