@@ -1,0 +1,39 @@
+/config.json
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[codz]
+*$py.class
+
+# C extensions
+*.so
+
+# Environments
+.env
+.envrc
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Local Folders
+.idea/
+.vscode/
+history/
+deploy/build/
+deploy/dist/
+
+# Local agent tooling (not part of the project)
+/.claude/
+
+# Personal launcher (see README for the pythonw one-liner)
+/start_hidden.cmd
+
+# Logs (including daily-rotated files like WhisperTyper.log.2026-07-05 and stderr logs)
+*.log
+*.log.*
+
+/app/resources/app_icon.png2
+/whispertyper.egg-info/
