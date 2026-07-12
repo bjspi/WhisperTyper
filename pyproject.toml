@@ -92,6 +92,10 @@ convention = "pep257"
 
 [tool.mypy]
 python_version = "3.12"
+# Pin the stub platform so results don't depend on the machine running the check:
+# Windows-only stdlib attrs (os.startfile, ctypes.windll) only exist in win32 stubs.
+# The darwin/linux branches use portable APIs only, so nothing is lost by pinning.
+platform = "win32"
 ignore_missing_imports = true
 follow_imports = "silent"
 
