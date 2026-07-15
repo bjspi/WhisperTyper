@@ -2,4 +2,4 @@
 
 # Single source of truth for the application version; pyproject.toml reads it
 # dynamically via setuptools ([tool.setuptools.dynamic]).
-__version__ = "0.5.0"
+__version__ = "0.5.1"
