@@ -146,9 +146,9 @@ sequenceDiagram
 
 - **Clipboard-based insertion.** Typing results via synthetic keystrokes breaks on
   non-ASCII text and IMEs; pasting via the clipboard is reliable. The user's original
-  clipboard (including rich macOS MIME payloads) is captured first and restored after the
-  paste — on macOS with a small delay, because restoring too early makes the paste land
-  empty.
+  clipboard (including images, rich MIME payloads, and native binary formats) is captured
+  first and restored with a small delay after the paste, because simulated Ctrl/Cmd+V only
+  queues input and some target applications consume the clipboard asynchronously.
 - **Two hotkey backends on Windows.** Combos that the OS can own (`RegisterHotKey`) use
   the native path — it needs no low-level keyboard hook. Combos involving Caps Lock or
   plain character keys must be *suppressed* so they don't reach the focused app; those go
