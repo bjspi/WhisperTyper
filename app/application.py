@@ -119,10 +119,10 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         self._recording_icon_cache: Dict[tuple, QIcon] = {}
         self._recording_tray_timer = QTimer(self)
         self._recording_tray_timer.setInterval(80)
-        self._macos_clipboard_restore_timer = QTimer(self)
-        self._macos_clipboard_restore_timer.setSingleShot(True)
-        self._macos_clipboard_restore_timer.timeout.connect(self._perform_macos_clipboard_restore)
-        self._pending_macos_clipboard_restore_state: Optional[Dict[str, Any]] = None
+        self._clipboard_restore_timer = QTimer(self)
+        self._clipboard_restore_timer.setSingleShot(True)
+        self._clipboard_restore_timer.timeout.connect(self._perform_clipboard_restore)
+        self._pending_clipboard_restore_state: Optional[Dict[str, Any]] = None
         self._macos_startup_permissions_requested = False
         self._macos_hotkey_permissions_checked = False
 
@@ -245,9 +245,9 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         self._drain_worker_threads()
         if is_MACOS and self.macos_audio_recorder:
             self._stop_macos_native_recording(discard=True)
-        if is_MACOS and self._macos_clipboard_restore_timer.isActive():
-            self._macos_clipboard_restore_timer.stop()
-            self._perform_macos_clipboard_restore()
+        if self._clipboard_restore_timer.isActive():
+            self._clipboard_restore_timer.stop()
+            self._perform_clipboard_restore()
         try:
             # Close sound playback streams + PyAudio (owned by SoundPlayer)
             if getattr(self, 'sound_player', None) is not None:
