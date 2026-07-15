@@ -55,7 +55,20 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
-      # The test suite intentionally targets the Qt-free layers, so it needs neither
-      # PyQt6 nor an audio stack — it runs on bare CI runners.
+      # Keep the broad OS/Python matrix lightweight. The Qt-backed clipboard regression
+      # suite runs once in the dedicated Windows job below.
       - run: pip install pytest ftfy requests "audioop-lts; python_version >= '3.13'"
-      - run: pytest
+      - run: pytest --ignore=tests/test_clipboard.py
+
+  clipboard-test:
+    name: Clipboard tests (Windows, py3.12)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      # ClipboardMixin imports the application's input backends as well as Qt. Install
+      # exactly that dependency slice instead of the full audio/application stack.
+      - run: pip install pytest PyQt6 copykitten pynput pyautogui
+      - run: pytest tests/test_clipboard.py
