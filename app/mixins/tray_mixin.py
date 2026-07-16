@@ -8,7 +8,7 @@ import time
 from typing import List, Optional
 
 from PyQt6.QtCore import QPointF, QRect, QRectF, Qt, QTimer
-from PyQt6.QtGui import QAction, QColor, QIcon, QKeyEvent, QPainter, QPaintEvent, QPen, QPixmap
+from PyQt6.QtGui import QAction, QColor, QCursor, QIcon, QKeyEvent, QPainter, QPaintEvent, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -235,6 +235,17 @@ class TrayMixin:
 
     def init_tray_icon(self) -> None:
         """Initializes the system tray icon and its context menu."""
+        # Delay a left-click just long enough to distinguish it from the existing double-click
+        # gesture. Without that arbitration, opening the menu on the first release would prevent
+        # the second click from reaching the tray icon and break double-click-to-copy.
+        if not hasattr(self, "_tray_single_click_timer"):
+            self._tray_single_click_timer = QTimer(self)
+            self._tray_single_click_timer.setSingleShot(True)
+            self._tray_single_click_timer.timeout.connect(self._show_tray_menu)
+            self._ignore_tray_trigger_until = 0.0
+        else:
+            self._tray_single_click_timer.stop()
+
         # Fully dispose of a previous tray icon + menu before creating new ones.
         # They were parented to `self`, so merely reassigning the Python attribute
         # leaks the old QSystemTrayIcon, QMenu and all its QActions under the Qt parent
@@ -354,7 +365,7 @@ class TrayMixin:
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
 
-        # Connect activation signal for double-click handling
+        # Connect activation signal for left- and double-click handling.
         self.tray_icon.activated.connect(self.on_tray_icon_activated)
 
         # Initial state update for log file action
@@ -366,15 +377,35 @@ class TrayMixin:
 
     def on_tray_icon_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         """
-        Handles activation events for the system tray icon, like double-clicks.
+        Handle left-clicks and double-clicks on the system tray icon.
 
         Args:
             reason (QSystemTrayIcon.ActivationReason): The reason for the activation.
         """
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            # Windows emits another Trigger when the second button press of a double-click is
+            # released. Ignore that release so the menu does not appear after copying.
+            if time.monotonic() < self._ignore_tray_trigger_until:
+                return
+
+            if self.config.get("systray_double_click_copy", True):
+                self._tray_single_click_timer.start(QApplication.doubleClickInterval())
+            else:
+                self._show_tray_menu()
+        elif reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self._tray_single_click_timer.stop()
+            self._ignore_tray_trigger_until = (
+                time.monotonic() + QApplication.doubleClickInterval() / 1000.0
+            )
             if self.config.get("systray_double_click_copy", True):
                 logging.debug("Tray icon double-clicked, copying last transcription.")
                 self.copy_last_transcription_to_clipboard()
+
+    def _show_tray_menu(self) -> None:
+        """Open the tray context menu at the current pointer position."""
+        tray_menu = getattr(self, "tray_menu", None)
+        if tray_menu is not None:
+            tray_menu.popup(QCursor.pos())
 
     def update_play_last_recording_action(self) -> None:
         """Updates the enabled/disabled state of the 'Play/Re-transcribe Last Recording' actions."""
