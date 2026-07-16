@@ -288,6 +288,11 @@ class TrayMixin:
         config_action = _add(_sp.SP_FileIcon, "menu_file_open_config", "o")
         config_action.triggered.connect(self.open_config_file)
 
+        transformations_action = _add(
+            _sp.SP_FileDialogListView, "tray_edit_transformations_action", "t"
+        )
+        transformations_action.triggered.connect(self.show_transformations_settings)
+
         tray_menu.addSeparator()
 
         # --- Transcription / recording ---
@@ -754,6 +759,11 @@ class TrayMixin:
         # the General tab (not the default tab), so it needn't be ready the instant settings open.
         if hasattr(self, "_populate_input_device_selector"):
             QTimer.singleShot(0, self._populate_input_device_selector)
+
+    def show_transformations_settings(self) -> None:
+        """Open the settings window directly on the transformations templates tab."""
+        self.tabs.setCurrentWidget(self.post_rephrasing_tab)
+        self.show_settings_window()
 
     def _get_app_icon(self) -> QIcon:
         """Return the platform-appropriate application icon."""

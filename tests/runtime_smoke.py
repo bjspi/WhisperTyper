@@ -171,6 +171,29 @@ def main() -> int:
         check("startup: tray icon visible", wt.tray_icon.isVisible())
         menu_actions = [a for a in wt.tray_menu.actions() if not a.isSeparator()]
         check("startup: tray menu populated", len(menu_actions) >= 9, f"{len(menu_actions)} actions")
+        transformation_actions = [a for a in menu_actions if a.data() == "t"]
+        check("startup: transformation templates tray action", len(transformation_actions) == 1)
+        if transformation_actions:
+            transformation_actions[0].trigger()
+            check(
+                "startup: transformation tray action opens its tab",
+                wt.tabs.currentWidget() is wt.post_rephrasing_tab,
+            )
+        check(
+            "startup: transformation warning hidden with complete API settings",
+            wt.transformations_unavailable_label.isHidden(),
+        )
+        wt.rephrasing_api_key_input.clear()
+        check(
+            "startup: transformation warning shown without API key",
+            not wt.transformations_unavailable_label.isHidden(),
+        )
+        wt.rephrasing_api_key_input.setText("sk-test-dummy")
+        check(
+            "startup: transcription status includes language",
+            wt._transcription_progress_message("de") == "Transkribiere [German]...",
+        )
+        wt.hide()  # Keep QApplication.quit() from being intercepted by the tray-style closeEvent.
         check("startup: hotkey bindings parsed", len(wt.hotkey_bindings) == 2,
               "; ".join(b["display"] for b in wt.hotkey_bindings))
         step2_transcribe()

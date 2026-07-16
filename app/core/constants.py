@@ -81,9 +81,9 @@ TRANSCRIPTION_MODEL_OPTIONS = [
     "Custom"
 ]
 DEFAULT_TRANSCRIPTION_MODEL = "whisper-1 (openai)"
-DEFAULT_REPHRASING_MODEL = "gpt-5.5"
+DEFAULT_REPHRASING_MODEL = "gpt-5.6-luna"
 # Existing configs still on one of these built-in defaults are migrated to the current default.
-PREVIOUS_DEFAULT_REPHRASING_MODELS = {"gpt-4o-mini", "gpt-5.4"}
+PREVIOUS_DEFAULT_REPHRASING_MODELS = {"gpt-4o-mini", "gpt-5.4", "gpt-5.5", "gpt-5.6"}
 # Approximate max token length for the Whisper initial prompt.
 WHISPER_PROMPT_TOKEN_LIMIT = 230
 
