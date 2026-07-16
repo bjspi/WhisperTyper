@@ -16,10 +16,45 @@ from app.core.redaction import redact_for_log
 
 #: Read timeout for chat completions; generous enough for long generations.
 REQUEST_TIMEOUT_S = 30.0
+MAX_ERROR_DETAIL_CHARS = 1200
 
 
 class RephrasingError(RuntimeError):
     """The rephrasing API request failed (network error or non-2xx response)."""
+
+
+def _format_api_error(response: requests.Response) -> str:
+    """Return useful, bounded diagnostics from an OpenAI-compatible error response."""
+    lines = [f"HTTP {response.status_code}"]
+    try:
+        payload = response.json()
+    except (ValueError, requests.exceptions.JSONDecodeError):
+        payload = None
+
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if isinstance(error, dict):
+        message = str(error.get("message") or "").strip()
+        if message:
+            lines.append(message)
+        for label, key in (("Parameter", "param"), ("Code", "code"), ("Type", "type")):
+            value = error.get(key)
+            if value not in (None, ""):
+                lines.append(f"{label}: {value}")
+    elif error not in (None, ""):
+        lines.append(str(error))
+    else:
+        body = (response.text or "").strip()
+        if body:
+            if len(body) > MAX_ERROR_DETAIL_CHARS:
+                body = body[:MAX_ERROR_DETAIL_CHARS].rstrip() + "…"
+            lines.append(body)
+        elif response.reason:
+            lines.append(str(response.reason))
+
+    request_id = response.headers.get("x-request-id")
+    if request_id:
+        lines.append(f"Request ID: {request_id}")
+    return "\n".join(lines)
 
 
 def rephrase_text(
@@ -72,7 +107,12 @@ def rephrase_text(
         )
     messages.append({"role": "user", "content": final_user_prompt})
 
-    data: Dict[str, Any] = {"model": model, "messages": messages, "temperature": temperature}
+    data: Dict[str, Any] = {"model": model, "messages": messages}
+    # GPT-5.6 Chat Completions accepts only its default temperature (1). Omitting the field
+    # preserves that default; sending the configurable 0.0-1.0 value would make every Luna,
+    # Terra, Sol, or family-alias request fail with HTTP 400.
+    if not model.strip().lower().startswith("gpt-5.6"):
+        data["temperature"] = temperature
     log_data = {**data, "messages": [
         {**m, "content": redact_for_log(m.get("content", ""))} for m in messages
     ]}
@@ -80,9 +120,11 @@ def rephrase_text(
 
     try:
         response = requests.post(api_url, headers=headers, json=data, timeout=timeout, proxies=proxies)
-        response.raise_for_status()
-    except Exception as e:
+    except requests.RequestException as e:
         raise RephrasingError(f"Rephrasing API request failed: {e}") from e
+
+    if not response.ok:
+        raise RephrasingError(f"Rephrasing API request failed:\n{_format_api_error(response)}")
 
     result = response.json()
     # OpenAI/Groq style: result['choices'][0]['message']['content']

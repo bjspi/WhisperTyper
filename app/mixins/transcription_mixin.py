@@ -16,6 +16,7 @@ from PyQt6.QtCore import QThread
 from PyQt6.QtWidgets import QMessageBox
 
 from app.core import liveprompt
+from app.core.constants import LANGUAGES
 from app.core.ffmpeg import is_video_file, resolve_ffmpeg
 from app.core.textutil import shorten
 from app.services.rephrasing_worker import RephrasingWorker
@@ -36,6 +37,9 @@ class TranscriptionMixin:
         # Resolve ffmpeg so video files get their audio extracted first; harmless for audio.
         ffmpeg_path = resolve_ffmpeg(self.config.get("ffmpeg_path", ""))
         needs_extraction = bool(ffmpeg_path) and is_video_file(audio_path)
+        # Snapshot the language together with the worker settings. A later settings change must
+        # not make the status balloon disagree with the language used by this in-flight request.
+        lang_code = self.config["input_language"]
 
         # Persistent spinner balloon: it stays until on_transcription_finished/error ends it,
         # so the hint tracks the real worker state instead of a fixed timeout. (timeout_ms is
@@ -49,11 +53,11 @@ class TranscriptionMixin:
                 0, spinner=True,
             )
         else:
-            self.show_tray_balloon(prefix + self.translator.tr("transcription_progress_message"), 0, spinner=True)
+            self.show_tray_balloon(
+                prefix + self._transcription_progress_message(lang_code), 0, spinner=True
+            )
 
         thread = QThread()
-        # The config now stores the language code directly
-        lang_code = self.config["input_language"]
 
         worker = TranscriptionWorker(
             api_key=self.config["api_key"], api_endpoint=self.config["api_endpoint"],
@@ -71,7 +75,9 @@ class TranscriptionMixin:
 
         thread.started.connect(worker.run)
         worker.compressing.connect(self._on_compression_phase_started)
-        worker.transcribing.connect(self._on_transcription_phase_started)
+        worker.transcribing.connect(
+            lambda language=lang_code: self._on_transcription_phase_started(language)
+        )
         # Bind this request's output mode into the result handlers so a concurrently started
         # request (with a different mode) cannot redirect this one's delivery.
         worker.finished.connect(lambda text, mode=output_mode: self.on_transcription_finished(text, mode))
@@ -95,14 +101,22 @@ class TranscriptionMixin:
             0, spinner=True,
         )
 
-    def _on_transcription_phase_started(self) -> None:
+    def _transcription_progress_message(self, lang_code: str) -> str:
+        """Return the localized spinner text with the configured language display name."""
+        language_name = next(
+            (name for name, code in LANGUAGES.items() if code == lang_code),
+            lang_code or "Detect Language",
+        )
+        return self.translator.tr("transcription_progress_message", language=language_name)
+
+    def _on_transcription_phase_started(self, lang_code: str) -> None:
         """Switch the spinner from the 'extracting…' phase to the 'transcribing…' phase.
 
         Emitted by the worker only after video extraction finishes, so the balloon reflects the
         two distinct phases instead of leaving 'extracting…' up during the whole upload.
         """
         self.show_tray_balloon(
-            self._batch_progress_prefix() + self.translator.tr("transcription_progress_message"),
+            self._batch_progress_prefix() + self._transcription_progress_message(lang_code),
             0, spinner=True,
         )
 

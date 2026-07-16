@@ -82,6 +82,7 @@ class SettingsMixin:
         # --- Tab 3 (Transformations) Layout Adjustments ---
         # Set the labels to take up minimum vertical space
         self.transformations_tab_description_label.setSizePolicy(self.transformations_tab_description_label.sizePolicy().horizontalPolicy(), QSizePolicy.Policy.Maximum)
+        self.transformations_unavailable_label.setSizePolicy(self.transformations_unavailable_label.sizePolicy().horizontalPolicy(), QSizePolicy.Policy.Maximum)
         self.transformations_info_label.setSizePolicy(self.transformations_info_label.sizePolicy().horizontalPolicy(), QSizePolicy.Policy.Maximum)
         # Ensure the splitter takes up all remaining space
         self.splitter.setSizePolicy(self.splitter.sizePolicy().horizontalPolicy(), QSizePolicy.Policy.Expanding)
@@ -742,7 +743,7 @@ class SettingsMixin:
             )
 
     def _update_rephrase_api_group_style(self) -> None:
-        """Highlights the shared API groupbox if its settings are incomplete by directly setting the stylesheet."""
+        """Highlight incomplete API settings and mirror that state on the transformations tab."""
         # Check if any of the required fields are empty.
         # This validation is for the UI highlight only and is intentionally strict.
         url_missing = not self.rephrasing_api_url_input.text().strip()
@@ -759,6 +760,18 @@ class SettingsMixin:
             self.shared_api_group.setStyleSheet(self._group_style("shared_api_group", highlighted=True))
         else:
             self.shared_api_group.setStyleSheet(self._group_style("shared_api_group"))
+
+        # Transformations use these same three fields, so make their unavailable state explicit
+        # on the tab where users edit the templates. This updates live while a field is edited.
+        self.transformations_unavailable_label.setVisible(settings_incomplete)
+        pal = getattr(self, "_theme_palette", None) or {}
+        self.transformations_unavailable_label.setStyleSheet(
+            "QLabel#transformations_unavailable_label {"
+            f"color: {pal.get('text', '#16212b')}; "
+            f"background: {pal.get('panel', '#ffffff')}; "
+            f"border: 1px solid {pal.get('warn', '#cf6a3f')}; "
+            "border-radius: 8px; padding: 8px 10px; }"
+        )
 
     def retranslate_ui(self) -> None:
         """Updates all UI texts to the currently selected language."""
@@ -918,6 +931,7 @@ class SettingsMixin:
 
         # Transformations Tab
         self.transformations_tab_description_label.setText(self.translator.tr("transformations_tab_description"))
+        self.transformations_unavailable_label.setText(self.translator.tr("transformations_unavailable_message"))
         self.transformations_info_label.setText(self.translator.tr("transformations_info", max_entries=self.max_post_rephrasing_entries))
         self.caption_label.setText(self.translator.tr("caption_label"))
         self.text_label.setText(self.translator.tr("text_label"))
