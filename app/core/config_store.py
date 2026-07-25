@@ -8,15 +8,22 @@ from __future__ import annotations
 
 import json
 import logging
+from copy import deepcopy
 from typing import Any, Callable, Dict, Tuple
 
 from app.core.constants import (
     CONFIG_SCHEMA_VERSION,
     DEFAULT_CONFIG,
     DEFAULT_REPHRASING_MODEL,
+    DEFAULT_TRANSCRIPTION_MODEL,
     LANGUAGES,
     PREVIOUS_DEFAULT_REPHRASING_MODELS,
     WINDOW_MIN_HEIGHT,
+)
+from app.core.providers import (
+    FALLBACK_MODELS,
+    clean_legacy_model_name,
+    infer_provider,
 )
 from app.core.textutil import demojibake
 
@@ -72,6 +79,85 @@ class ConfigStore:
         """Apply all in-place migrations/defaults to ``cfg``; return True if it changed."""
         changed = False
 
+        # Schema v2 stores known-provider credentials once and lets both features select one.
+        # Legacy custom endpoints remain separate because they may genuinely be different APIs.
+        legacy_provider_keys = {"api_key", "api_endpoint", "rephrasing_api_url", "rephrasing_api_key"}
+        if cfg.get("config_schema_version", 0) < 2 or legacy_provider_keys & cfg.keys():
+            keys = deepcopy(cfg.get("provider_api_keys", {}))
+            if not isinstance(keys, dict):
+                keys = {}
+            keys.setdefault("openai", "")
+            keys.setdefault("groq", "")
+            custom = deepcopy(cfg.get("custom_provider_settings", {}))
+            if not isinstance(custom, dict):
+                custom = {}
+            for feature in ("transcription", "rephrasing"):
+                if not isinstance(custom.get(feature), dict):
+                    custom[feature] = {"endpoint": "", "api_key": ""}
+                custom[feature].setdefault("endpoint", "")
+                custom[feature].setdefault("api_key", "")
+
+            transcription_endpoint = str(
+                cfg.get("api_endpoint", "https://api.openai.com/v1/audio/transcriptions") or ""
+            )
+            transcription_provider = str(
+                cfg.get("transcription_provider") or infer_provider(transcription_endpoint)
+            )
+            transcription_key = str(cfg.get("api_key", "") or "")
+            if transcription_provider in keys:
+                if transcription_key and not keys[transcription_provider]:
+                    keys[transcription_provider] = transcription_key
+            else:
+                custom["transcription"] = {
+                    "endpoint": transcription_endpoint,
+                    "api_key": transcription_key,
+                }
+
+            rephrase_endpoint = str(
+                cfg.get("rephrasing_api_url", "https://api.openai.com/v1/chat/completions") or ""
+            )
+            rephrase_key = str(cfg.get("rephrasing_api_key", "") or "")
+            rephrase_provider = str(cfg.get("rephrasing_provider") or infer_provider(rephrase_endpoint))
+
+            # Old configs commonly left the secondary defaults untouched. If transcription is
+            # already configured, share that provider/key instead of manufacturing a second setup.
+            untouched_secondary = (
+                rephrase_endpoint == "https://api.openai.com/v1/chat/completions"
+                and not rephrase_key
+                and transcription_provider in ("openai", "groq")
+                and bool(keys.get(transcription_provider))
+            )
+            if untouched_secondary:
+                rephrase_provider = transcription_provider
+            if rephrase_provider in keys:
+                if rephrase_key and not keys[rephrase_provider]:
+                    keys[rephrase_provider] = rephrase_key
+            else:
+                custom["rephrasing"] = {
+                    "endpoint": rephrase_endpoint,
+                    "api_key": rephrase_key,
+                }
+
+            cfg["provider_api_keys"] = keys
+            cfg["custom_provider_settings"] = custom
+            cfg["transcription_provider"] = transcription_provider
+            cfg["rephrasing_provider"] = rephrase_provider
+            for key in legacy_provider_keys:
+                cfg.pop(key, None)
+
+            cfg["model"] = clean_legacy_model_name(
+                str(cfg.get("model", DEFAULT_TRANSCRIPTION_MODEL))
+            )
+            old_rephrase_model = str(cfg.get("rephrasing_model", DEFAULT_REPHRASING_MODEL))
+            if (
+                rephrase_provider == "groq"
+                and old_rephrase_model in PREVIOUS_DEFAULT_REPHRASING_MODELS | {DEFAULT_REPHRASING_MODEL}
+            ):
+                cfg["rephrasing_model"] = FALLBACK_MODELS["groq"]["rephrasing"][0]
+            else:
+                cfg["rephrasing_model"] = clean_legacy_model_name(old_rephrase_model)
+            changed = True
+
         # Migrate old 'language' key to 'input_language'
         if "language" in cfg and "input_language" not in cfg:
             cfg["input_language"] = cfg.pop("language")
@@ -117,7 +203,7 @@ class ConfigStore:
         # Ensure all default keys exist in the loaded config
         for key, default_value in DEFAULT_CONFIG.items():
             if key not in cfg:
-                cfg[key] = default_value
+                cfg[key] = deepcopy(default_value)
                 changed = True
 
         # Self-heal hotkeys polluted by a captured control char. If "Set hotkey" was active while

@@ -72,15 +72,7 @@ def activate_app(app_name: str) -> None:
 SYS_LANG = get_system_language_2char()
 logging.info(f"Detected system language: {SYS_LANG}")
 
-TRANSCRIPTION_MODEL_OPTIONS = [
-    "whisper-1 (openai)",
-    "gpt-4o-transcribe (openai)",
-    "gpt-4o-mini-transcribe (openai)",
-    "whisper-large-v3 (groq)",
-    "whisper-large-v3-turbo (groq)",
-    "Custom"
-]
-DEFAULT_TRANSCRIPTION_MODEL = "whisper-1 (openai)"
+DEFAULT_TRANSCRIPTION_MODEL = "whisper-1"
 DEFAULT_REPHRASING_MODEL = "gpt-5.6-luna"
 # Existing configs still on one of these built-in defaults are migrated to the current default.
 PREVIOUS_DEFAULT_REPHRASING_MODELS = {"gpt-4o-mini", "gpt-5.4", "gpt-5.5", "gpt-5.6"}
@@ -119,7 +111,7 @@ UI_LANG_FILES = [
 # Default UI language used to pick the initial default prompts.
 _DEFAULT_UI_LANG = SYS_LANG if SYS_LANG in UI_LANG_FILES else "en"
 
-CONFIG_SCHEMA_VERSION = 1
+CONFIG_SCHEMA_VERSION = 2
 
 # Window sizing: default on fresh install + the enforced minimum the user can't shrink past.
 # The minimum is sized so the tallest settings page (Rephrasing) shows fully without scrolling.
@@ -132,8 +124,17 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "input_device_name": "",  # "" = system default input; else a device name from the dropdown
     "window_width": 760,
     "window_height": 1080,
-    "api_key": "",
-    "api_endpoint": "https://api.openai.com/v1/audio/transcriptions",
+    # Provider credentials are stored once and shared by transcription/rephrasing.
+    # Truly custom OpenAI-compatible endpoints keep separate per-feature settings.
+    "provider_api_keys": {"openai": "", "groq": ""},
+    "transcription_provider": "openai",
+    "rephrasing_provider": "openai",
+    "custom_provider_settings": {
+        "transcription": {"endpoint": "", "api_key": ""},
+        "rephrasing": {"endpoint": "", "api_key": ""},
+    },
+    # Last successfully fetched model lists. They keep dropdowns useful while offline.
+    "provider_model_cache": {},
     "model": DEFAULT_TRANSCRIPTION_MODEL,
     "transcription_temperature": 0.0,
     # Path to an ffmpeg binary (or the folder containing it). Empty = auto-detect on PATH.
@@ -183,8 +184,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "rephrase_use_selection_context": False,
     "generic_rephrase_enabled": False,
     "generic_rephrase_prompt": _default_prompt_for(DEFAULT_GENERIC_REPHRASE_PROMPTS, _DEFAULT_UI_LANG),
-    "rephrasing_api_url": "https://api.openai.com/v1/chat/completions",
-    "rephrasing_api_key": "",
     "rephrasing_model": DEFAULT_REPHRASING_MODEL,
     "rephrasing_temperature": 0.7,
     "post_rephrasing_entries": [],

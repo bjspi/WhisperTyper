@@ -39,12 +39,15 @@ class TestLoad:
             f.write("{not valid json")
         config, changed = store.load()
         assert changed is True
-        assert config["api_endpoint"] == DEFAULT_CONFIG["api_endpoint"]
+        assert config["transcription_provider"] == DEFAULT_CONFIG["transcription_provider"]
 
     def test_existing_values_are_preserved(self, store: ConfigStore):
-        write_config(store, {"api_key": "sk-test", "config_schema_version": CONFIG_SCHEMA_VERSION})
+        write_config(store, {
+            "provider_api_keys": {"openai": "sk-test", "groq": ""},
+            "config_schema_version": CONFIG_SCHEMA_VERSION,
+        })
         config, _ = store.load()
-        assert config["api_key"] == "sk-test"
+        assert config["provider_api_keys"]["openai"] == "sk-test"
 
 
 class TestMigrations:
@@ -97,6 +100,54 @@ class TestMigrations:
         config, _ = store.load()
         assert config["window_height"] >= WINDOW_MIN_HEIGHT
         assert config["config_schema_version"] == CONFIG_SCHEMA_VERSION
+
+    def test_known_groq_credentials_are_deduplicated(self, store: ConfigStore):
+        write_config(store, {
+            "api_key": "gsk-one-key",
+            "api_endpoint": "https://api.groq.com/openai/v1/audio/transcriptions",
+            "rephrasing_api_url": "https://api.groq.com/openai/v1/chat/completions",
+            "rephrasing_api_key": "gsk-one-key",
+            "model": "whisper-large-v3-turbo (groq)",
+            "rephrasing_model": "llama-3.3-70b-versatile",
+        })
+        config, _ = store.load()
+        assert config["provider_api_keys"]["groq"] == "gsk-one-key"
+        assert config["transcription_provider"] == "groq"
+        assert config["rephrasing_provider"] == "groq"
+        assert config["model"] == "whisper-large-v3-turbo"
+        assert not {"api_key", "api_endpoint", "rephrasing_api_key", "rephrasing_api_url"} & config.keys()
+
+    def test_untouched_secondary_defaults_reuse_transcription_provider(self, store: ConfigStore):
+        write_config(store, {
+            "api_key": "gsk-one-key",
+            "api_endpoint": "https://api.groq.com/openai/v1/audio/transcriptions",
+            "rephrasing_api_url": "https://api.openai.com/v1/chat/completions",
+            "rephrasing_api_key": "",
+            "rephrasing_model": DEFAULT_REPHRASING_MODEL,
+        })
+        config, _ = store.load()
+        assert config["rephrasing_provider"] == "groq"
+        assert config["rephrasing_model"] == "openai/gpt-oss-120b"
+
+    def test_different_custom_endpoints_remain_separate(self, store: ConfigStore):
+        write_config(store, {
+            "api_key": "stt-key",
+            "api_endpoint": "https://stt.example/v1/transcribe",
+            "rephrasing_api_url": "https://chat.example/v1/chat",
+            "rephrasing_api_key": "chat-key",
+        })
+        config, _ = store.load()
+        assert config["transcription_provider"] == "custom"
+        assert config["rephrasing_provider"] == "custom"
+        assert config["custom_provider_settings"]["transcription"]["api_key"] == "stt-key"
+        assert config["custom_provider_settings"]["rephrasing"]["api_key"] == "chat-key"
+
+    def test_nested_defaults_are_not_shared_between_loads(self, store: ConfigStore, tmp_path: Path):
+        first, _ = store.load()
+        first["provider_api_keys"]["groq"] = "mutated"
+        second_store = ConfigStore(str(tmp_path / "other.json"), normalize_hotkey_string)
+        second, _ = second_store.load()
+        assert second["provider_api_keys"]["groq"] == ""
 
 
 class TestSaveRoundtrip:
