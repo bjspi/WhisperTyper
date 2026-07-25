@@ -84,18 +84,20 @@ class TranscriptionWorker(QObject):
                 logging.debug("No API key provided in configuration.")
                 raise ValueError("API key not found in configuration.")
 
-            # Prepare the file for upload: videos get their audio extracted, and any file above the
-            # endpoint's size limit is compressed to fit (mono/16 kHz, bitrate lowered as needed).
-            # A video is only extractable when ffmpeg is present; that's guaranteed by the picker.
+            # Prepare the file for upload: videos get their audio extracted, Ogg/Opus inputs are
+            # normalized for provider-independent upload, and any file above the endpoint's size
+            # limit is compressed to fit (mono/16 kHz, bitrate lowered as needed).
             is_video = ffmpeg.is_video_file(self.audio_path)
+            needs_normalization = ffmpeg.needs_audio_normalization(self.audio_path)
+            needs_transcode = is_video or needs_normalization
             # An oversized non-video file is compressed in-place below — announce that phase first so
             # the tray shows a "compressing…" spinner during the blocking re-encode. (Videos already
             # show the "extracting…" spinner raised by the caller.)
-            if not is_video and self._is_oversized(self.audio_path):
+            if not needs_transcode and self._is_oversized(self.audio_path):
                 self.compressing.emit(os.path.basename(self.audio_path))
             upload_path, extracted_temp = ffmpeg.prepare_upload(
                 self.ffmpeg_path, self.audio_path,
-                transcode_source=bool(self.ffmpeg_path) and is_video,
+                transcode_source=bool(self.ffmpeg_path) and needs_transcode,
                 max_bytes=self.max_upload_bytes,
                 min_bitrate_kbps=self.min_bitrate_kbps,
             )

@@ -118,7 +118,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 -   **LivePrompting**: A revolutionary feature! Use trigger words to turn your speech directly into a prompt for an AI, which then types out the result.
     -   *Example*: Speak `"prompt, write a short poem about rain"` and the AI will type the poem for you (based on your rephrasing prompt)
 -   **Context-Aware Rephrasing**: Automatically use text you've highlighted on your screen as context for your voice prompts.
--   **Transcribe Audio & Video Files**: Pick an existing audio file (or, with **FFmpeg** installed, a video file — MP4, MOV, MKV, …) from the tray menu; the audio track is extracted to a temporary 128 kbps MP3 and transcribed. Set the FFmpeg path (or leave it empty to auto-detect on your `PATH`) on the Transcription settings page.
+-   **Transcribe Audio & Video Files**: Pick one or more existing files from the tray menu. OGG/Opus audio is normalized to a temporary 16 kHz mono MP3 for consistent provider support; for videos (MP4, MOV, MKV, …), FFmpeg extracts the audio track to the same temporary format. The originals are never changed. Set the FFmpeg path (or leave it empty to auto-detect on your `PATH`) on the Transcription settings page.
 -   **Clipboard Safe**: Your clipboard is sacred. The app restores its previous content after pasting, so you never lose what you had copied. This is a major advantage over other tools that hijack your clipboard.
 -   **Discreet Operation**: Runs quietly in the system tray without cluttering your taskbar (e.g., using `pythonw.exe` on Windows).
 -   **Self-Updating**: When run from a cloned repo, a background watcher flags new versions with a green dot in the tray menu — one click updates and restarts the app.

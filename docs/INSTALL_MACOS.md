@@ -120,5 +120,15 @@ chmod +x deploy_mac.sh
 ./deploy_mac.sh
 ```
 
+## Transcribing existing audio and video files
+
+Use the menu-bar icon and choose **Transcribe Audio/Video File(s)…**. The result is copied
+to the clipboard. Multiple selected files are processed in order and joined with blank lines.
+
+Set FFmpeg to `/opt/homebrew/bin/ffmpeg` on Apple Silicon Homebrew installations. OGG and
+Opus audio are normalized to a temporary 16 kHz mono MP3 before upload. For video containers
+such as MP4, MOV, MKV, AVI and WebM, only the audio track is extracted to that temporary file.
+Original audio and video files are never modified, and temporary files are removed afterward.
+
 (When running from the sources instead, the tray menu's built-in self-update works on
 macOS too — see the [README's Updating section](../README.md#%EF%B8%8F-updating).)

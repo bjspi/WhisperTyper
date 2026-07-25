@@ -19,7 +19,12 @@ from PyQt6.QtWidgets import (
 )
 
 from app.core.env import is_MACOS
-from app.core.ffmpeg import VIDEO_EXTENSIONS, is_video_file, resolve_ffmpeg
+from app.core.ffmpeg import (
+    AUDIO_EXTENSIONS,
+    VIDEO_EXTENSIONS,
+    needs_ffmpeg,
+    resolve_ffmpeg,
+)
 from app.core.gitutil import (
     count_behind_upstream,
     current_head,
@@ -441,7 +446,7 @@ class TrayMixin:
         self.start_transcription_worker(latest, output_mode="clipboard")
 
     def transcribe_audio_file(self) -> None:
-        """Pick an audio (or, with ffmpeg, video) file and transcribe it; result goes to the clipboard."""
+        """Pick audio/video files and transcribe them; results go to the clipboard."""
         if not self._has_valid_api_settings():
             self.show_tray_balloon(self.translator.tr("recording_no_api_keys"), 2500)
             self.show_settings_window()
@@ -449,7 +454,7 @@ class TrayMixin:
 
         # With ffmpeg available we can also accept video containers (audio is extracted first).
         ffmpeg_exe = resolve_ffmpeg(self.config.get("ffmpeg_path", ""))
-        audio_globs = "*.mp3 *.ogg *.wav *.m4a *.flac *.webm *.mp4 *.mpga *.mpeg"
+        audio_globs = " ".join(f"*{ext}" for ext in sorted(AUDIO_EXTENSIONS))
         audio_filter = f"Audio ({audio_globs})"
         if ffmpeg_exe:
             video_globs = " ".join(f"*{ext}" for ext in sorted(VIDEO_EXTENSIONS))
@@ -478,9 +483,9 @@ class TrayMixin:
             self.config["last_transcribe_dir"] = chosen_dir
             self.save_config()
 
-        # Guard: a video was picked but no ffmpeg is configured — point the user at the setting.
-        if not ffmpeg_exe and any(is_video_file(p) for p in paths):
-            self.show_tray_balloon(self.translator.tr("video_needs_ffmpeg_message"), 4000)
+        # Guard: videos and Ogg/Opus audio need conversion before provider-independent upload.
+        if not ffmpeg_exe and any(needs_ffmpeg(p) for p in paths):
+            self.show_tray_balloon(self.translator.tr("media_needs_ffmpeg_message"), 4000)
             self.show_settings_window()
             return
 

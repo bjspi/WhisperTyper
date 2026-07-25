@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import QMessageBox
 
 from app.core import liveprompt
 from app.core.constants import LANGUAGES
-from app.core.ffmpeg import is_video_file, resolve_ffmpeg
+from app.core.ffmpeg import is_video_file, needs_audio_normalization, resolve_ffmpeg
 from app.core.textutil import shorten
 from app.services.rephrasing_worker import RephrasingWorker
 from app.services.transcription_worker import TranscriptionWorker
@@ -37,6 +37,7 @@ class TranscriptionMixin:
         # Resolve ffmpeg so video files get their audio extracted first; harmless for audio.
         ffmpeg_path = resolve_ffmpeg(self.config.get("ffmpeg_path", ""))
         needs_extraction = bool(ffmpeg_path) and is_video_file(audio_path)
+        needs_normalization = bool(ffmpeg_path) and needs_audio_normalization(audio_path)
         # Snapshot the language together with the worker settings. A later settings change must
         # not make the status balloon disagree with the language used by this in-flight request.
         lang_code = self.config["input_language"]
@@ -50,6 +51,11 @@ class TranscriptionMixin:
         if needs_extraction:
             self.show_tray_balloon(
                 prefix + self.translator.tr("extracting_video_audio_message", filename=os.path.basename(audio_path)),
+                0, spinner=True,
+            )
+        elif needs_normalization:
+            self.show_tray_balloon(
+                prefix + self.translator.tr("normalizing_audio_message", filename=os.path.basename(audio_path)),
                 0, spinner=True,
             )
         else:

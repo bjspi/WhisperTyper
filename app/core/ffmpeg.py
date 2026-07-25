@@ -28,6 +28,15 @@ VIDEO_EXTENSIONS = frozenset({
     ".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".flv", ".mpg", ".mpeg", ".ts", ".3gp",
 })
 
+# Audio formats offered by the file picker. Ogg/Opus inputs are normalized through ffmpeg before
+# upload because Whisper-compatible providers differ in which Ogg container/codec combinations
+# they accept. Converting them to the same 16 kHz mono MP3 used for videos makes the behavior
+# provider-independent.
+AUDIO_EXTENSIONS = frozenset({
+    ".mp3", ".mpga", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".oga", ".opus",
+})
+NORMALIZED_AUDIO_EXTENSIONS = frozenset({".ogg", ".oga", ".opus"})
+
 # Encode target: mono, 16 kHz MP3. Whisper works at 16 kHz mono internally, so this is lossless for
 # transcription while keeping files small. The default bitrate is used unless the file must shrink
 # further to fit under the upload limit.
@@ -44,6 +53,21 @@ class AudioTooLargeError(RuntimeError):
 def is_video_file(path: str) -> bool:
     """True if ``path``'s extension is a known video container that needs audio extraction."""
     return os.path.splitext(path)[1].lower() in VIDEO_EXTENSIONS
+
+
+def is_audio_file(path: str) -> bool:
+    """True if ``path`` has an audio extension offered by the file picker."""
+    return os.path.splitext(path)[1].lower() in AUDIO_EXTENSIONS
+
+
+def needs_audio_normalization(path: str) -> bool:
+    """True for audio containers normalized through ffmpeg before API upload."""
+    return os.path.splitext(path)[1].lower() in NORMALIZED_AUDIO_EXTENSIONS
+
+
+def needs_ffmpeg(path: str) -> bool:
+    """True when a selected file must be converted before a Whisper API can accept it."""
+    return is_video_file(path) or needs_audio_normalization(path)
 
 
 def resolve_ffmpeg(configured_path: str = "") -> Optional[str]:
@@ -164,7 +188,8 @@ def prepare_upload(
     """Return a path to upload plus an optional temp file the caller must delete.
 
     Produces a file the endpoint will accept:
-      * ``transcode_source`` (a video container) is always re-encoded to extract its audio.
+      * ``transcode_source`` (a video or normalization-required audio container) is always
+        re-encoded to extract/normalize its audio.
       * Any file larger than ``max_bytes`` is compressed to fit.
       * Everything else is uploaded untouched (returned path == ``src_path``, temp == None).
 

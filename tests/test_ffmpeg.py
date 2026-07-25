@@ -18,6 +18,23 @@ class TestIsVideoFile:
         assert ffmpeg.is_video_file(name) is False
 
 
+class TestAudioFileDecisions:
+    @pytest.mark.parametrize("name", ["voice.ogg", "voice.OPUS", "memo.oga"])
+    def test_ogg_and_opus_are_audio_that_need_normalization(self, name: str):
+        assert ffmpeg.is_audio_file(name) is True
+        assert ffmpeg.needs_audio_normalization(name) is True
+        assert ffmpeg.needs_ffmpeg(name) is True
+
+    @pytest.mark.parametrize("name", ["voice.mp3", "voice.wav", "voice.m4a", "voice.flac"])
+    def test_native_audio_does_not_require_ffmpeg(self, name: str):
+        assert ffmpeg.is_audio_file(name) is True
+        assert ffmpeg.needs_audio_normalization(name) is False
+        assert ffmpeg.needs_ffmpeg(name) is False
+
+    def test_video_requires_ffmpeg(self):
+        assert ffmpeg.needs_ffmpeg("meeting.mov") is True
+
+
 class TestResolveFfmpeg:
     def test_configured_binary_path_wins(self, tmp_path: Path):
         exe = tmp_path / ("ffmpeg.exe" if ffmpeg.is_WINDOWS else "ffmpeg")
