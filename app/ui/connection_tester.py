@@ -15,7 +15,6 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from app.core.netutil import PX_PROXY_PORT, is_px_running
 from app.core.redaction import redact_for_log
-from app.core.textutil import clean_model_name
 from app.services import net
 from app.services.rephrasing import rephrase_text
 
@@ -35,16 +34,13 @@ class ConnectionTester:
                                            proxies: Optional[Dict[str, str]]) -> tuple[str, str]:
         """Send a tiny test audio to the endpoint and classify (delegates to services.net)."""
         w = self._w
-        model = clean_model_name(w.model_dropdown.currentText())
-        if w.model_dropdown.currentText() == "Custom":
-            model = w.model_input.text().strip() or "whisper-1"
+        model = w._selected_model("transcription") or "whisper-1"
         return net.run_transcription_connection_test(api_url, api_key, model, proxies)
 
     def test_transcription(self) -> None:
         """Tests the transcription API connection (incl. proxy) and reports a differentiated result."""
         w = self._w
-        api_url = w.api_endpoint_input.text().strip()
-        api_key = w.api_key_input.text().strip()
+        api_url, api_key = w._ui_provider_connection("transcription")
 
         if not api_url or not api_key:
             QMessageBox.warning(
@@ -133,9 +129,8 @@ class ConnectionTester:
     def test_rephrasing(self) -> None:
         """Tests the rephrasing API settings by sending a simple request."""
         w = self._w
-        api_url = w.rephrasing_api_url_input.text().strip()
-        api_key = w.rephrasing_api_key_input.text().strip() or w.api_key_input.text().strip()
-        model = w.rephrasing_model_input.text().strip()
+        api_url, api_key = w._ui_provider_connection("rephrasing")
+        model = w._selected_model("rephrasing")
 
         if not all([api_url, api_key, model]):
             QMessageBox.warning(

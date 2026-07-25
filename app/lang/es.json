@@ -231,5 +231,17 @@
   "color_theme_light": "Claro",
   "color_theme_dark": "Oscuro",
   "input_device_label": "Dispositivo de entrada (micrófono):",
-  "input_device_default": "Predeterminado del sistema (auto)"
+  "input_device_default": "Predeterminado del sistema (auto)",
+  "tab_providers": "Proveedores",
+  "tooltip_tab_providers": "Guarda las claves API una vez y actualiza las listas de modelos disponibles.",
+  "provider_label": "Proveedor:",
+  "provider_accounts_intro": "Guarda una sola vez la clave de cada proveedor. La transcripción y la reformulación pueden elegir proveedor y modelo sin duplicar credenciales.",
+  "provider_accounts_group": "Cuentas de proveedores",
+  "provider_custom_group": "Avanzado: endpoints personalizados compatibles con OpenAI",
+  "provider_custom_tooltip": "Los servicios personalizados pueden usar endpoints y claves separados para transcripción y reformulación.",
+  "provider_refresh_models": "Actualizar modelos",
+  "provider_refresh_models_tooltip": "Carga los modelos {provider} disponibles y los guarda para uso sin conexión.",
+  "provider_key_required": "Introduce primero la clave API del proveedor.",
+  "provider_models_loaded": "{count} modelos cargados.",
+  "provider_models_failed": "No se pudieron cargar los modelos: {detail}"
 }

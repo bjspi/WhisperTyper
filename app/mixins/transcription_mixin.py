@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import QMessageBox
 from app.core import liveprompt
 from app.core.constants import LANGUAGES
 from app.core.ffmpeg import is_video_file, resolve_ffmpeg
+from app.core.providers import resolve_connection
 from app.core.textutil import shorten
 from app.services.rephrasing_worker import RephrasingWorker
 from app.services.transcription_worker import TranscriptionWorker
@@ -59,8 +60,9 @@ class TranscriptionMixin:
 
         thread = QThread()
 
+        api_endpoint, api_key = resolve_connection(self.config, "transcription")
         worker = TranscriptionWorker(
-            api_key=self.config["api_key"], api_endpoint=self.config["api_endpoint"],
+            api_key=api_key, api_endpoint=api_endpoint,
             audio_path=audio_path, prompt=self.config["prompt"],
             model=self.config["model"], language=lang_code,
             temperature=self.config["transcription_temperature"],
@@ -157,11 +159,12 @@ class TranscriptionMixin:
     def _build_rephrasing_worker(self, system_prompt: str, user_prompt: str,
                                  context: str = "") -> RephrasingWorker:
         """Snapshot the current rephrasing API settings (GUI thread) into a self-contained worker."""
+        api_url, api_key = resolve_connection(self.config, "rephrasing")
         return RephrasingWorker(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            api_url=self.config["rephrasing_api_url"],
-            api_key=self.config["rephrasing_api_key"],
+            api_url=api_url,
+            api_key=api_key,
             model=self.config["rephrasing_model"],
             temperature=self.config["rephrasing_temperature"],
             context=context,

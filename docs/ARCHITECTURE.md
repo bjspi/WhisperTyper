@@ -165,6 +165,12 @@ sequenceDiagram
 - **Config self-healing.** `ConfigStore` migrates legacy keys, repairs mojibake from
   historic encoding bugs (via `ftfy`), resets hotkeys polluted by captured control
   characters, and normalizes hotkey strings — all covered by tests.
+- **Central provider profiles.** Known-provider credentials live once in
+  `provider_api_keys`; transcription and rephrasing only persist a provider/model choice.
+  `app/core/providers.py` resolves those choices into runtime endpoints without Qt, while
+  genuinely custom services retain feature-specific endpoint/key pairs. Legacy duplicated
+  fields are migrated and removed. Model discovery uses one `/models` request per refresh,
+  feature-filters the response, and keeps a cache for offline startup.
 - **Self-update via git.** When run from a source checkout, the tray offers a
   `git pull --ff-only` update; a background `git fetch` watcher shows a green dot when
   upstream is ahead. Frozen (PyInstaller) builds never see this menu entry.

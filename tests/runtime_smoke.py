@@ -80,10 +80,21 @@ def _seed_config(iso_home: str, port: int) -> None:
     os.makedirs(app_data, exist_ok=True)
     with open(os.path.join(app_data, "config.json"), "w", encoding="utf-8") as f:
         json.dump({
-            "api_key": "sk-test-dummy",
-            "api_endpoint": f"http://127.0.0.1:{port}/v1/audio/transcriptions",
-            "rephrasing_api_url": f"http://127.0.0.1:{port}/v1/chat/completions",
-            "rephrasing_api_key": "sk-test-dummy",
+            "config_schema_version": 2,
+            "provider_api_keys": {"openai": "", "groq": ""},
+            "transcription_provider": "custom",
+            "rephrasing_provider": "custom",
+            "custom_provider_settings": {
+                "transcription": {
+                    "endpoint": f"http://127.0.0.1:{port}/v1/audio/transcriptions",
+                    "api_key": "sk-test-dummy",
+                },
+                "rephrasing": {
+                    "endpoint": f"http://127.0.0.1:{port}/v1/chat/completions",
+                    "api_key": "sk-test-dummy",
+                },
+            },
+            "model": "fake-transcription-model",
             "rephrasing_model": "fake-model",
             "hotkey": "<ctrl>+<shift>+<f12>",
             "post_rephrase_hotkey": "<ctrl>+<shift>+<f11>",
@@ -167,7 +178,7 @@ def main() -> int:
     def step1_startup() -> None:
         """Assert config creation/migration, tray, and hotkey registration."""
         check("startup: config created + migrated",
-              wt.config["hotkey"] == "<ctrl>+<shift>+<f12>" and wt.config["config_schema_version"] == 1)
+              wt.config["hotkey"] == "<ctrl>+<shift>+<f12>" and wt.config["config_schema_version"] == 2)
         check("startup: tray icon visible", wt.tray_icon.isVisible())
         menu_actions = [a for a in wt.tray_menu.actions() if not a.isSeparator()]
         check("startup: tray menu populated", len(menu_actions) >= 9, f"{len(menu_actions)} actions")
@@ -183,12 +194,12 @@ def main() -> int:
             "startup: transformation warning hidden with complete API settings",
             wt.transformations_unavailable_label.isHidden(),
         )
-        wt.rephrasing_api_key_input.clear()
+        wt.provider_accounts.custom_key_inputs["rephrasing"].clear()
         check(
             "startup: transformation warning shown without API key",
             not wt.transformations_unavailable_label.isHidden(),
         )
-        wt.rephrasing_api_key_input.setText("sk-test-dummy")
+        wt.provider_accounts.custom_key_inputs["rephrasing"].setText("sk-test-dummy")
         check(
             "startup: transcription status includes language",
             wt._transcription_progress_message("de") == "Transkribiere [German]...",
@@ -221,7 +232,8 @@ def main() -> int:
 
     def probe1_rephrase_failure() -> None:
         """PROBE: a failing rephrase endpoint must fall back to the raw transcription."""
-        wt.config["rephrasing_api_url"] = f"http://127.0.0.1:{port}/v1/chat/fail"
+        wt.config["custom_provider_settings"]["rephrasing"]["endpoint"] = \
+            f"http://127.0.0.1:{port}/v1/chat/fail"
         wt.config["liveprompt_strip_trigger"] = False
         wt.on_transcription_finished("prompt, translate this text", "clipboard")
         expected = "prompt, translate this text"

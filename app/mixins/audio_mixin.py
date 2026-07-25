@@ -129,8 +129,7 @@ class AudioMixin:
             # Check if API settings are complete before starting recording.
             # A fresh install has no API key yet, so recording is blocked and the
             # settings window is opened so the user can add a key first.
-            api_url = self.api_endpoint_input.text().strip()
-            api_key = self.api_key_input.text().strip()
+            api_url, api_key = self._ui_provider_connection("transcription")
             if not api_url or not api_key:
                 self.push_to_talk_active = False
                 self.show_tray_balloon(self.translator.tr("recording_no_api_keys"), 2500)

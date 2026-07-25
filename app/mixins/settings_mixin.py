@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import logging.handlers
 import os
+import threading
 from typing import Any, Dict, List, Optional
 
 from PyQt6 import uic
@@ -12,6 +13,7 @@ from PyQt6.QtGui import QAction, QDesktopServices
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QComboBox,
     QDoubleSpinBox,
     QFileDialog,
     QHBoxLayout,
@@ -31,7 +33,6 @@ from app.core.constants import (
     CONFIG_FILE,
     LANGUAGES,
     LOG_FILE_PATH,
-    TRANSCRIPTION_MODEL_OPTIONS,
     WHISPER_PROMPT_TOKEN_LIMIT,
     WINDOW_MIN_HEIGHT,
     WINDOW_MIN_WIDTH,
@@ -47,14 +48,191 @@ from app.core.prompts import (
     _default_prompt_for,
     _is_known_default_prompt,
 )
+from app.core.providers import PROVIDER_IDS, PROVIDER_LABELS, cached_models, resolve_connection, ui_connection
 from app.core.redaction import LOG_REDACTION_STATE
 from app.core.textutil import estimate_tokens
 from app.services import net
+from app.services.provider_models import fetch_provider_catalog
 from app.ui.connection_tester import ConnectionTester
+from app.ui.provider_settings import ProviderAccountsWidget
 
 
 class SettingsMixin:
     """Settings window: build, bind, validate, retranslate, API/connection tests, config & logging."""
+
+    def _install_provider_ui(self) -> None:
+        """Install the central accounts tab and compact per-feature provider selectors."""
+        self.provider_accounts = ProviderAccountsWidget(self.config, self)
+        self.tabs.insertTab(0, self.provider_accounts, "")
+        self.provider_accounts.refresh_requested.connect(self._refresh_provider_models)
+        self.provider_accounts.model_catalog_ready.connect(self._on_provider_catalog_ready)
+        self.provider_accounts.model_catalog_failed.connect(self._on_provider_catalog_failed)
+
+        self.transcription_provider_label = QLabel(self)
+        self.transcription_provider_combo = QComboBox(self)
+        self.rephrasing_provider_label = QLabel(self)
+        self.rephrasing_provider_combo = QComboBox(self)
+        for combo, feature in (
+            (self.transcription_provider_combo, "transcription"),
+            (self.rephrasing_provider_combo, "rephrasing"),
+        ):
+            for provider in PROVIDER_IDS:
+                combo.addItem(PROVIDER_LABELS[provider], provider)
+            configured = str(self.config.get(f"{feature}_provider", "openai"))
+            index = combo.findData(configured)
+            combo.setCurrentIndex(index if index >= 0 else 0)
+
+        provider_row = QHBoxLayout()
+        provider_row.addWidget(self.transcription_provider_label)
+        provider_row.addWidget(self.transcription_provider_combo, 1)
+        self.api_settings_layout.insertLayout(0, provider_row)
+
+        self.rephrasing_url_v_layout.insertWidget(0, self.rephrasing_provider_label)
+        self.rephrasing_url_v_layout.insertWidget(1, self.rephrasing_provider_combo)
+
+        # The old duplicated URL/key widgets remain in the .ui for source compatibility with
+        # third-party extensions, but central provider profiles are now the only visible editor.
+        for widget in (
+            self.api_key_label,
+            self.api_key_input,
+            self.api_endpoint_label,
+            self.api_endpoint_input,
+            self.openai_button,
+            self.groq_button,
+            self.rephrasing_api_url_label,
+            self.rephrasing_api_url_input,
+            self.rephrasing_api_key_label,
+            self.rephrasing_api_key_input,
+        ):
+            widget.setVisible(False)
+
+        self.rephrasing_model_dropdown = QComboBox(self)
+        self.rephrasing_model_v_layout.insertWidget(1, self.rephrasing_model_dropdown)
+        self.rephrasing_model_dropdown.currentTextChanged.connect(
+            lambda text: self.rephrasing_model_input.setVisible(
+                text == self._custom_model_label()
+            )
+        )
+        self.rephrasing_model_dropdown.currentTextChanged.connect(
+            self._update_rephrase_api_group_style
+        )
+
+        self.transcription_provider_combo.currentIndexChanged.connect(
+            lambda _index: self._on_feature_provider_changed("transcription")
+        )
+        self.rephrasing_provider_combo.currentIndexChanged.connect(
+            lambda _index: self._on_feature_provider_changed("rephrasing")
+        )
+
+    @staticmethod
+    def _custom_model_label() -> str:
+        """Return the stable, non-persisted dropdown sentinel."""
+        return "Custom…"
+
+    def _feature_provider(self, feature: str) -> str:
+        """Return the currently selected provider ID for a settings feature."""
+        combo = (
+            self.transcription_provider_combo
+            if feature == "transcription"
+            else self.rephrasing_provider_combo
+        )
+        return str(combo.currentData() or "custom")
+
+    def _ui_provider_connection(self, feature: str) -> tuple[str, str]:
+        """Resolve current unsaved provider-form values for tests and recording guards."""
+        return ui_connection(
+            self._feature_provider(feature),
+            feature,
+            self.provider_accounts.provider_keys(),
+            self.provider_accounts.custom_settings(),
+        )
+
+    def _populate_model_dropdown(self, feature: str, current_model: str = "") -> None:
+        """Populate a feature's model dropdown from cache/fallback and keep its selection."""
+        provider = self._feature_provider(feature)
+        dropdown = self.model_dropdown if feature == "transcription" else self.rephrasing_model_dropdown
+        custom_input = self.model_input if feature == "transcription" else self.rephrasing_model_input
+        requested = (current_model or "").strip()
+        options = cached_models(self.config, provider, feature) if provider != "custom" else []
+
+        dropdown.blockSignals(True)
+        dropdown.clear()
+        dropdown.addItems(options)
+        if requested and requested not in options:
+            dropdown.addItem(requested)
+        dropdown.addItem(self._custom_model_label())
+        if requested:
+            dropdown.setCurrentText(requested)
+        elif options:
+            dropdown.setCurrentIndex(0)
+        else:
+            dropdown.setCurrentText(self._custom_model_label())
+        dropdown.blockSignals(False)
+
+        use_custom = dropdown.currentText() == self._custom_model_label()
+        custom_input.setVisible(use_custom)
+        if use_custom and requested:
+            custom_input.setText(requested)
+
+    def _on_feature_provider_changed(self, feature: str) -> None:
+        """Switch to the selected provider's recommended/cached model list."""
+        self._populate_model_dropdown(feature)
+        self._update_transcription_api_group_style()
+        self._update_rephrase_api_group_style()
+
+    def _selected_model(self, feature: str) -> str:
+        """Return the actual model ID from dropdown or custom input."""
+        dropdown = self.model_dropdown if feature == "transcription" else self.rephrasing_model_dropdown
+        custom_input = self.model_input if feature == "transcription" else self.rephrasing_model_input
+        if dropdown.currentText() == self._custom_model_label():
+            return custom_input.text().strip()
+        return dropdown.currentText().strip()
+
+    def _refresh_provider_models(self, provider: str) -> None:
+        """Fetch both feature catalogs in a background thread."""
+        api_key = self.provider_accounts.provider_keys().get(provider, "")
+        if not api_key:
+            self.provider_accounts.finish_refresh(
+                provider, self.translator.tr("provider_key_required"), False
+            )
+            return
+        self.provider_accounts.set_refreshing(provider)
+        proxies = self._ui_proxies()
+
+        def fetch() -> None:
+            try:
+                catalog = fetch_provider_catalog(provider, api_key, proxies)
+                self.provider_accounts.model_catalog_ready.emit(provider, catalog)
+            except Exception as exc:
+                self.provider_accounts.model_catalog_failed.emit(provider, str(exc))
+
+        threading.Thread(target=fetch, daemon=True, name=f"{provider}-model-catalog").start()
+
+    def _on_provider_catalog_ready(self, provider: str, catalog: object) -> None:
+        """Cache a fetched model catalog and refresh matching dropdowns."""
+        if not isinstance(catalog, dict):
+            return
+        cache = self.config.setdefault("provider_model_cache", {})
+        cache[provider] = catalog
+        for feature in ("transcription", "rephrasing"):
+            if self._feature_provider(feature) == provider:
+                current = self._selected_model(feature)
+                self._populate_model_dropdown(feature, current)
+        count = sum(len(models) for models in catalog.values() if isinstance(models, list))
+        self.provider_accounts.finish_refresh(
+            provider,
+            self.translator.tr("provider_models_loaded", count=count),
+            True,
+        )
+
+    def _on_provider_catalog_failed(self, provider: str, detail: str) -> None:
+        """Report a catalog error while retaining cached/fallback dropdown models."""
+        logging.warning("Could not refresh %s model catalog: %s", provider, detail)
+        self.provider_accounts.finish_refresh(
+            provider,
+            self.translator.tr("provider_models_failed", detail=detail),
+            False,
+        )
 
     def _group_style(self, group_name: str, highlighted: bool = False) -> str:
         """Return a theme-aware group box style (accent/warn border on the card)."""
@@ -78,6 +256,7 @@ class SettingsMixin:
         # Load the UI from the .ui file
         ui_path = resource_path("resources", "main_window.ui")
         uic.loadUi(ui_path, self)
+        self._install_provider_ui()
 
         # --- Tab 3 (Transformations) Layout Adjustments ---
         # Set the labels to take up minimum vertical space
@@ -130,29 +309,24 @@ class SettingsMixin:
         # --- Post-UI Load Configuration and Connections ---
 
         # Transcription Tab Connections
-        self.api_key_input.setText(self.config["api_key"])
-        self.api_endpoint_input.setText(self.config["api_endpoint"])
-        self.openai_button.clicked.connect(
-            lambda: self.api_endpoint_input.setText("https://api.openai.com/v1/audio/transcriptions"))
-        self.groq_button.clicked.connect(
-            lambda: self.api_endpoint_input.setText("https://api.groq.com/openai/v1/audio/transcriptions"))
         self._connection_tester = ConnectionTester(self)
         self.test_transcription_api_button.clicked.connect(self._connection_tester.test_transcription)
 
         # Connect for live validation
-        self.api_key_input.textChanged.connect(self._update_transcription_api_group_style)
-        self.api_endpoint_input.textChanged.connect(self._update_transcription_api_group_style)
+        for field in self.provider_accounts.key_inputs.values():
+            field.textChanged.connect(self._update_transcription_api_group_style)
+            field.textChanged.connect(self._update_rephrase_api_group_style)
+        for field in (
+            list(self.provider_accounts.custom_endpoint_inputs.values())
+            + list(self.provider_accounts.custom_key_inputs.values())
+        ):
+            field.textChanged.connect(self._update_transcription_api_group_style)
+            field.textChanged.connect(self._update_rephrase_api_group_style)
 
-        self.model_dropdown.addItems(TRANSCRIPTION_MODEL_OPTIONS)
-        model_value = self.config["model"]
-        if self.model_dropdown.findText(model_value) != -1:
-            self.model_dropdown.setCurrentText(model_value)
-            self.model_input.setVisible(False)
-        else:
-            self.model_dropdown.setCurrentText("Custom")
-            self.model_input.setText(model_value)
-            self.model_input.setVisible(True)
-        self.model_dropdown.currentTextChanged.connect(lambda text: self.model_input.setVisible(text == "Custom"))
+        self._populate_model_dropdown("transcription", self.config["model"])
+        self.model_dropdown.currentTextChanged.connect(
+            lambda text: self.model_input.setVisible(text == self._custom_model_label())
+        )
         self.model_dropdown.currentTextChanged.connect(lambda _t: self._update_prompt_token_counter())
         self.model_input.textChanged.connect(lambda _t: self._update_prompt_token_counter())
 
@@ -256,13 +430,7 @@ class SettingsMixin:
         self.liveprompt_enabled_checkbox.stateChanged.connect(self._update_rephrase_api_group_style)
         self.generic_rephrase_enabled_checkbox.stateChanged.connect(self._update_rephrase_api_group_style)
 
-        self.rephrasing_api_url_input.setText(self.config["rephrasing_api_url"])
-        self.rephrasing_api_key_input.setText(self.config["rephrasing_api_key"])
-        self.rephrasing_model_input.setText(self.config["rephrasing_model"])
-
-        # Connect text inputs to update the API group styling
-        self.rephrasing_api_url_input.textChanged.connect(self._update_rephrase_api_group_style)
-        self.rephrasing_api_key_input.textChanged.connect(self._update_rephrase_api_group_style)
+        self._populate_model_dropdown("rephrasing", self.config["rephrasing_model"])
         self.rephrasing_model_input.textChanged.connect(self._update_rephrase_api_group_style)
 
         self.rephrasing_temp_slider.setRange(0, 100)
@@ -320,9 +488,6 @@ class SettingsMixin:
         self._update_post_rp_ui_state()
         if self.post_rp_list.count() > 0:
             self.post_rp_list.setCurrentRow(0)
-
-        # Connect changes in the main API key to the rephrase group style check
-        self.api_key_input.textChanged.connect(self._update_rephrase_api_group_style)
 
         self.pr_hotkey_display.setText(self.config["post_rephrase_hotkey"])
         self.set_pr_hotkey_button.clicked.connect(self.start_hotkey_capture)
@@ -504,8 +669,7 @@ class SettingsMixin:
 
     def save_settings(self) -> None:
         """Saves settings, restarts the hotkey listener."""
-        # Clean model name: remove anything in parentheses and trailing whitespace
-        model_raw = self.model_input.text() if self.model_dropdown.currentText() == "Custom" else self.model_dropdown.currentText()
+        model_raw = self._selected_model("transcription")
         # Perform validation (warnings only)
         warnings = self._collect_validation_warnings(model_raw)
         if warnings:
@@ -517,8 +681,10 @@ class SettingsMixin:
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
 
-        self.config["api_key"] = self.api_key_input.text()
-        self.config["api_endpoint"] = self.api_endpoint_input.text()
+        self.config["provider_api_keys"] = self.provider_accounts.provider_keys()
+        self.config["custom_provider_settings"] = self.provider_accounts.custom_settings()
+        self.config["transcription_provider"] = self._feature_provider("transcription")
+        self.config["rephrasing_provider"] = self._feature_provider("rephrasing")
         self.config["model"] = model_raw
         self.config["transcription_temperature"] = self.transcription_temp_slider.value() / 100.0
         self.config["ffmpeg_path"] = self.ffmpeg_path_input.text().strip()
@@ -570,10 +736,8 @@ class SettingsMixin:
         self.config["generic_rephrase_enabled"] = self.generic_rephrase_enabled_checkbox.isChecked()
         self.config["generic_rephrase_prompt"] = self.generic_rephrase_prompt_input.toPlainText()
 
-        # Shared API settings
-        self.config["rephrasing_api_url"] = self.rephrasing_api_url_input.text()
-        self.config["rephrasing_api_key"] = self.rephrasing_api_key_input.text()
-        self.config["rephrasing_model"] = self.rephrasing_model_input.text()
+        # All rephrasing features share this provider/model selection.
+        self.config["rephrasing_model"] = self._selected_model("rephrasing")
         self.config["rephrasing_temperature"] = self.rephrasing_temp_slider.value() / 100.0
         # Post Rewording entries (new)
         if hasattr(self, 'post_rephrasing_data'):
@@ -679,20 +843,14 @@ class SettingsMixin:
         (Warnings are hints only; saving proceeds regardless.)
         """
         warnings: List[str] = []
-        endpoint = self.api_endpoint_input.text().strip().lower()
+        endpoint, api_key = self._ui_provider_connection("transcription")
+        endpoint = endpoint.lower()
         model_lc = model_raw.strip().lower()
-        api_key = self.api_key_input.text().strip()
         api_key_lc = api_key.lower()
-        is_custom_model = self.model_dropdown.currentText() == "Custom"
-
         if 'openai.com' in endpoint:
-            if not is_custom_model and 'openai' not in model_lc:
-                warnings.append("API endpoint contains 'openai', but the selected model does not contain 'openai'.")
             if not api_key_lc.startswith('sk-'):
                 warnings.append("OpenAI API Key should start with 'sk-'.")
         if 'groq' in endpoint:
-            if not is_custom_model and 'groq' not in model_lc:
-                warnings.append("API endpoint contains 'groq', but the selected model does not contain 'groq'.")
             if not api_key_lc.startswith('gsk'):
                 warnings.append("Groq API Key should start with 'gsk'.")
 
@@ -708,7 +866,8 @@ class SettingsMixin:
 
     def _has_valid_api_settings(self) -> bool:
         """Return True if a transcription API key and endpoint are configured."""
-        return bool(self.config.get("api_key", "").strip() and self.config.get("api_endpoint", "").strip())
+        endpoint, api_key = resolve_connection(self.config, "transcription")
+        return bool(endpoint.strip() and api_key.strip())
 
     def _resolve_proxies(self, proxy_url: str, use_px: bool) -> Optional[Dict[str, str]]:
         """Decide outbound proxies (delegates to services.net.resolve_proxies)."""
@@ -729,8 +888,9 @@ class SettingsMixin:
 
     def _update_transcription_api_group_style(self) -> None:
         """Highlights the transcription API groupbox if its settings are incomplete."""
-        url_missing = not self.api_endpoint_input.text().strip()
-        key_missing = not self.api_key_input.text().strip()
+        endpoint, api_key = self._ui_provider_connection("transcription")
+        url_missing = not endpoint.strip()
+        key_missing = not api_key.strip()
         settings_incomplete = url_missing or key_missing
 
         if settings_incomplete:
@@ -744,13 +904,10 @@ class SettingsMixin:
 
     def _update_rephrase_api_group_style(self) -> None:
         """Highlight incomplete API settings and mirror that state on the transformations tab."""
-        # Check if any of the required fields are empty.
-        # This validation is for the UI highlight only and is intentionally strict.
-        url_missing = not self.rephrasing_api_url_input.text().strip()
-        # Per user request, this check MUST NOT use the fallback key from tab 1.
-        # The rephrasing key field must be filled on its own.
-        key_missing = not self.rephrasing_api_key_input.text().strip()
-        model_missing = not self.rephrasing_model_input.text().strip()
+        endpoint, api_key = self._ui_provider_connection("rephrasing")
+        url_missing = not endpoint.strip()
+        key_missing = not api_key.strip()
+        model_missing = not self._selected_model("rephrasing")
 
         settings_incomplete = url_missing or key_missing or model_missing
 
@@ -789,17 +946,26 @@ class SettingsMixin:
         self.github_action.setText(self.translator.tr("menu_help_github"))
 
         # Tabs
-        self.tabs.setTabText(0, self.translator.tr("tab_transcription"))
-        self.tabs.setTabText(1, self.translator.tr("tab_rephrase"))
-        self.tabs.setTabText(2, self.translator.tr("tab_transformations"))
-        self.tabs.setTabText(3, self.translator.tr("tab_general"))
-        self.tabs.setTabToolTip(0, self.translator.tr("tooltip_tab_transcription"))
-        self.tabs.setTabToolTip(1, self.translator.tr("tooltip_tab_rephrase"))
-        self.tabs.setTabToolTip(2, self.translator.tr("tooltip_tab_transformations"))
-        self.tabs.setTabToolTip(3, self.translator.tr("tooltip_tab_general"))
+        provider_index = self.tabs.indexOf(self.provider_accounts)
+        transcription_index = self.tabs.indexOf(self.transcription_tab)
+        rephrase_index = self.tabs.indexOf(self.rephrasing_tab)
+        transformations_index = self.tabs.indexOf(self.post_rephrasing_tab)
+        general_index = self.tabs.indexOf(self.general_tab)
+        self.tabs.setTabText(provider_index, self.translator.tr("tab_providers"))
+        self.tabs.setTabText(transcription_index, self.translator.tr("tab_transcription"))
+        self.tabs.setTabText(rephrase_index, self.translator.tr("tab_rephrase"))
+        self.tabs.setTabText(transformations_index, self.translator.tr("tab_transformations"))
+        self.tabs.setTabText(general_index, self.translator.tr("tab_general"))
+        self.tabs.setTabToolTip(provider_index, self.translator.tr("tooltip_tab_providers"))
+        self.tabs.setTabToolTip(transcription_index, self.translator.tr("tooltip_tab_transcription"))
+        self.tabs.setTabToolTip(rephrase_index, self.translator.tr("tooltip_tab_rephrase"))
+        self.tabs.setTabToolTip(transformations_index, self.translator.tr("tooltip_tab_transformations"))
+        self.tabs.setTabToolTip(general_index, self.translator.tr("tooltip_tab_general"))
+        self.provider_accounts.retranslate(self.translator.tr)
 
         # Transcription Tab
         self.transcription_api_group.setTitle(self.translator.tr("transcription_api_group_title"))
+        self.transcription_provider_label.setText(self.translator.tr("provider_label"))
         self.api_key_label.setText(self.translator.tr("api_key_label"))
         api_key_tooltip = self.translator.tr("api_key_tooltip")
         self.api_key_label.setToolTip(api_key_tooltip)
@@ -909,6 +1075,7 @@ class SettingsMixin:
 
         self.shared_api_group.setTitle(self.translator.tr("shared_api_group_title"))
         self.shared_api_group.setToolTip(self.translator.tr("shared_api_group_tooltip"))
+        self.rephrasing_provider_label.setText(self.translator.tr("provider_label"))
         self.rephrasing_api_url_label.setText(self.translator.tr("rephrase_api_url_label"))
         self.rephrasing_api_url_label.setToolTip(api_endpoint_tooltip)
         self.rephrasing_api_url_input.setToolTip(api_endpoint_tooltip)
@@ -920,6 +1087,7 @@ class SettingsMixin:
         self.rephrasing_model_label.setText(self.translator.tr("rephrase_model_label"))
         self.rephrasing_model_label.setToolTip(model_tooltip)
         self.rephrasing_model_input.setToolTip(model_tooltip)
+        self.rephrasing_model_dropdown.setToolTip(model_tooltip)
 
         self.rephrasing_temp_label_title.setText(self.translator.tr("temperature_label"))
         self.rephrasing_temp_label_title.setToolTip(temp_tooltip)

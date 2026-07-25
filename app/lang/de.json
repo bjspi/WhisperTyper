@@ -231,5 +231,17 @@
   "color_theme_light": "Hell",
   "color_theme_dark": "Dunkel",
   "input_device_label": "Eingabegerät (Mikrofon):",
-  "input_device_default": "Systemstandard (automatisch)"
+  "input_device_default": "Systemstandard (automatisch)",
+  "tab_providers": "Anbieter",
+  "tooltip_tab_providers": "API-Schlüssel einmal zentral speichern und verfügbare Modelllisten laden.",
+  "provider_label": "Anbieter:",
+  "provider_accounts_intro": "Speichere jeden Anbieter-Schlüssel nur einmal. Transkription und Umformulierung können danach unabhängig Anbieter und Modell wählen, ohne Zugangsdaten zu duplizieren.",
+  "provider_accounts_group": "Anbieter-Zugänge",
+  "provider_custom_group": "Erweitert: eigene OpenAI-kompatible Endpunkte",
+  "provider_custom_tooltip": "Eigene Dienste dürfen für Transkription und Umformulierung getrennte Endpunkte und Schlüssel verwenden.",
+  "provider_refresh_models": "Modelle laden",
+  "provider_refresh_models_tooltip": "Aktuell verfügbare {provider}-Modelle laden und für die Offline-Nutzung zwischenspeichern.",
+  "provider_key_required": "Bitte zuerst den API-Schlüssel des Anbieters eingeben.",
+  "provider_models_loaded": "{count} Modelleinträge geladen.",
+  "provider_models_failed": "Modelle konnten nicht geladen werden: {detail}"
 }

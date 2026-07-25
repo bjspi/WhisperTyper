@@ -114,7 +114,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 ## 💖 Key Features
 
 -   **Global Voice Typing**: Transcribe your voice into any application with a single hotkey.
--   **AI-Powered**: Supports OpenAI (Whisper, GPT models), Groq and any other Whisper-API with identical API-design for fast and accurate transcription and rephrasing.
+-   **AI-Powered**: Supports OpenAI, Groq and custom OpenAI-compatible APIs for fast and accurate transcription and rephrasing. Provider keys are stored once; each feature independently selects its provider and model.
 -   **LivePrompting**: A revolutionary feature! Use trigger words to turn your speech directly into a prompt for an AI, which then types out the result.
     -   *Example*: Speak `"prompt, write a short poem about rain"` and the AI will type the poem for you (based on your rephrasing prompt)
 -   **Context-Aware Rephrasing**: Automatically use text you've highlighted on your screen as context for your voice prompts.
@@ -123,7 +123,8 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 -   **Discreet Operation**: Runs quietly in the system tray without cluttering your taskbar (e.g., using `pythonw.exe` on Windows).
 -   **Self-Updating**: When run from a cloned repo, a background watcher flags new versions with a green dot in the tray menu — one click updates and restarts the app.
 -   **Full Customization**:
-    -   Customizable API endpoints, keys, models, and temperature settings for both transcription and rephrasing.
+    -   Central OpenAI/Groq accounts with live model discovery and an offline model cache.
+    -   Independent provider/model selection for transcription and rephrasing, plus separate advanced custom endpoints when needed.
     -   Fine-tune transcription with custom prompts to improve accuracy for specific jargon or formatting.
     -   Adjustable microphone **volume gain** to boost input from quieter microphones, significantly increasing accuracy.
 -   **Multi-Language UI**: The application interface is available in English, German, Spanish, and French.

@@ -231,5 +231,17 @@
   "color_theme_light": "Light",
   "color_theme_dark": "Dark",
   "input_device_label": "Input device (microphone):",
-  "input_device_default": "System default (auto)"
+  "input_device_default": "System default (auto)",
+  "tab_providers": "Providers",
+  "tooltip_tab_providers": "Store provider API keys once and refresh the available model lists.",
+  "provider_label": "Provider:",
+  "provider_accounts_intro": "Store each provider key once. Transcription and rephrasing can then independently select a provider and model without duplicating credentials.",
+  "provider_accounts_group": "Provider accounts",
+  "provider_custom_group": "Advanced: custom OpenAI-compatible endpoints",
+  "provider_custom_tooltip": "Custom services may use separate endpoints and keys for transcription and rephrasing.",
+  "provider_refresh_models": "Refresh models",
+  "provider_refresh_models_tooltip": "Load the currently available {provider} models and cache them for offline use.",
+  "provider_key_required": "Enter the provider API key first.",
+  "provider_models_loaded": "{count} model entries loaded.",
+  "provider_models_failed": "Could not load models: {detail}"
 }

@@ -1,7 +1,17 @@
 {
-  "api_key": "YOUR_API_KEY_HERE",
-  "api_endpoint": "https://api.groq.com/openai/v1/audio/transcriptions",
-  "model": "whisper-large-v3 (groq)",
+  "config_schema_version": 2,
+  "provider_api_keys": {
+    "groq": "YOUR_GROQ_API_KEY_HERE",
+    "openai": ""
+  },
+  "transcription_provider": "groq",
+  "rephrasing_provider": "groq",
+  "custom_provider_settings": {
+    "transcription": {"endpoint": "", "api_key": ""},
+    "rephrasing": {"endpoint": "", "api_key": ""}
+  },
+  "provider_model_cache": {},
+  "model": "whisper-large-v3-turbo",
   "transcription_temperature": 0.0,
   "max_upload_mb": 24,
   "min_audio_bitrate_kbps": 80,
@@ -22,8 +32,6 @@
   "rephrase_use_selection_context": false,
   "generic_rephrase_enabled": false,
   "generic_rephrase_prompt": "Das Folgende ist die Transkription einer Spracheingabe. Deine Aufgabe ist es, diese in eine prägnante, klare und logisch strukturierte Nachricht umzuwandeln. Der wichtigste Fokus liegt auf der Reduktion auf das Wesentliche: Wandle umständliche, dem Sprechen geschuldete Formulierungen in ihre direkte Kernaussage um. Entferne überflüssige Einleitungen, verbale Denkpausen und Floskeln, die keinen Informationswert haben. Ein konkretes Beispiel dafür: Statt: \"Also, wenn ich mir das so überlege, dann denke ich,...\" Schreibe: \"Ich denke,...\" Optimiere darüber hinaus den Satzbau und die Reihenfolge der Gedanken für maximale Verständlichkeit. Achte auf perfekte Rechtschreibung und eine sinnvolle Zeichensetzung. Entscheidend ist: Mein persönlicher, lockerer Tonfall muss erhalten bleiben. Das Ergebnis soll direkt und auf den Punkt sein, aber nicht unpersönlich oder roboterhaft klingen. Erkenne und verwende auch meine 'eingedeutschten' englischen Begriffe aus der Tech- und IT-Szene (Gadgets, Smartphones, KI, Python-Programmierung etc.) korrekt.",
-  "rephrasing_api_url": "https://api.groq.com/openai/v1/chat/completions",
-  "rephrasing_api_key": "YOUR_API_KEY_HERE",
   "rephrasing_model": "openai/gpt-oss-120b",
   "rephrasing_temperature": 0.7,
   "post_rephrasing_entries": [
