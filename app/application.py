@@ -105,6 +105,7 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         self.deferred_hotkey_actions: Set[str] = set()
         self._hotkey_suppressed_until = 0.0
         self._hotkey_suppression_reason = ""
+        self._hotkey_capture_suppresses_global_actions = False
         self._post_rephrase_trigger_active = False
         self._post_rephrase_cooldown_until = 0.0
         self.push_to_talk_active = False

@@ -80,7 +80,11 @@ class HotkeyMixin:
             self.trigger_post_rephrase_window()
 
     def eventFilter(self, watched: QObject, event: Any) -> bool:
-        """Capture hotkeys in the macOS settings UI without relying on pynput capture."""
+        """Capture hotkeys in the macOS settings UI without relying on pynput capture.
+
+        macOS only. Windows and Linux record shortcuts through the temporary pynput
+        capture listener started by start_hotkey_capture().
+        """
         if is_MACOS and event.type() == QEvent.Type.Wheel and isinstance(event, QWheelEvent):
             if watched in {self.transcription_temp_slider, self.rephrasing_temp_slider}:
                 return self._scroll_macos_area_from_slider_wheel(watched, event)
@@ -91,11 +95,20 @@ class HotkeyMixin:
             if event.type() == QEvent.Type.KeyPress and isinstance(event, QKeyEvent):
                 tokens = self._qt_key_to_hotkey_tokens(event)
                 if tokens:
-                    self.capturing_for_widget.setText(hotkeys.format_hotkey_tokens(tokens))
+                    # Keep every key pressed before the first physical release. Finishing on
+                    # the first non-modifier press made modifier chords timing-sensitive and
+                    # made chords such as F6+F7 impossible to record at all.
+                    self.captured_keys.update(tokens)
+                    self.capturing_for_widget.setText(
+                        hotkeys.format_hotkey_tokens(self.captured_keys)
+                    )
                     self.capturing_for_widget.selectAll()
-                    non_modifier_tokens = {token for token in tokens if not hotkeys.is_modifier_token(token)}
-                    if non_modifier_tokens:
-                        self._finish_hotkey_capture()
+                return True
+            if event.type() == QEvent.Type.KeyRelease and isinstance(event, QKeyEvent):
+                # Qt can emit synthetic release/press pairs while a key auto-repeats. Only a
+                # real release ends capture so users have time to press the rest of the chord.
+                if not event.isAutoRepeat() and self.captured_keys:
+                    self._finish_hotkey_capture()
                 return True
         return super().eventFilter(watched, event)
 
@@ -262,6 +275,16 @@ class HotkeyMixin:
     def _on_hotkey_press(self, key: Any, injected: bool = False) -> None:
         """Pynput callback (listener thread) for any key press."""
         key_tokens = self._key_to_hotkey_tokens(key)
+        if is_MACOS and bool(getattr(self, "_hotkey_capture_suppresses_global_actions", False)):
+            # macOS: the listener deliberately stays alive during Qt-based capture. Stopping
+            # it here can make pynput/CoreGraphics call Text Input Services from its worker
+            # thread, which aborts the process on recent macOS versions. Windows and Linux
+            # never reach this branch; they stop the listener for the duration of a capture.
+            self.pressed_hotkey_tokens.clear()
+            self.active_hotkey_actions.clear()
+            self.deferred_hotkey_actions.clear()
+            logging.debug("HOTKEY_CAPTURE ignored global press tokens=%s", sorted(key_tokens))
+            return
         if self._hotkey_processing_is_suppressed():
             logging.debug(
                 "HOTKEY_GUARD ignored press tokens=%s reason=%s",
@@ -301,6 +324,13 @@ class HotkeyMixin:
     def _on_hotkey_release(self, key: Any, injected: bool = False) -> None:
         """Pynput callback (listener thread) for any key release."""
         released_tokens = self._key_to_hotkey_tokens(key)
+        if is_MACOS and bool(getattr(self, "_hotkey_capture_suppresses_global_actions", False)):
+            # macOS: mirror of the press path above.
+            self.pressed_hotkey_tokens.clear()
+            self.active_hotkey_actions.clear()
+            self.deferred_hotkey_actions.clear()
+            logging.debug("HOTKEY_CAPTURE ignored global release tokens=%s", sorted(released_tokens))
+            return
         if self._hotkey_processing_is_suppressed():
             # A press can precede the guard while its release lands inside it. Remove the
             # released tokens so a stale modifier cannot complete a later real shortcut.
@@ -380,18 +410,24 @@ class HotkeyMixin:
         button_widget.setEnabled(False)
         self.captured_keys = set()
 
-        # Suspend the GLOBAL hotkeys while capturing. Otherwise pressing e.g. F9 both records the
-        # key AND fires its global action (post-rephrase), whose simulated Ctrl+C then gets caught
-        # by the capture listener too — producing garbage like "<ctrl>++<f9>+c".
-        self._stop_hotkey_listeners()
-
         if is_MACOS:
+            # macOS: keep pynput's CoreGraphics listener alive. Stopping it from this Qt callback can
+            # make macOS Text Input Services assert that it is running on the wrong dispatch
+            # queue (native SIGTRAP, no Python exception). Qt captures the shortcut locally while
+            # the still-running global callback is muted logically.
+            self._hotkey_capture_suppresses_global_actions = True
+            self.pressed_hotkey_tokens.clear()
+            self.active_hotkey_actions.clear()
             target_widget.clear()
             target_widget.installEventFilter(self)
             target_widget.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
             target_widget.grabKeyboard()
+            logging.info("HOTKEY_CAPTURE macOS capture started with global listener kept alive.")
             return
 
+        # Windows/Linux use a temporary pynput capture listener. Suspend their global listeners
+        # so the shortcut being recorded cannot also fire its configured action.
+        self._stop_hotkey_listeners()
         self.hotkey_capture_listener = keyboard.Listener(on_press=self.on_press_capture,
                                                          on_release=self.on_release_capture)
         self.hotkey_capture_listener.start()
@@ -440,17 +476,20 @@ class HotkeyMixin:
         self.capturing_for_widget = None
         self.capturing_button = None
 
-        # Restore the global hotkey listeners now that capture is finished.
-        self.init_manual_hotkey_listener()
+        if is_MACOS:
+            # macOS: cover the tiny race where Qt has finished capture while the pynput worker still has
+            # the same physical key event queued. No listener restart is needed on this platform.
+            self._suppress_hotkeys_for_simulated_input("hotkey_capture_finish", duration_seconds=0.25)
+            self._hotkey_capture_suppresses_global_actions = False
+            self.pressed_hotkey_tokens.clear()
+            self.active_hotkey_actions.clear()
+            logging.info("HOTKEY_CAPTURE macOS capture finished without listener restart.")
+        else:
+            # Restore the global hotkey listeners now that capture is finished.
+            self.init_manual_hotkey_listener()
 
     def _cancel_hotkey_capture(self) -> None:
-        """Abort an in-progress hotkey capture and restore the global listeners.
-
-        start_hotkey_capture() stops every global listener so the keys pressed for capture are
-        not also fired as hotkeys. If the capture is abandoned (e.g. the settings window is
-        closed before a key is pressed), nothing would otherwise restart them and all hotkeys
-        stay dead until the next save/restart. This makes that path safe.
-        """
+        """Abort an in-progress hotkey capture and restore normal hotkey handling."""
         if not self.capturing_for_widget and not self.capturing_button:
             return
         if self.hotkey_capture_listener:
@@ -486,14 +525,18 @@ class HotkeyMixin:
         tokens: Set[str] = set()
         modifiers = event.modifiers()
 
+        # macOS: Qt intentionally swaps Command and Control on Apple platforms so cross-platform
+        # QKeySequence shortcuts keep their conventional meaning: ControlModifier is the
+        # physical Command key, while MetaModifier is the physical Control key. Stored
+        # WhisperTyper hotkeys describe the physical keys and must undo that abstraction.
         if modifiers & Qt.KeyboardModifier.ControlModifier:
-            tokens.add("<ctrl>")
+            tokens.add("<cmd>" if is_MACOS else "<ctrl>")
         if modifiers & Qt.KeyboardModifier.ShiftModifier:
             tokens.add("<shift>")
         if modifiers & Qt.KeyboardModifier.AltModifier:
             tokens.add("<alt>")
         if modifiers & Qt.KeyboardModifier.MetaModifier:
-            tokens.add("<cmd>" if is_MACOS else "<win>")
+            tokens.add("<ctrl>" if is_MACOS else "<win>")
 
         key = event.key()
         modifier_keys = {

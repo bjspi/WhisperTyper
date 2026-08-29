@@ -168,6 +168,16 @@ sequenceDiagram
 - **Self-update via git.** When run from a source checkout, the tray offers a
   `git pull --ff-only` update; a background `git fetch` watcher shows a green dot when
   upstream is ahead. Frozen (PyInstaller) builds never see this menu entry.
+- **Marking platform-specific code.** Cross-platform behaviour is the default, so only
+  the exceptions are labelled. Every branch that exists because of one operating system is
+  guarded by `is_MACOS` / `is_WINDOWS` from `app/core/env.py` and carries a comment starting
+  with `# macOS:` or `# Windows:` that says *why* that platform needs it, so `rg '# macOS:'`
+  finds them. Branches predating the convention are labelled as they are touched. Larger
+  platform units live in their own modules (`app/hotkeys/windows_listener.py`,
+  `app/mixins/mac_mixin.py`) and their tests in their own files
+  (`tests/test_macos_hotkeys.py`), so a reviewer can tell from the file name alone whether a
+  change can affect the other platform. Platform tests patch the flags rather than skipping,
+  so macOS behaviour is still verified on Windows CI.
 - **Privacy in logs.** Transcripts and prompts are redacted in log output by default
   (`app/core/redaction.py`); only the first few characters survive.
 

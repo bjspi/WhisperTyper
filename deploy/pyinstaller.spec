@@ -10,6 +10,7 @@
 # built-in tray self-update. Only macOS benefits from a bundle, because the granted
 # Input Monitoring / Accessibility / Microphone permissions attach to the bundle.
 import os
+import re
 import sys
 
 is_MACOS = sys.platform == 'darwin'
@@ -20,7 +21,12 @@ if not is_MACOS:
     )
 
 CODESIGN_IDENTITY = os.environ.get("WHISPERTYPER_CODESIGN_IDENTITY", "").strip() or None
-DEFAULT_ENTITLEMENTS_FILE = os.path.join(os.path.dirname(SPECPATH), 'macos-entitlements.plist')
+# PyInstaller exposes SPECPATH as the directory containing this spec file. Keep every
+# source/resource path anchored there so builds cannot accidentally pick similarly named
+# assets from a parent directory (for example an archived legacy checkout).
+spec_dir = os.path.abspath(SPECPATH)
+project_root = os.path.dirname(spec_dir)
+DEFAULT_ENTITLEMENTS_FILE = os.path.join(spec_dir, 'macos-entitlements.plist')
 ENTITLEMENTS_FILE = os.environ.get("WHISPERTYPER_ENTITLEMENTS_FILE", "").strip() or None
 if not ENTITLEMENTS_FILE and os.path.exists(DEFAULT_ENTITLEMENTS_FILE):
     ENTITLEMENTS_FILE = DEFAULT_ENTITLEMENTS_FILE
@@ -28,23 +34,26 @@ USES_DEVELOPER_ID_RUNTIME = bool(CODESIGN_IDENTITY and CODESIGN_IDENTITY.startsw
 PYINSTALLER_CODESIGN_IDENTITY = CODESIGN_IDENTITY if USES_DEVELOPER_ID_RUNTIME else None
 PYINSTALLER_ENTITLEMENTS_FILE = ENTITLEMENTS_FILE if USES_DEVELOPER_ID_RUNTIME else None
 
-# --- Icon Path ---
-# Search for the icon file within the project directory to make the path resolution more robust.
-def find_icon_file(root_path, icon_name):
-    """Search for a file in a directory and its subdirectories."""
-    for root, dirs, files in os.walk(root_path):
-        if icon_name in files:
-            return os.path.join(root, icon_name)
-    return None
+# Allow install_mac.sh (or an explicit caller) to preserve an existing bundle identifier.
+# Fresh builds use the project's canonical identifier.
+BUNDLE_IDENTIFIER = (
+    os.environ.get("WHISPERTYPER_BUNDLE_IDENTIFIER", "").strip()
+    or "gh.bjspi.whispertyper"
+)
 
-# SPECPATH is a global variable from PyInstaller. Project root is one level up from the 'deploy' dir.
-project_root = os.path.abspath(os.path.join(os.path.dirname(SPECPATH), '..'))
-APP_ICON = find_icon_file(project_root, 'app_icon.icns')
-if not APP_ICON:
-    print("WARNING: Icon file 'app_icon.icns' not found in the project directory. "
-          "The application will not have an icon.")
-else:
-    print(f"DEBUG: Icon found. Using icon file at: {APP_ICON}")
+version_file = os.path.join(project_root, "app", "__init__.py")
+with open(version_file, "r", encoding="utf-8") as version_source:
+    version_match = re.search(r'^__version__\s*=\s*"([^"]+)"', version_source.read(), re.MULTILINE)
+if not version_match:
+    raise SystemExit(f"Could not read __version__ from {version_file}")
+APP_VERSION = version_match.group(1)
+
+APP_ICON = os.path.join(spec_dir, 'app_icon.icns')
+if not os.path.isfile(APP_ICON):
+    raise SystemExit(f"Required macOS icon not found: {APP_ICON}")
+print(f"DEBUG: Using project-local icon: {APP_ICON}")
+print(f"DEBUG: Bundle identifier: {BUNDLE_IDENTIFIER}")
+print(f"DEBUG: Bundle version: {APP_VERSION}")
 
 block_cipher = None
 
@@ -75,20 +84,20 @@ excludes = [
 ]
 
 def get_app_data_files():
-    """Recursively find all files in ../app and prepare them for PyInstaller's 'datas'."""
+    """Recursively find all app files and prepare them for PyInstaller's ``datas``."""
     data_files = []
-    app_dir = os.path.join('..', 'app')
+    app_dir = os.path.join(project_root, 'app')
     for root, dirs, files in os.walk(app_dir):
         for file in files:
             file_path = os.path.join(root, file)
             # Destination path inside the bundle should be relative to app_dir
-            dest_dir = os.path.relpath(root, '..')
+            dest_dir = os.path.join('app', os.path.relpath(root, app_dir))
             data_files.append((file_path, dest_dir))
     return data_files
 
 a = Analysis(
-    [os.path.join('..', 'run.py')],
-    pathex=[],
+    [os.path.join(project_root, 'run.py')],
+    pathex=[project_root],
     binaries=[],
     datas=get_app_data_files(),
     hiddenimports=[],
@@ -149,10 +158,11 @@ app = BUNDLE(
     coll,
     name='WhisperTyper.app',
     icon=APP_ICON,
-    bundle_identifier='gh.bjspi.whispertyper',
+    bundle_identifier=BUNDLE_IDENTIFIER,
     info_plist={
         'NSHighResolutionCapable': 'True',
-        'CFBundleShortVersionString': '0.5.0',
+        'CFBundleShortVersionString': APP_VERSION,
+        'CFBundleVersion': APP_VERSION,
         'NSMicrophoneUsageDescription': 'This app requires microphone access to record audio for transcription.',
         'NSAccessibilityUsageDescription': 'This app needs permission for global hotkeys and clipboard management (e.g., to start transcription and copy results).',
         'NSInputMonitoringUsageDescription': 'This app requires permission to monitor keyboard input to detect global hotkeys for starting and stopping transcription.',

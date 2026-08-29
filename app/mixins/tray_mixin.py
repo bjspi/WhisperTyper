@@ -362,7 +362,12 @@ class TrayMixin:
         quit_action = _add(_sp.SP_DialogCloseButton, "tray_quit_action", "q")
         quit_action.triggered.connect(self.quit_app)
 
-        self.tray_icon.setContextMenu(tray_menu)
+        # macOS: assigning a context menu makes Qt/AppKit open a native copy immediately on a
+        # status-item click. The activated signal below then opens our custom badge menu after the
+        # double-click arbitration delay, leaving two menus stacked on screen. Keep one explicit
+        # popup path on macOS; other platforms retain their native right-click context menu.
+        if not is_MACOS:
+            self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
 
         # Connect activation signal for left- and double-click handling.
@@ -400,6 +405,11 @@ class TrayMixin:
             if self.config.get("systray_double_click_copy", True):
                 logging.debug("Tray icon double-clicked, copying last transcription.")
                 self.copy_last_transcription_to_clipboard()
+        elif is_MACOS and reason == QSystemTrayIcon.ActivationReason.Context:
+            # macOS: there is deliberately no setContextMenu() (see init_tray_icon), so route a
+            # secondary click through the same single custom popup used by a primary click.
+            self._tray_single_click_timer.stop()
+            self._show_tray_menu()
 
     def _show_tray_menu(self) -> None:
         """Open the tray context menu at the current pointer position."""

@@ -7,7 +7,8 @@ permissions in System Settings, ensuring seamless operation.
 
 Hotkeys on macOS can be set with the button in the settings window. Manual input works
 too, and accepts both plain values like `F9` / `Cmd+Shift+F` and the legacy format such as
-`<f9>` / `<cmd>+<shift>+f`.
+`<f9>` / `<cmd>+<shift>+f`. When recording a shortcut, hold all desired keys together;
+the capture completes when you release the first key.
 
 ## 1. Install PortAudio
 
@@ -44,7 +45,9 @@ its own identity in System Settings.
     ```
 
 2. Then in the `deploy` directory, run the build script. The app icons are already
-   prepared as an Iconset for macOS, so no extra steps are needed.
+   prepared as an Iconset for macOS, so no extra steps are needed. The script automatically
+   prefers `venv/bin/pyinstaller` (or `.venv/bin/pyinstaller`) when present, keeping the
+   packaged dependencies aligned with the environment used for development and tests.
     ```bash
     cd deploy
     chmod +x deploy_mac.sh
@@ -62,9 +65,22 @@ its own identity in System Settings.
     certificate can also be used for your own builds, as long as you reuse the same
     identity every time.
 
+   A different bundle identifier can be supplied explicitly with
+   `WHISPERTYPER_BUNDLE_IDENTIFIER`. The complete installer in step 5 automatically
+   preserves the bundle identifier and locally available signing identity of an existing
+   installation, so macOS privacy grants remain attached across local updates.
+
 4. In the `dist` folder you'll find the App Bundle. On first launch, the app proactively
    asks for the important macOS permissions it needs — microphone access, Input
    Monitoring and Accessibility. Grant them when prompted.
+
+5. To build, install into `/Applications`, preserve the previous installed bundle, update
+   the login item and launch the result in one operation:
+    ```bash
+    ./deploy/install_mac.sh
+    ```
+   The installer never changes `~/.WhisperTyper/config.json`. Previous app bundles are
+   moved to `~/.WhisperTyper/app-backups/` instead of being deleted.
 
 ## 4. Alternative: run directly from the sources
 
@@ -119,6 +135,9 @@ cd deploy
 chmod +x deploy_mac.sh
 ./deploy_mac.sh
 ```
+
+Or use `./deploy/install_mac.sh` from the repository root for the complete build-and-install
+flow. It preserves the previous bundle and leaves all user settings untouched.
 
 (When running from the sources instead, the tray menu's built-in self-update works on
 macOS too — see the [README's Updating section](../README.md#%EF%B8%8F-updating).)
