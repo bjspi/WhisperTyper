@@ -183,6 +183,8 @@
   "macos_hotkey_tooltip": "Hotkey manuell eingeben. Format: <cmd>+k oder <f9>",
   "macos_hotkey_restart_title": "Neustart erforderlich",
   "macos_hotkey_restart_text": "Der Hotkey wurde geändert. Bitte starten Sie die Anwendung neu, damit der neue Hotkey aktiv wird.",
+  "unsafe_hotkey_title": "Unsichere Tastenkombination ersetzt",
+  "unsafe_hotkey_text": "Die Aktions-Tastenkombination darf nicht mit Kopieren, Einfügen oder Alles auswählen kollidieren. Sie wurde durch {hotkey} ersetzt.",
   "rephrasing_finished_macos_message": "Umformulierung abgeschlossen. Text in die Zwischenablage kopiert.",
   "alt_clipboard_lib_checkbox": "Alternative Bibliothek für Kopieren/Einfügen verwenden (Bessere Kompatibilität unter macOS)",
   "alt_clipboard_lib_tooltip": "Wenn Kopier-/Einfügeaktionen unzuverlässig sind, könnte diese Bibliothek (pyautogui) besser funktionieren. Dies ist eine gängige Lösung für Kompatibilitätsprobleme unter macOS.",

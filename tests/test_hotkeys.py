@@ -16,6 +16,10 @@ class TestNormalizeHotkeyPart:
         assert hotkeys.normalize_hotkey_part("F9") == "<f9>"
         assert hotkeys.normalize_hotkey_part("f12") == "<f12>"
 
+    def test_literal_plus_uses_unambiguous_special_token(self):
+        assert hotkeys.normalize_hotkey_part("+") == "<plus>"
+        assert hotkeys.normalize_hotkey_part("Plus") == "<plus>"
+
     def test_already_bracketed_token_is_canonicalized(self):
         assert hotkeys.normalize_hotkey_part("<ctrl_l>") == "<ctrl>"
 
@@ -45,6 +49,18 @@ class TestNormalizeHotkeyString:
 
     def test_left_right_variants_collapse(self):
         assert hotkeys.normalize_hotkey_string("<caps_lock>+<ctrl_l>") == "<caps_lock>+<ctrl>"
+
+    def test_manual_plus_forms_are_unambiguous(self):
+        assert hotkeys.normalize_hotkey_string("+") == "<plus>"
+        assert hotkeys.normalize_hotkey_string("Ctrl++") == "<ctrl>+<plus>"
+        assert hotkeys.normalize_hotkey_string("Ctrl+Plus") == "<ctrl>+<plus>"
+
+    def test_clipboard_shortcuts_are_reserved_for_post_rephrase(self):
+        for modifier in ("ctrl", "cmd"):
+            for key in ("a", "c", "v"):
+                assert hotkeys.is_reserved_clipboard_hotkey(f"{modifier}+{key}")
+        assert not hotkeys.is_reserved_clipboard_hotkey("ctrl+shift+c")
+        assert not hotkeys.is_reserved_clipboard_hotkey("f9")
 
 
 class TestFormatHotkeyTokens:
@@ -94,6 +110,10 @@ class TestVkMapping:
         assert hotkeys.vk_to_hotkey_tokens(0xA2) == {"<ctrl>"}  # left ctrl
         assert hotkeys.vk_to_hotkey_tokens(0xA3) == {"<ctrl>"}  # right ctrl
 
+    def test_plus_vk_uses_unambiguous_special_token(self):
+        assert hotkeys.vk_to_hotkey_tokens(0xBB) == {"<plus>"}
+        assert hotkeys.token_to_windows_vk("<plus>") == 0xBB
+
 
 class TestParseHotkeyBinding:
     def test_simple_modifier_plus_trigger(self):
@@ -122,6 +142,11 @@ class TestParseHotkeyBinding:
         assert binding is not None
         assert binding["windows_bindable"] is False
 
+    def test_plus_key_binding_is_parseable(self):
+        binding = hotkeys.parse_hotkey_binding("<ctrl>+<plus>", "t")
+        assert binding is not None
+        assert binding["tokens"] == {"<ctrl>", "<plus>"}
+
 
 class TestBindingMatching:
     def _binding(self, hotkey: str) -> dict:
@@ -137,10 +162,29 @@ class TestBindingMatching:
         binding = self._binding("<ctrl>+<f9>")
         assert not hotkeys.binding_matches_current_press(binding, {"<f9>"}, {"<f9>"})
 
+    def test_modifier_press_cannot_complete_binding_with_stale_trigger(self):
+        binding = self._binding("<ctrl>+<plus>")
+        assert not hotkeys.binding_matches_current_press(
+            binding,
+            {"<ctrl>", "<plus>"},
+            {"<ctrl>"},
+        )
+
     def test_pressed_set_matching(self):
         binding = self._binding("<ctrl>+<f9>")
         assert hotkeys.binding_matches_pressed(binding, {"<ctrl>", "<f9>"})
         assert not hotkeys.binding_matches_pressed(binding, {"<ctrl>"})
+
+    def test_every_non_modifier_key_in_chord_is_required(self):
+        binding = self._binding("<f6>+<f7>")
+        assert not hotkeys.binding_matches_current_press(binding, {"<f6>"}, {"<f6>"})
+        assert hotkeys.binding_matches_current_press(
+            binding,
+            {"<f6>", "<f7>"},
+            {"<f7>"},
+        )
+        assert not hotkeys.binding_matches_pressed(binding, {"<f6>"})
+        assert hotkeys.binding_matches_pressed(binding, {"<f6>", "<f7>"})
 
     def test_release_tokens_expand_altgr(self):
         binding = self._binding("<alt_gr>+q")

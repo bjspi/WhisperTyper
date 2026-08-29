@@ -29,6 +29,13 @@ class ClipboardMixin:
         Args:
             char (str): The character key to press (e.g., 'c', 'v').
         """
+        # Do this before dispatching the key. On macOS, AppleScript-generated events are
+        # not reliably labelled as injected by pynput and can otherwise fire a matching
+        # global hotkey recursively.
+        suppressor = getattr(self, "_suppress_hotkeys_for_simulated_input", None)
+        if callable(suppressor):
+            suppressor(f"clipboard_{char}")
+
         if is_MACOS:
             try:
                 # On macOS, sending Command combinations through System Events is

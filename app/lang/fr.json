@@ -183,6 +183,8 @@
   "macos_hotkey_tooltip": "Saisir le raccourci manuellement. Format : <cmd>+k ou <f9>",
   "macos_hotkey_restart_title": "Redémarrage requis",
   "macos_hotkey_restart_text": "Le raccourci clavier a été modifié. Veuillez redémarrer l'application pour que le nouveau raccourci soit actif.",
+  "unsafe_hotkey_title": "Raccourci dangereux remplacé",
+  "unsafe_hotkey_text": "Le raccourci de l'action ne peut pas entrer en conflit avec Copier, Coller ou Tout sélectionner. Il a été remplacé par {hotkey}.",
   "rephrasing_finished_macos_message": "Reformulation terminée. Texte copié dans le presse-papiers.",
   "alt_clipboard_lib_checkbox": "Utiliser une bibliothèque alternative pour Copier/Coller (Meilleure compatibilité sur macOS)",
   "alt_clipboard_lib_tooltip": "Si les actions de copier/coller ne sont pas fiables, cette bibliothèque (pyautogui) pourrait mieux fonctionner. C'est une solution de contournement courante pour les problèmes de compatibilité sur macOS.",

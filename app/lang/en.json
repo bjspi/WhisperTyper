@@ -183,6 +183,8 @@
   "macos_hotkey_tooltip": "Enter hotkey manually. Format: <cmd>+k or <f9>",
   "macos_hotkey_restart_title": "Restart Required",
   "macos_hotkey_restart_text": "The hotkey has been changed. Please restart the application for the new hotkey to become active.",
+  "unsafe_hotkey_title": "Unsafe shortcut replaced",
+  "unsafe_hotkey_text": "The action shortcut cannot collide with Copy, Paste, or Select All. It was replaced with {hotkey}.",
   "rephrasing_finished_macos_message": "Rephrasing complete. Text copied to clipboard.",
   "alt_clipboard_lib_checkbox": "Use alternative library for Copy/Paste (Better compatibility on macOS)",
   "alt_clipboard_lib_tooltip": "If copy/paste actions are unreliable, this library (pyautogui) might work better. It's a common workaround for macOS compatibility issues.",

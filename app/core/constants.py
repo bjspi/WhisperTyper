@@ -188,7 +188,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "rephrasing_model": DEFAULT_REPHRASING_MODEL,
     "rephrasing_temperature": 0.7,
     "post_rephrasing_entries": [],
-    "post_rephrase_hotkey": "<ctrl>+c" if is_MACOS else "<f9>",
+    # macOS: Ctrl+, is easy to reach with two keys and, unlike Cmd+, is not a system
+    # shortcut. It also must not be a clipboard combination, see is_reserved_clipboard_hotkey.
+    # Windows/Linux keep the previous F9 default.
+    "post_rephrase_hotkey": "<ctrl>+," if is_MACOS else "<f9>",
     "post_rephrase_auto_select_all": False,
     # macOS Permissions
     "macos_input_monitoring_info_shown": False,

@@ -13,6 +13,7 @@ on the application class (``hotkey_action_signal``, ``hotkey_capture_text_signal
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Dict, List, Optional, Set
 
 from pynput import keyboard
@@ -29,6 +30,38 @@ from app.hotkeys.windows_listener import WindowsHotkeyListener
 
 class HotkeyMixin:
     """Global hotkeys: listeners, press/release dispatch, and capture."""
+
+    def _suppress_hotkeys_for_simulated_input(
+        self,
+        reason: str,
+        duration_seconds: float = 0.5,
+    ) -> None:
+        """Ignore shortcuts synthesized by our own clipboard automation.
+
+        macOS does not reliably mark System Events keystrokes as injected. A short,
+        explicit guard is therefore required in addition to pynput's injected flag.
+        """
+        until = time.monotonic() + max(0.0, duration_seconds)
+        self._hotkey_suppressed_until = max(
+            float(getattr(self, "_hotkey_suppressed_until", 0.0)),
+            until,
+        )
+        self._hotkey_suppression_reason = reason
+        # The action that arms this guard can run before the physical shortcut keys
+        # have been released. Drop that completed chord immediately so a missing or
+        # differently represented release event cannot leave a stale future trigger.
+        self.pressed_hotkey_tokens.clear()
+        self.active_hotkey_actions.clear()
+        self.deferred_hotkey_actions.clear()
+        logging.debug(
+            "HOTKEY_GUARD armed for %.2fs reason=%s",
+            duration_seconds,
+            reason,
+        )
+
+    def _hotkey_processing_is_suppressed(self) -> bool:
+        """Return whether self-generated keyboard input is still in flight."""
+        return time.monotonic() < float(getattr(self, "_hotkey_suppressed_until", 0.0))
 
     def _handle_hotkey_action(self, action: str) -> None:
         """Dispatch hotkey actions onto the Qt main thread."""
@@ -164,6 +197,7 @@ class HotkeyMixin:
         # by a listener thread that is just shutting down; fresh objects make the swap atomic.
         self.pressed_hotkey_tokens = set()
         self.active_hotkey_actions = set()
+        self.deferred_hotkey_actions = set()
         self.push_to_talk_active = False
 
         if is_MACOS:
@@ -228,6 +262,13 @@ class HotkeyMixin:
     def _on_hotkey_press(self, key: Any, injected: bool = False) -> None:
         """Pynput callback (listener thread) for any key press."""
         key_tokens = self._key_to_hotkey_tokens(key)
+        if self._hotkey_processing_is_suppressed():
+            logging.debug(
+                "HOTKEY_GUARD ignored press tokens=%s reason=%s",
+                sorted(key_tokens),
+                getattr(self, "_hotkey_suppression_reason", "simulated_input"),
+            )
+            return
         if injected and not self._should_process_injected_hotkey_event(key_tokens):
             return
         self.pressed_hotkey_tokens.update(key_tokens)
@@ -237,12 +278,22 @@ class HotkeyMixin:
             if (hotkeys.binding_matches_current_press(binding, self.pressed_hotkey_tokens, key_tokens)
                     and binding["action"] not in self.active_hotkey_actions):
                 self.active_hotkey_actions.add(binding["action"])
-                logging.info(f"Manual hotkey combo detected: {binding['display']}")
-                if binding["action"] == "transcription" and self.config.get("push_to_talk", False):
+                if binding["action"] == "post_rephrase":
+                    # Copying the selection while the physical shortcut is still held
+                    # turns Cmd+C into Ctrl+Plus+Cmd+C on macOS. Defer this action until
+                    # every key belonging to the combo has been released.
+                    self.deferred_hotkey_actions.add(binding["action"])
+                    logging.debug(
+                        "Manual hotkey combo armed until release: %s",
+                        binding["display"],
+                    )
+                elif binding["action"] == "transcription" and self.config.get("push_to_talk", False):
+                    logging.info(f"Manual hotkey combo detected: {binding['display']}")
                     if not self.is_recording:
                         self.push_to_talk_active = True
                         self.hotkey_action_signal.emit(binding["action"])
                 else:
+                    logging.info(f"Manual hotkey combo detected: {binding['display']}")
                     self.hotkey_action_signal.emit(binding["action"])
                 if binding["action"] == "transcription":
                     return
@@ -250,6 +301,22 @@ class HotkeyMixin:
     def _on_hotkey_release(self, key: Any, injected: bool = False) -> None:
         """Pynput callback (listener thread) for any key release."""
         released_tokens = self._key_to_hotkey_tokens(key)
+        if self._hotkey_processing_is_suppressed():
+            # A press can precede the guard while its release lands inside it. Remove the
+            # released tokens so a stale modifier cannot complete a later real shortcut.
+            self.pressed_hotkey_tokens.difference_update(released_tokens)
+            self.active_hotkey_actions = {
+                binding["action"]
+                for binding in list(self.manual_hotkey_bindings)
+                if hotkeys.binding_matches_pressed(binding, self.pressed_hotkey_tokens)
+            }
+            self.deferred_hotkey_actions.clear()
+            logging.debug(
+                "HOTKEY_GUARD ignored release tokens=%s reason=%s",
+                sorted(released_tokens),
+                getattr(self, "_hotkey_suppression_reason", "simulated_input"),
+            )
+            return
         if injected and not self._should_process_injected_hotkey_event(released_tokens):
             return
         transcription_binding = self._get_binding_for_action("transcription")
@@ -266,12 +333,31 @@ class HotkeyMixin:
 
         self.pressed_hotkey_tokens.difference_update(released_tokens)
 
+        bindings = list(self.manual_hotkey_bindings)
+        deferred_bindings_to_emit = [
+            binding
+            for binding in bindings
+            if (
+                binding["action"] in self.deferred_hotkey_actions
+                and not binding["tokens"].intersection(self.pressed_hotkey_tokens)
+            )
+        ]
+        for binding in deferred_bindings_to_emit:
+            self.deferred_hotkey_actions.discard(binding["action"])
+
         still_active = {
             binding["action"]
-            for binding in list(self.manual_hotkey_bindings)
+            for binding in bindings
             if hotkeys.binding_matches_pressed(binding, self.pressed_hotkey_tokens)
         }
-        self.active_hotkey_actions.intersection_update(still_active)
+        self.active_hotkey_actions.intersection_update(
+            still_active.union(self.deferred_hotkey_actions)
+        )
+
+        for binding in deferred_bindings_to_emit:
+            self.active_hotkey_actions.discard(binding["action"])
+            logging.info(f"Manual hotkey combo detected after release: {binding['display']}")
+            self.hotkey_action_signal.emit(binding["action"])
 
     # --- "Set hotkey" capture flow -------------------------------------------------------
     def start_hotkey_capture(self) -> None:
@@ -466,7 +552,7 @@ class HotkeyMixin:
 
         text = event.text().lower()
         if len(text) == 1 and text.isprintable() and not text.isspace():
-            tokens.add(text)
+            tokens.add(hotkeys.normalize_hotkey_part(text))
             return tokens
 
         if Qt.Key.Key_A <= key <= Qt.Key.Key_Z:
@@ -479,6 +565,7 @@ class HotkeyMixin:
 
         fallback_key_map = {
             Qt.Key.Key_Minus: "-",
+            Qt.Key.Key_Plus: "<plus>",
             Qt.Key.Key_Equal: "=",
             Qt.Key.Key_BracketLeft: "[",
             Qt.Key.Key_BracketRight: "]",
@@ -537,9 +624,14 @@ class HotkeyMixin:
         if char:
             tokens.add(char.lower())
 
-        vk_token = hotkeys.vk_to_key_token(getattr(key, "vk", None))
-        if vk_token:
-            tokens.add(vk_token)
+        # Windows: ``vk`` is platform-specific and VK_TO_TOKEN describes Windows virtual-key
+        # codes only. On macOS ``vk`` is a hardware keycode and on Linux an X11 code, so
+        # applying the Windows table there manufactured modifiers and special keys during
+        # ordinary typing: the letter T (macOS keycode 0x11) was read as Control.
+        if is_WINDOWS:
+            vk_token = hotkeys.vk_to_key_token(getattr(key, "vk", None))
+            if vk_token:
+                tokens.add(vk_token)
 
         if "<alt_gr>" in tokens:
             tokens.add("<ctrl>")

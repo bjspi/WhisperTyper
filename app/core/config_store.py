@@ -18,6 +18,7 @@ from app.core.constants import (
     PREVIOUS_DEFAULT_REPHRASING_MODELS,
     WINDOW_MIN_HEIGHT,
 )
+from app.core.hotkeys import is_reserved_clipboard_hotkey
 from app.core.textutil import demojibake
 
 # A hotkey normalizer, e.g. HotkeyMixin.normalize_hotkey_string.
@@ -135,5 +136,16 @@ class ConfigStore:
             if hk_val and normalized and normalized != hk_val:
                 cfg[hk_key] = normalized
                 changed = True
+
+        # Clipboard shortcuts cannot be post-rephrase hotkeys. That action copies selected
+        # text internally, so Ctrl/Cmd+A/C/V would recursively trigger itself (or trigger
+        # again when the result is pasted). Repair unsafe persisted values on every load,
+        # including values deliberately entered on an older schema.
+        if is_reserved_clipboard_hotkey(str(cfg.get("post_rephrase_hotkey", ""))):
+            logging.warning(
+                "Unsafe post-rephrase hotkey collided with clipboard automation; resetting it."
+            )
+            cfg["post_rephrase_hotkey"] = DEFAULT_CONFIG["post_rephrase_hotkey"]
+            changed = True
 
         return changed

@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
 from app.core.config_store import ConfigStore
 from app.core.constants import (
     CONFIG_FILE,
+    DEFAULT_CONFIG,
     LANGUAGES,
     LOG_FILE_PATH,
     TRANSCRIPTION_MODEL_OPTIONS,
@@ -38,7 +39,11 @@ from app.core.constants import (
 )
 from app.core.env import is_MACOS, is_WINDOWS, open_with_default_app
 from app.core.ffmpeg import probe_version, resolve_ffmpeg
-from app.core.hotkeys import normalize_hotkey_string
+from app.core.hotkeys import (
+    is_reserved_clipboard_hotkey,
+    normalize_hotkey_string,
+    pretty_hotkey,
+)
 from app.core.paths import resource_path
 from app.core.prompts import (
     DEFAULT_GENERIC_REPHRASE_PROMPTS,
@@ -583,6 +588,16 @@ class SettingsMixin:
         # Get the pending hotkey string from the UI display
         pending_hotkey_str = normalize_hotkey_string(self.hotkey_display.text()) or self.hotkey_display.text().strip()
         pending_pr_hotkey_str = normalize_hotkey_string(self.pr_hotkey_display.text()) or self.pr_hotkey_display.text().strip()
+        if is_reserved_clipboard_hotkey(pending_pr_hotkey_str):
+            pending_pr_hotkey_str = str(DEFAULT_CONFIG["post_rephrase_hotkey"])
+            QMessageBox.warning(
+                self,
+                self.translator.tr("unsafe_hotkey_title"),
+                self.translator.tr(
+                    "unsafe_hotkey_text",
+                    hotkey=pretty_hotkey(pending_pr_hotkey_str),
+                ),
+            )
         self.hotkey_display.setText(pending_hotkey_str)
         self.pr_hotkey_display.setText(pending_pr_hotkey_str)
 

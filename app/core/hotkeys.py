@@ -29,7 +29,7 @@ _ALIAS_MAP = {
     "cmd_l": "cmd", "cmd_r": "cmd",
     "super": "win", "super_l": "win", "super_r": "win", "windows": "win", "win": "win",
     "option": "alt", "option_r": "alt_gr",
-    "command": "cmd", "meta": "cmd",
+    "command": "cmd", "meta": "cmd", "+": "plus",
     "escape": "esc", "return": "enter", "capslock": "caps_lock",
     "pageup": "page_up", "pgup": "page_up",
     "pagedown": "page_down", "pgdown": "page_down",
@@ -39,7 +39,7 @@ _ALIAS_MAP = {
 _SPECIAL_TOKENS = frozenset({
     "ctrl", "alt", "shift", "cmd", "win", "alt_gr", "caps_lock",
     "backspace", "tab", "enter", "esc", "space", "delete", "insert",
-    "home", "end", "page_up", "page_down", "left", "right", "up", "down",
+    "home", "end", "page_up", "page_down", "left", "right", "up", "down", "plus",
 })
 
 #: Windows virtual-key code -> canonical token. Single source of truth; the reverse
@@ -52,7 +52,7 @@ VK_TO_TOKEN: Dict[int, str] = {
     0x70: "<f1>", 0x71: "<f2>", 0x72: "<f3>", 0x73: "<f4>", 0x74: "<f5>",
     0x75: "<f6>", 0x76: "<f7>", 0x77: "<f8>", 0x78: "<f9>", 0x79: "<f10>",
     0x7A: "<f11>", 0x7B: "<f12>",
-    0xBA: ";", 0xBB: "+", 0xBC: ",", 0xBD: "-", 0xBE: ".", 0xBF: "/",
+    0xBA: ";", 0xBB: "<plus>", 0xBC: ",", 0xBD: "-", 0xBE: ".", 0xBF: "/",
     # Modifier VKs (generic + left/right variants) all collapse to the generic token.
     0x11: "<ctrl>", 0xA2: "<ctrl>", 0xA3: "<ctrl>",
     0x12: "<alt>", 0xA4: "<alt>",
@@ -74,7 +74,7 @@ _PRETTY_NAMES = {
     "alt": "Alt", "alt_l": "Alt", "alt_r": "Alt", "alt_gr": "AltGr",
     "shift": "Shift", "shift_l": "Shift", "shift_r": "Shift",
     "cmd": "Cmd", "win": "Win", "caps_lock": "Caps Lock", "space": "Space",
-    "enter": "Enter", "esc": "Esc", "tab": "Tab",
+    "enter": "Enter", "esc": "Esc", "tab": "Tab", "plus": "+",
 }
 
 #: Stable modifier ordering for display strings.
@@ -82,6 +82,15 @@ _TOKEN_ORDER = {
     "<ctrl>": 0, "<shift>": 1, "<alt>": 2, "<alt_gr>": 3,
     "<cmd>": 4, "<win>": 5, "<caps_lock>": 6,
 }
+
+# These shortcuts are synthesized internally while collecting/replacing selected text.
+# Assigning one of them to the post-rephrase action creates a feedback loop: the action
+# copies the selection, the listener sees that copy shortcut, and starts the action again.
+_RESERVED_CLIPBOARD_HOTKEYS = frozenset(
+    f"<{modifier}>+{key}"
+    for modifier in ("ctrl", "cmd")
+    for key in ("a", "c", "v")
+)
 
 
 def normalize_hotkey_part(part: str) -> str:
@@ -100,12 +109,26 @@ def normalize_hotkey_part(part: str) -> str:
 
 def normalize_hotkey_string(hotkey_str: str) -> str:
     """Normalize a user-entered hotkey like 'F9' or 'Cmd+Shift+K' into canonical tokens."""
+    stripped_hotkey = hotkey_str.strip()
+    if stripped_hotkey == "+":
+        return "<plus>"
+    if stripped_hotkey.endswith("++"):
+        # Accept the intuitive manual form "Ctrl++" while keeping "+" unambiguous in
+        # the stored format.
+        stripped_hotkey = f"{stripped_hotkey[:-1]}<plus>"
+
     normalized_parts: List[str] = []
-    for raw_part in hotkey_str.split("+"):
+    for raw_part in stripped_hotkey.split("+"):
         token = normalize_hotkey_part(raw_part)
         if token and token not in normalized_parts:
             normalized_parts.append(token)
     return "+".join(normalized_parts)
+
+
+def is_reserved_clipboard_hotkey(hotkey_str: str) -> bool:
+    """Return whether a hotkey collides with the app's synthetic clipboard shortcuts."""
+    normalized = normalize_hotkey_string(hotkey_str)
+    return normalized in _RESERVED_CLIPBOARD_HOTKEYS
 
 
 def is_modifier_token(token: str) -> bool:
@@ -229,23 +252,21 @@ def parse_hotkey_binding(hotkey_str: str, action: str) -> Optional[Dict[str, Any
 
 def binding_matches_pressed(binding: Dict[str, Any], pressed_tokens: Set[str]) -> bool:
     """Return whether the currently pressed token set still satisfies a binding."""
-    if not binding["modifiers"].issubset(pressed_tokens):
-        return False
-    trigger_tokens = binding["trigger_tokens"]
-    if trigger_tokens:
-        return any(token in pressed_tokens for token in trigger_tokens)
-    return bool(binding["modifiers"])
+    return bool(binding["tokens"]) and binding["tokens"].issubset(pressed_tokens)
 
 
 def binding_matches_current_press(binding: Dict[str, Any], pressed_tokens: Set[str],
                                   key_tokens: Set[str]) -> bool:
     """Return whether the key press carried in ``key_tokens`` completes a binding."""
-    if not binding["modifiers"].issubset(pressed_tokens):
-        return False
-    trigger_tokens = binding["trigger_tokens"]
-    if trigger_tokens:
-        return bool(key_tokens.intersection(trigger_tokens))
-    return bool(key_tokens.intersection(binding["tokens"]))
+    # A binding with a real trigger key must be completed by that trigger. Merely
+    # pressing a modifier must never activate a chord because another token happens
+    # to be stale in the listener state.
+    current_press_tokens = binding["trigger_tokens"] or binding["tokens"]
+    return (
+        bool(binding["tokens"])
+        and binding["tokens"].issubset(pressed_tokens)
+        and bool(key_tokens.intersection(current_press_tokens))
+    )
 
 
 def binding_release_tokens(binding: Dict[str, Any]) -> Set[str]:

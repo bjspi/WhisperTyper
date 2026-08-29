@@ -183,6 +183,8 @@
   "macos_hotkey_tooltip": "Introducir atajo manualmente. Formato: <cmd>+k o <f9>",
   "macos_hotkey_restart_title": "Reinicio requerido",
   "macos_hotkey_restart_text": "El atajo de teclado ha sido cambiado. Por favor, reinicie la aplicación para que el nuevo atajo se active.",
+  "unsafe_hotkey_title": "Atajo inseguro reemplazado",
+  "unsafe_hotkey_text": "El atajo de la acción no puede coincidir con Copiar, Pegar o Seleccionar todo. Se ha reemplazado por {hotkey}.",
   "rephrasing_finished_macos_message": "Reformulación completa. Texto copiado al portapapeles.",
   "alt_clipboard_lib_checkbox": "Usar biblioteca alternativa para Copiar/Pegar (Mejor compatibilidad en macOS)",
   "alt_clipboard_lib_tooltip": "Si las acciones de copiar/pegar no son fiables, esta biblioteca (pyautogui) podría funcionar mejor. Es una solución común para problemas de compatibilidad en macOS.",

@@ -14,7 +14,7 @@ from app.core.constants import (
     PREVIOUS_DEFAULT_REPHRASING_MODELS,
     WINDOW_MIN_HEIGHT,
 )
-from app.core.hotkeys import normalize_hotkey_string
+from app.core.hotkeys import is_reserved_clipboard_hotkey, normalize_hotkey_string
 
 
 @pytest.fixture
@@ -91,6 +91,21 @@ class TestMigrations:
         write_config(store, {"hotkey": "Ctrl+F9"})
         config, _ = store.load()
         assert config["hotkey"] == "<ctrl>+<f9>"
+
+    @pytest.mark.parametrize("unsafe_hotkey", ["Ctrl+C", "<cmd>+c", "ctrl+v", "Cmd+A"])
+    def test_post_rephrase_clipboard_shortcuts_are_repaired(
+        self,
+        store: ConfigStore,
+        unsafe_hotkey: str,
+    ):
+        write_config(store, {
+            "config_schema_version": CONFIG_SCHEMA_VERSION,
+            "post_rephrase_hotkey": unsafe_hotkey,
+        })
+        config, changed = store.load()
+        assert changed is True
+        assert config["post_rephrase_hotkey"] == DEFAULT_CONFIG["post_rephrase_hotkey"]
+        assert not is_reserved_clipboard_hotkey(config["post_rephrase_hotkey"])
 
     def test_schema_bump_raises_window_height(self, store: ConfigStore):
         write_config(store, {"window_height": 500})  # pre-schema config

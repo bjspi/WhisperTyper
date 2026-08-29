@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -18,39 +19,64 @@ class PostRephraseMixin:
 
     def trigger_post_rephrase_window(self) -> None:
         """Checks for selected text and shows the floating button window if text is present."""
-        # Check for API settings before proceeding
-        if not self.config.get("rephrasing_api_url") or not self.config.get("rephrasing_api_key") or not self.config.get("rephrasing_model"):
-            logging.warning("Post-rephrase hotkey pressed, but API settings are missing.")
-            self.show_tray_balloon(self.translator.tr("rephrase_api_settings_missing"), 3000)
+        now = time.monotonic()
+        if bool(getattr(self, "_post_rephrase_trigger_active", False)) or now < float(
+            getattr(self, "_post_rephrase_cooldown_until", 0.0)
+        ):
+            logging.warning("HOTKEY_GUARD blocked a repeated post-rephrase trigger.")
             return
 
-        if is_MACOS:
-            logging.debug("Trying to get currently active window/application on macOS via osascript")
-            try:
-                self.macos_active_application = get_active_app_name()
-            except Exception as e:
-                # osascript can fail (e.g. CalledProcessError) when Automation
-                # permission is missing; on_rephrasing_finished handles None.
-                logging.warning(f"Could not determine active macOS application: {e}")
-                self.macos_active_application = None
+        self._post_rephrase_trigger_active = True
+        self._post_rephrase_cooldown_until = now + 1.0
+        try:
+            # Check for API settings before proceeding
+            if (
+                not self.config.get("rephrasing_api_url")
+                or not self.config.get("rephrasing_api_key")
+                or not self.config.get("rephrasing_model")
+            ):
+                logging.warning("Post-rephrase hotkey pressed, but API settings are missing.")
+                self.show_tray_balloon(self.translator.tr("rephrase_api_settings_missing"), 3000)
+                return
 
-        selected_text = self.get_selected_text(
-            select_all_first=self.config.get("post_rephrase_auto_select_all", False)
-        )
-        if not selected_text:
-            logging.info("Post-rephrase hotkey pressed, but no text was selected.")
-            self.show_tray_balloon(self.translator.tr("no_text_selected_for_rephrase"), 2000)
-            return
+            if is_MACOS:
+                logging.debug("Trying to get currently active window/application on macOS via osascript")
+                try:
+                    self.macos_active_application = get_active_app_name()
+                except Exception as e:
+                    # osascript can fail (e.g. CalledProcessError) when Automation
+                    # permission is missing; on_rephrasing_finished handles None.
+                    logging.warning(f"Could not determine active macOS application: {e}")
+                    self.macos_active_application = None
 
-        # Filter for entries that have a caption
-        valid_entries = [entry for entry in self.config.get("post_rephrasing_entries", []) if entry.get("caption", "").strip()]
-        if not valid_entries:
-            logging.info("Post-rephrase hotkey pressed, but no valid post-processing entries are configured.")
-            self.show_tray_balloon(self.translator.tr("no_post_rephrase_entries_configured"), 3000)
-            return
+            selected_text = self.get_selected_text(
+                select_all_first=self.config.get("post_rephrase_auto_select_all", False)
+            )
+            if not selected_text:
+                logging.info("Post-rephrase hotkey pressed, but no text was selected.")
+                self.show_tray_balloon(self.translator.tr("no_text_selected_for_rephrase"), 2000)
+                return
 
-        # Emit a signal to create the window in the main GUI thread
-        self.show_floating_window_signal.emit(valid_entries, selected_text)
+            # Filter for entries that have a caption
+            valid_entries = [
+                entry
+                for entry in self.config.get("post_rephrasing_entries", [])
+                if entry.get("caption", "").strip()
+            ]
+            if not valid_entries:
+                logging.info(
+                    "Post-rephrase hotkey pressed, but no valid post-processing entries are configured."
+                )
+                self.show_tray_balloon(
+                    self.translator.tr("no_post_rephrase_entries_configured"),
+                    3000,
+                )
+                return
+
+            # Emit a signal to create the window in the main GUI thread
+            self.show_floating_window_signal.emit(valid_entries, selected_text)
+        finally:
+            self._post_rephrase_trigger_active = False
 
     def on_floating_button_clicked(self, system_prompt: str, selected_text: str, window: QWidget) -> None:
         """
