@@ -46,6 +46,14 @@ class TestLoad:
         config, _ = store.load()
         assert config["api_key"] == "sk-test"
 
+    def test_recording_prompt_overlay_mouse_position_preference_is_preserved(self, store: ConfigStore):
+        write_config(store, {
+            "recording_prompt_overlay_system_position": False,
+            "config_schema_version": CONFIG_SCHEMA_VERSION,
+        })
+        config, _ = store.load()
+        assert config["recording_prompt_overlay_system_position"] is False
+
 
 class TestMigrations:
     def test_legacy_language_key_is_renamed(self, store: ConfigStore):
@@ -82,6 +90,22 @@ class TestMigrations:
         assert config["post_rephrasing_entries"][0]["caption"] == "Höflich"
         assert config["post_rephrasing_entries"][0]["text"] == "Sei höflich"
 
+    def test_old_rephrase_entries_opt_out_of_recording_palette(self, store: ConfigStore):
+        write_config(store, {"post_rephrasing_entries": [{"caption": "Polish", "text": "Improve it"}]})
+        config, changed = store.load()
+        assert changed is True
+        assert config["post_rephrasing_entries"][0]["show_during_recording"] is False
+
+    def test_invalid_recording_palette_flag_is_safely_disabled(self, store: ConfigStore):
+        write_config(store, {
+            "post_rephrasing_entries": [
+                {"caption": "Polish", "text": "Improve it", "show_during_recording": "yes"},
+            ],
+        })
+        config, changed = store.load()
+        assert changed is True
+        assert config["post_rephrasing_entries"][0]["show_during_recording"] is False
+
     def test_hotkey_with_control_chars_is_reset_to_default(self, store: ConfigStore):
         write_config(store, {"hotkey": "<ctrl>+\x03+<f9>+c"})
         config, _ = store.load()
@@ -107,3 +131,15 @@ class TestSaveRoundtrip:
         reloaded, changed = store.load()
         assert reloaded["prompt"] == "Bitte übersetze — dies ist ein Test 🚀"
         assert changed is False  # a fully migrated config must load unchanged
+
+    def test_recording_palette_flag_roundtrip(self, store: ConfigStore):
+        config, _ = store.load()
+        config["post_rephrasing_entries"] = [{
+            "caption": "Polish",
+            "text": "Improve it",
+            "show_during_recording": True,
+        }]
+        store.save(config)
+        reloaded, changed = store.load()
+        assert changed is False
+        assert reloaded["post_rephrasing_entries"][0]["show_during_recording"] is True

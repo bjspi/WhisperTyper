@@ -11,6 +11,7 @@ from app.core.prompts import (
     DEFAULT_TRANSCRIPTION_PROMPTS,
     _default_prompt_for,
     _is_known_default_prompt,
+    recording_prompt_entries,
 )
 
 
@@ -65,3 +66,24 @@ class TestDefaultPrompts:
     def test_default_detection_across_languages(self):
         assert _is_known_default_prompt(DEFAULT_TRANSCRIPTION_PROMPTS, DEFAULT_TRANSCRIPTION_PROMPTS["fr"])
         assert not _is_known_default_prompt(DEFAULT_TRANSCRIPTION_PROMPTS, "my custom prompt")
+
+
+class TestRecordingPromptEntries:
+    def test_returns_only_enabled_complete_entries_in_order(self):
+        entries = [
+            {"caption": "First", "text": "Do first", "show_during_recording": True},
+            {"caption": "Disabled", "text": "Do not show", "show_during_recording": False},
+            {"caption": "", "text": "Missing caption", "show_during_recording": True},
+            {"caption": "Missing text", "text": "  ", "show_during_recording": True},
+            {"caption": "Second", "text": "Do second", "show_during_recording": True},
+        ]
+        assert recording_prompt_entries(entries) == [
+            {"caption": "First", "text": "Do first"},
+            {"caption": "Second", "text": "Do second"},
+        ]
+
+    def test_rejects_non_lists_and_non_boolean_opt_in(self):
+        assert recording_prompt_entries(None) == []
+        assert recording_prompt_entries([
+            {"caption": "Wrong type", "text": "No", "show_during_recording": 1},
+        ]) == []

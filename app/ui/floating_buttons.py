@@ -6,9 +6,9 @@ from typing import Any, Callable, Dict, List, Optional
 
 from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtGui import QCursor, QKeyEvent
-from PyQt6.QtWidgets import QApplication, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from app.core.env import is_MACOS
+from app.core.env import is_MACOS, is_WINDOWS
 from app.ui import theme
 
 
@@ -134,3 +134,179 @@ class FloatingButtonWindow(QWidget):
         if FloatingButtonWindow._instance is self:
             FloatingButtonWindow._instance = None
         super().closeEvent(event)
+
+
+class RecordingPromptOverlay(QWidget):
+    """Persistent, non-activating prompt selector shown for one microphone recording."""
+
+    _instance: Optional['RecordingPromptOverlay'] = None
+
+    def __init__(self, prompts: List[Dict[str, str]], status_text: str, standard_text: str,
+                 on_selection_changed: Callable[[Optional[str]], None],
+                 use_system_position: bool = True,
+                 system_anchor: Optional[QPoint] = None) -> None:
+        """Build a fixed palette near the cursor without taking focus from the target app."""
+        if RecordingPromptOverlay._instance:
+            RecordingPromptOverlay._instance.close()
+        super().__init__()
+        RecordingPromptOverlay._instance = self
+        self._on_selection_changed = on_selection_changed
+        self._prompt_buttons: List[QPushButton] = []
+
+        window_kind = Qt.WindowType.Dialog if is_MACOS else Qt.WindowType.Tool
+        flags = (
+            Qt.WindowType.FramelessWindowHint
+            | window_kind
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.WindowDoesNotAcceptFocus
+        )
+        self.setWindowFlags(flags)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+        pal = theme.palette(theme.is_dark_mode(QApplication.instance()))
+        self.setStyleSheet(f"""
+            QWidget {{
+                background-color: {pal['panel']};
+                border: 1px solid {pal['border']};
+                border-radius: 12px;
+                color: {pal['text']};
+            }}
+            QLabel {{
+                border: none;
+                color: {pal['text']};
+                font-size: 12px;
+                font-weight: 600;
+                padding: 2px 4px 5px 4px;
+            }}
+            QPushButton {{
+                background-color: {pal['panel2']};
+                border: 1px solid {pal['border']};
+                padding: 6px 10px;
+                border-radius: 8px;
+                text-align: left;
+                font-size: 12px;
+                color: {pal['text']};
+            }}
+            QPushButton:hover {{ border-color: {pal['accent']}; color: {pal['accent']}; }}
+            QPushButton:checked {{
+                background-color: {pal['hover']};
+                border: 2px solid {pal['accent']};
+                color: {pal['accent']};
+                font-weight: 600;
+            }}
+            QPushButton[compactPrompt="true"] {{
+                min-width: 38px;
+                max-width: 38px;
+                padding: 6px 2px;
+                text-align: center;
+            }}
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(5)
+
+        status_label = QLabel(f"●  {status_text}")
+        status_label.setStyleSheet(
+            f"border: none; color: {pal['warn']}; font-size: 12px; "
+            "font-weight: 600; padding: 2px 4px 5px 4px;"
+        )
+        layout.addWidget(status_label)
+
+        standard_button = self._build_prompt_button(standard_text)
+        standard_button.setChecked(True)
+        standard_button.clicked.connect(partial(self._select_prompt, None, standard_button))
+        standard_row = QHBoxLayout()
+        standard_row.setContentsMargins(0, 0, 0, 0)
+        standard_row.addWidget(standard_button)
+        standard_row.addStretch()
+        layout.addLayout(standard_row)
+
+        prompt_row = QHBoxLayout()
+        prompt_row.setContentsMargins(0, 0, 0, 0)
+        prompt_row.setSpacing(4)
+        for prompt in prompts:
+            caption = prompt["caption"]
+            button = self._build_prompt_button(caption[:3], compact=True)
+            button.setToolTip(caption)
+            button.clicked.connect(partial(self._select_prompt, prompt["text"], button))
+            prompt_row.addWidget(button)
+        prompt_row.addStretch()
+        layout.addLayout(prompt_row)
+
+        self._position_for_platform(use_system_position, system_anchor)
+        self.show()
+
+    def _build_prompt_button(self, caption: str, compact: bool = False) -> QPushButton:
+        """Create one mouse-only, checkable palette button."""
+        button = QPushButton(caption)
+        button.setCheckable(True)
+        button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        if compact:
+            button.setProperty("compactPrompt", True)
+        self._prompt_buttons.append(button)
+        return button
+
+    def _select_prompt(self, prompt_text: Optional[str], selected_button: QPushButton) -> None:
+        """Highlight one choice and report its immutable prompt text to the app."""
+        for button in self._prompt_buttons:
+            button.setChecked(button is selected_button)
+        self._on_selection_changed(prompt_text)
+
+    def _position_for_platform(self, use_system_position: bool,
+                               system_anchor: Optional[QPoint]) -> None:
+        """Place the palette by the OS status area or once near the cursor."""
+        self.adjustSize()
+        if use_system_position and (is_WINDOWS or is_MACOS):
+            screen = QApplication.screenAt(system_anchor) if system_anchor is not None else None
+            screen = screen or QApplication.primaryScreen()
+            if screen:
+                available = screen.availableGeometry()
+                full = screen.geometry()
+                margin = 16
+                anchor = system_anchor or (
+                    QPoint(full.right(), full.bottom()) if is_WINDOWS
+                    else QPoint(full.right(), full.top())
+                )
+                # macOS always uses the top-right status area promised by the setting. Windows
+                # can place the taskbar on any edge, so follow the tray icon's nearest corner.
+                if is_MACOS:
+                    x = available.left() + available.width() - self.width() - margin
+                    y = available.top() + margin
+                elif anchor.x() < full.center().x():
+                    x = available.left() + margin
+                else:
+                    x = available.left() + available.width() - self.width() - margin
+                if not is_MACOS:
+                    if anchor.y() < full.center().y():
+                        y = available.top() + margin
+                    else:
+                        y = available.top() + available.height() - self.height() - margin
+                x = min(max(x, available.left()), max(available.left(), available.right() - self.width()))
+                y = min(max(y, available.top()), max(available.top(), available.bottom() - self.height()))
+                self.move(x, y)
+                return
+
+        pos = QCursor.pos() + QPoint(15, 15)
+        screen = QApplication.screenAt(pos) or QApplication.primaryScreen()
+        if not screen:
+            self.move(pos)
+            return
+        geo = screen.availableGeometry()
+        x = min(max(pos.x(), geo.left()), max(geo.left(), geo.right() - self.width()))
+        y = min(max(pos.y(), geo.top()), max(geo.top(), geo.bottom() - self.height()))
+        self.move(x, y)
+
+    def closeEvent(self, event: Any) -> None:
+        """Clear the singleton instance on close."""
+        if RecordingPromptOverlay._instance is self:
+            RecordingPromptOverlay._instance = None
+        super().closeEvent(event)
+
+    @staticmethod
+    def close_current() -> None:
+        """Close the active recording palette, if one exists."""
+        if RecordingPromptOverlay._instance:
+            RecordingPromptOverlay._instance.close()

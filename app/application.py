@@ -22,11 +22,11 @@ from PyQt6.QtWidgets import QApplication, QLineEdit, QMessageBox, QPushButton, Q
 
 from app.audio.sound import SoundPlayer
 from app.audio.store import RecordingStore
-from app.core.env import is_MACOS
+from app.core.env import is_MACOS, is_WINDOWS
 from app.core.i18n import TranslationManager
 from app.core.paths import resource_path
 from app.hotkeys.windows_listener import WindowsHotkeyListener
-from app.mixins.audio_mixin import AudioMixin
+from app.mixins.audio_mixin import RECORDING_BALLOON_TIMEOUT_MS, AudioMixin
 from app.mixins.clipboard_mixin import ClipboardMixin
 from app.mixins.hotkey_mixin import HotkeyMixin
 from app.mixins.mac_mixin import MacMixin
@@ -38,7 +38,7 @@ from app.mixins.tray_mixin import TrayMixin
 from app.mixins.widget_attrs import WidgetAttrs
 from app.services.rephrasing_worker import RephrasingWorker
 from app.services.transcription_worker import TranscriptionWorker
-from app.ui.floating_buttons import FloatingButtonWindow
+from app.ui.floating_buttons import FloatingButtonWindow, RecordingPromptOverlay
 from app.ui.tooltip import MouseFollowerTooltip
 
 # Suppress verbose DEBUG messages from the pyuic module
@@ -56,6 +56,7 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
     # connected slots run on the Qt main thread.
     show_tooltip_signal = pyqtSignal(str, int, bool, bool)
     hide_tooltip_signal = pyqtSignal()
+    close_recording_prompt_overlay_signal = pyqtSignal()
     show_floating_window_signal = pyqtSignal(list, str)
     show_permission_dialog_signal = pyqtSignal(str, str, str)
     hotkey_action_signal = pyqtSignal(str)
@@ -98,6 +99,8 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         self.active_rephrasing_threads: List[QThread] = []
         self.last_transcription: str = ""
         self.current_transcription_context: str = ""
+        self.current_recording_prompt: Optional[str] = None
+        self._recording_prompt_mouse_status: Optional[MouseFollowerTooltip] = None
         self.hotkey_bindings: List[Dict[str, Any]] = []
         self.manual_hotkey_bindings: List[Dict[str, Any]] = []
         self.pressed_hotkey_tokens: Set[str] = set()
@@ -143,6 +146,7 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         # Connect the signals to their slots for safe cross-thread communication
         self.show_tooltip_signal.connect(self._show_tooltip_slot)
         self.hide_tooltip_signal.connect(self._hide_tooltip_slot)
+        self.close_recording_prompt_overlay_signal.connect(self._abandon_recording_prompt_selection)
         self.show_floating_window_signal.connect(self._show_floating_window_slot)
         self.show_permission_dialog_signal.connect(self._show_permission_dialog_slot)
         self.hotkey_action_signal.connect(self._handle_hotkey_action)
@@ -202,6 +206,53 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
             on_button_click_callback=self.on_floating_button_clicked
         )
 
+    def _show_recording_prompt_overlay(self, prompts: List[Dict[str, str]]) -> None:
+        """Show the fixed prompt selector for the current microphone recording."""
+        self.hide_tray_balloon()
+        self._recording_prompt_mouse_status = None
+        self.current_recording_prompt = None
+        tray_geometry = self.tray_icon.geometry()
+        system_anchor = tray_geometry.center() if tray_geometry.isValid() else None
+        use_system_position = bool(
+            self.config.get("recording_prompt_overlay_system_position", True)
+        )
+        RecordingPromptOverlay(
+            prompts=prompts,
+            status_text=self.translator.tr("recording_running_message"),
+            standard_text=self.translator.tr("recording_prompt_standard"),
+            on_selection_changed=self._on_recording_prompt_selected,
+            use_system_position=use_system_position,
+            system_anchor=system_anchor,
+        )
+        # A system-positioned palette can be far away from the user's current work. Keep the
+        # original mouse-following recording status as a lightweight local reminder. When the
+        # palette itself is mouse-relative, its own status label already provides that feedback.
+        if use_system_position and (is_WINDOWS or is_MACOS):
+            self.show_tray_balloon(
+                self.translator.tr("recording_running_message"),
+                RECORDING_BALLOON_TIMEOUT_MS,
+            )
+            self._recording_prompt_mouse_status = MouseFollowerTooltip._instance
+
+    def _on_recording_prompt_selected(self, prompt_text: Optional[str]) -> None:
+        """Remember the current palette choice until this recording is stopped."""
+        self.current_recording_prompt = prompt_text
+
+    def _close_recording_prompt_overlay(self) -> None:
+        """Close the recording selector without changing the already selected prompt."""
+        RecordingPromptOverlay.close_current()
+        mouse_status = self._recording_prompt_mouse_status
+        self._recording_prompt_mouse_status = None
+        # Another operation may already have replaced the recording status with its own tooltip.
+        # In that case the replacement belongs to that operation and must remain visible.
+        if mouse_status is not None and MouseFollowerTooltip._instance is mouse_status:
+            mouse_status.close()
+
+    def _abandon_recording_prompt_selection(self) -> None:
+        """Close the selector and discard its choice when no request will use it."""
+        self.current_recording_prompt = None
+        self._close_recording_prompt_overlay()
+
     def closeEvent(self, event: QCloseEvent) -> None:
         """
         Overrides the close event to hide the window instead of quitting.
@@ -240,6 +291,7 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
                 return
 
         logging.info("Quitting application.")
+        self._abandon_recording_prompt_selection()
         self._stop_hotkey_listeners()
         self._stop_background_audio_capture()
         self._drain_worker_threads()

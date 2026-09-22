@@ -119,7 +119,7 @@ UI_LANG_FILES = [
 # Default UI language used to pick the initial default prompts.
 _DEFAULT_UI_LANG = SYS_LANG if SYS_LANG in UI_LANG_FILES else "en"
 
-CONFIG_SCHEMA_VERSION = 1
+CONFIG_SCHEMA_VERSION = 2
 
 # Window sizing: default on fresh install + the enforced minimum the user can't shrink past.
 # The minimum is sized so the tallest settings page (Rephrasing) shows fully without scrolling.
@@ -169,6 +169,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "use_local_px_proxy": False,
     "gain_db": 10,
     "systray_double_click_copy": True,
+    # Place the recording-prompt palette by the OS status area (Windows tray / macOS menu
+    # bar). When disabled it appears once near the mouse pointer, matching older overlays.
+    "recording_prompt_overlay_system_position": True,
     "quit_without_confirmation": False,
     "alt_clipboard_lib": is_MACOS,
 

@@ -10,6 +10,7 @@
   "input_language": "de",
   "ui_language": "de",
   "restore_clipboard": false,
+  "recording_prompt_overlay_system_position": true,
   "debug_logging": true,
   "file_logging": true,
   "gain_db": 10.0,
@@ -29,34 +30,42 @@
   "post_rephrasing_entries": [
     {
       "caption": "Korrigieren",
+      "show_during_recording": true,
       "text": "Verbessere die Rechtschreibung und Grammatik in diesem Text. Lasse den Stil und Ton der Nachricht unverändert. Gib nur den umformulierten Text zurück. "
     },
     {
       "caption": "kompakt",
+      "show_during_recording": true,
       "text": "Schreibe den folgenden Text prägnanter und kompakter. Entferne Füllwörter, redundante Phrasen und unnötige Sätze, aber erhalte die Kernaussage. Gib nur den gekürzten Text zurück. \n\n"
     },
     {
       "caption": "Emojis + Korrektur",
+      "show_during_recording": false,
       "text": "Füge passende Emojis in den folgenden Text ein, um ihn freundlicher und ausdrucksstärker zu machen. Platziere die Emojis sinnvoll am Ende von Sätzen oder neben Schlüsselbegriffen. Übertreibe es nicht. Korrigiere zudem Tippfehler und einfache Rechtschreibfehler, ohne den Text zu verfremden. Gib nur den Text mit den Emojis zurück."
     },
     {
       "caption": "Englisch (Chat)",
+      "show_during_recording": false,
       "text": "Übersetze den folgenden deutschen Text in einfaches, natürlich klingendes Englisch im Stil einer Chat-Nachricht. Gib nur den übersetzten Text zurück.\n"
     },
     {
       "caption": "Englisch & Chinesisch",
+      "show_during_recording": false,
       "text": "Übersetze den folgenden Text in zwei Sprachen und formatiere die Ausgabe exakt wie folgt, ohne zusätzlichen erklärenden Text: 1. Zuerst in einfaches, leicht verständliches Englisch. 2. Danach in vereinfachtes Chinesisch (Mandarin). English: [Hier die englische Übersetzung] Chinese: [Hier die chinesische Übersetzung]"
     },
     {
       "caption": "Englisch (gehoben)",
+      "show_during_recording": false,
       "text": "Übersetze den folgenden deutschen Text in professionelles, natürlich klingendes Englisch. Sollten Unterschrift oder Firmenname nötig sein, sind dies \"Joscha\" und \"Smartzone\". Gib nur den übersetzten Text zurück.\n\n"
     },
     {
       "caption": "Chinesisch",
+      "show_during_recording": false,
       "text": "Übersetze den folgenden Text in vereinfachtes Chinesisch (Mandarin). Gib nur den übersetzten Text zurück."
     },
     {
       "caption": "professionell",
+      "show_during_recording": false,
       "text": "Formuliere den folgenden Text höflicher, professioneller und klarer. Korrigiere alle Rechtschreib- oder Grammatikfehler. Der Tonfall sollte für einen formellen Geschäftskontext geeignet sein. Gib nur den umformulierten Text zurück. Sollten Unterschrift oder Firmenname nötig sein, sind dies \"Joscha\" und \"Smartzone\"."
     }
   ],

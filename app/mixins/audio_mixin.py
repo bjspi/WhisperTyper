@@ -14,11 +14,12 @@ from app.audio.device_selector import InputDeviceSelector
 from app.core import dsp
 from app.core.env import is_MACOS, is_WINDOWS, open_with_default_app
 from app.core.frameworks import NSURL, AVAudioRecorder
+from app.core.prompts import recording_prompt_entries
 from app.core.redaction import redact_for_log
 
 # The "recording…" balloon has no natural timeout — it stays until the stop/cancel path
 # replaces it. Effectively "forever"; the tooltip's own safety cap is the backstop.
-_RECORDING_BALLOON_TIMEOUT_MS = 99_999_999
+RECORDING_BALLOON_TIMEOUT_MS = 99_999_999
 
 
 class AudioMixin:
@@ -109,6 +110,9 @@ class AudioMixin:
         if self.is_recording:
             self._touch_transcription_activity()
             self.is_recording = False
+            recording_prompt = self.current_recording_prompt
+            self.current_recording_prompt = None
+            self._close_recording_prompt_overlay()
             self.push_to_talk_active = False
             self.cancel_action.setEnabled(False)  # Disable cancel while idle
             self._set_idle_tray_icon()
@@ -121,11 +125,12 @@ class AudioMixin:
             logging.info("Recording stopped. Processing audio.")
             self.play_sound('sound_end.wav')
             if recorded_file_path:
-                self._process_recorded_file(recorded_file_path)
+                self._process_recorded_file(recorded_file_path, recording_prompt)
             else:
-                self.process_recording()
+                self.process_recording(recording_prompt)
         else:
             self._touch_transcription_activity()
+            self._abandon_recording_prompt_selection()
             # Check if API settings are complete before starting recording.
             # A fresh install has no API key yet, so recording is blocked and the
             # settings window is opened so the user can add a key first.
@@ -173,8 +178,28 @@ class AudioMixin:
                         logging.info(f"Captured context for rephrasing: {redact_for_log(context_text)}")
 
             self.play_sound('sound_start.wav')
-            self.show_tray_balloon(self.translator.tr("recording_running_message"), _RECORDING_BALLOON_TIMEOUT_MS)
+            self._show_recording_feedback()
             logging.info("Recording started.")
+
+    def _show_recording_feedback(self) -> None:
+        """Show either the ordinary recording balloon or the optional prompt palette."""
+        prompts = recording_prompt_entries(self.config.get("post_rephrasing_entries", []))
+        if not prompts:
+            self.show_tray_balloon(
+                self.translator.tr("recording_running_message"),
+                RECORDING_BALLOON_TIMEOUT_MS,
+            )
+            return
+
+        rephrasing_ready = all(
+            str(self.config.get(key, "")).strip()
+            for key in ("rephrasing_api_url", "rephrasing_api_key", "rephrasing_model")
+        )
+        if not rephrasing_ready:
+            self.show_tray_balloon(self.translator.tr("recording_prompt_api_missing"), 4000)
+            return
+
+        self._show_recording_prompt_overlay(prompts)
 
     def cancel_recording(self) -> None:
         """Stops the current recording without processing it."""
@@ -184,6 +209,7 @@ class AudioMixin:
         logging.info("Recording canceled by user.")
         self._touch_transcription_activity()
         self.is_recording = False
+        self._abandon_recording_prompt_selection()
         self.push_to_talk_active = False
         self.cancel_action.setEnabled(False)  # Hide the action again
 
@@ -206,6 +232,7 @@ class AudioMixin:
         except Exception as e:
             logging.error(f"Could not open audio input stream: {e}")
             self.is_recording = False
+            self.close_recording_prompt_overlay_signal.emit()
             return
         if self.current_input_device_name:
             logging.info(
@@ -260,7 +287,7 @@ class AudioMixin:
 
         return audio_bytes, output_samplerate
 
-    def process_recording(self) -> None:
+    def process_recording(self, transformation_prompt: Optional[str] = None) -> None:
         """Processes the recorded audio, saves it to a file, and starts transcription."""
         with self.audio_state_lock:
             recorded_frames = list(self.recorded_frames)
@@ -301,7 +328,7 @@ class AudioMixin:
             self.show_tray_balloon("Failed to save audio.", 3000)
             return
         self.keep_only_latest_recording()
-        self.start_transcription_worker(filepath)
+        self.start_transcription_worker(filepath, transformation_prompt=transformation_prompt)
 
     def cleanup_old_recordings(self) -> None:
         """Delete all old whispertyper_recording_*.wav files on startup."""
@@ -551,7 +578,8 @@ class AudioMixin:
 
         return recording_path
 
-    def _process_recorded_file(self, filepath: str) -> None:
+    def _process_recorded_file(self, filepath: str,
+                               transformation_prompt: Optional[str] = None) -> None:
         """Process a recorder-produced WAV file and start transcription."""
         try:
             with wave.open(filepath, 'rb') as wf:
@@ -602,4 +630,4 @@ class AudioMixin:
             return
 
         self.keep_only_latest_recording()
-        self.start_transcription_worker(filepath)
+        self.start_transcription_worker(filepath, transformation_prompt=transformation_prompt)

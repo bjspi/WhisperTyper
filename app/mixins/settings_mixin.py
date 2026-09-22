@@ -301,7 +301,7 @@ class SettingsMixin:
         self.splitter.setStretchFactor(1, 1)
 
         loaded_post_rephrasing_entries = self.config.get("post_rephrasing_entries", [])
-        self.post_rephrasing_data: List[Dict[str, str]] = [
+        self.post_rephrasing_data: List[Dict[str, Any]] = [
             self._normalize_post_rp_entry(entry)
             for entry in loaded_post_rephrasing_entries
             if isinstance(entry, dict)
@@ -360,6 +360,9 @@ class SettingsMixin:
         self.file_logging_checkbox.setChecked(self.config["file_logging"])
         self.redact_log_checkbox.setChecked(self.config["redact_transcription_in_log"])
         self.systray_double_click_copy_checkbox.setChecked(self.config["systray_double_click_copy"])
+        self.recording_prompt_overlay_system_position_checkbox.setChecked(
+            self.config.get("recording_prompt_overlay_system_position", True)
+        )
         self.quit_without_confirmation_checkbox.setChecked(self.config["quit_without_confirmation"])
         self.alt_clipboard_lib_checkbox.setChecked(self.config["alt_clipboard_lib"])
         self.post_rephrase_auto_select_all_checkbox.setChecked(self.config["post_rephrase_auto_select_all"])
@@ -555,6 +558,9 @@ class SettingsMixin:
         self.config["use_local_px_proxy"] = self.use_px_proxy_checkbox.isChecked()
         # Systray double-click
         self.config["systray_double_click_copy"] = self.systray_double_click_copy_checkbox.isChecked()
+        self.config["recording_prompt_overlay_system_position"] = (
+            self.recording_prompt_overlay_system_position_checkbox.isChecked()
+        )
         self.config["quit_without_confirmation"] = self.quit_without_confirmation_checkbox.isChecked()
         # Alternative clipboard lib
         self.config["alt_clipboard_lib"] = self.alt_clipboard_lib_checkbox.isChecked()
@@ -934,6 +940,12 @@ class SettingsMixin:
         self.transformations_unavailable_label.setText(self.translator.tr("transformations_unavailable_message"))
         self.transformations_info_label.setText(self.translator.tr("transformations_info", max_entries=self.max_post_rephrasing_entries))
         self.caption_label.setText(self.translator.tr("caption_label"))
+        self.post_rp_show_during_recording_checkbox.setText(
+            self.translator.tr("show_during_recording_checkbox")
+        )
+        self.post_rp_show_during_recording_checkbox.setToolTip(
+            self.translator.tr("show_during_recording_tooltip")
+        )
         self.text_label.setText(self.translator.tr("text_label"))
         self.post_rp_text_edit.setPlaceholderText(self.translator.tr("text_placeholder"))
         self.post_rp_add_btn.setText(self.translator.tr("add_button"))
@@ -971,6 +983,12 @@ class SettingsMixin:
         self.log_retention_label.setText(self.translator.tr("log_retention_label"))
         self.log_retention_input.setToolTip(self.translator.tr("log_retention_tooltip"))
         self.systray_double_click_copy_checkbox.setText(self.translator.tr("systray_double_click_copy_checkbox"))
+        self.recording_prompt_overlay_system_position_checkbox.setText(
+            self.translator.tr("recording_prompt_overlay_system_position_checkbox")
+        )
+        self.recording_prompt_overlay_system_position_checkbox.setToolTip(
+            self.translator.tr("recording_prompt_overlay_system_position_tooltip")
+        )
         self.quit_without_confirmation_checkbox.setText(self.translator.tr("quit_without_confirmation_checkbox"))
         self.quit_without_confirmation_checkbox.setToolTip(self.translator.tr("quit_without_confirmation_tooltip"))
         self.play_g_button.setText(self.translator.tr("play_last_recording_button"))

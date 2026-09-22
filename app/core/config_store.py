@@ -105,6 +105,15 @@ class ConfigStore:
                     if repaired != entry.get(sub_key, ""):
                         entry[sub_key] = repaired
                         changed = True
+                # Transformation templates predate the per-entry recording-palette flag.
+                # Existing templates must stay opt-in so an upgrade never changes normal
+                # voice-typing behaviour without the user's explicit choice.
+                show_during_recording = entry.get("show_during_recording", False)
+                if not isinstance(show_during_recording, bool):
+                    show_during_recording = False
+                if entry.get("show_during_recording") is not show_during_recording:
+                    entry["show_during_recording"] = show_during_recording
+                    changed = True
 
         # Schema migration: configs from before the redesign (no/older schema version) get their
         # window height bumped to at least the minimum that fits the new UI, once.
