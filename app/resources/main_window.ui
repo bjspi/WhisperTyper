@@ -687,11 +687,18 @@
              </property>
             </widget>
            </item>
-           <item>
-            <widget class="QLineEdit" name="post_rp_caption_edit"/>
-           </item>
-           <item>
-            <widget class="QLabel" name="text_label">
+            <item>
+             <widget class="QLineEdit" name="post_rp_caption_edit"/>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="post_rp_show_during_recording_checkbox">
+              <property name="text">
+               <string>Show during recording</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="text_label">
              <property name="text">
               <string>System Prompt:</string>
              </property>
@@ -920,6 +927,13 @@
         <widget class="QCheckBox" name="systray_double_click_copy_checkbox">
          <property name="text">
           <string>Enable double click on SysTray to copy transcript</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="recording_prompt_overlay_system_position_checkbox">
+         <property name="text">
+          <string>Show recording prompt palette near the system status area</string>
          </property>
         </widget>
        </item>

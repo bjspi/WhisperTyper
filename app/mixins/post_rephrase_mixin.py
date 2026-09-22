@@ -113,20 +113,22 @@ class PostRephraseMixin:
         else:
             self.show_tray_balloon(self.translator.tr("rephrasing_failed_message", error=error_message), 3000)
 
-    def _normalize_post_rp_entry(self, entry: Dict[str, Any]) -> Dict[str, str]:
+    def _normalize_post_rp_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
         """Return a transformation entry with a stable internal ID for UI reordering."""
         normalized = dict(entry) if isinstance(entry, dict) else {}
         normalized["_entry_id"] = str(normalized.get("_entry_id") or uuid.uuid4().hex)
         normalized["caption"] = str(normalized.get("caption", ""))
         normalized["text"] = str(normalized.get("text", ""))
+        normalized["show_during_recording"] = normalized.get("show_during_recording") is True
         return normalized
 
-    def _serialize_post_rp_entries(self) -> List[Dict[str, str]]:
+    def _serialize_post_rp_entries(self) -> List[Dict[str, Any]]:
         """Return transformation entries without internal UI metadata for config/runtime use."""
         return [
             {
                 "caption": str(entry.get("caption", "")),
                 "text": str(entry.get("text", "")),
+                "show_during_recording": entry.get("show_during_recording") is True,
             }
             for entry in self.post_rephrasing_data
         ]
@@ -135,7 +137,7 @@ class PostRephraseMixin:
         """Keep the public config representation in sync without exposing internal IDs."""
         self.config["post_rephrasing_entries"] = self._serialize_post_rp_entries()
 
-    def _find_post_rp_entry_by_id(self, entry_id: Optional[str]) -> Optional[Dict[str, str]]:
+    def _find_post_rp_entry_by_id(self, entry_id: Optional[str]) -> Optional[Dict[str, Any]]:
         """Return the transformation entry for a stable internal entry ID."""
         if not entry_id:
             return None
@@ -162,7 +164,7 @@ class PostRephraseMixin:
         self._save_pr_editor_changes()
 
         # Rebuild the data list from the new visual order.
-        new_data_list: List[Dict[str, str]] = []
+        new_data_list: List[Dict[str, Any]] = []
         entry_by_id = {
             str(entry.get("_entry_id", "")): entry
             for entry in self.post_rephrasing_data
@@ -183,7 +185,7 @@ class PostRephraseMixin:
         # We must reload the editor to reflect the item that is now at the selected row.
         self._load_pr_editor_for_row(self.post_rp_list.currentRow())
 
-    def _get_post_rp_entry_for_row(self, row: int) -> Optional[Dict[str, str]]:
+    def _get_post_rp_entry_for_row(self, row: int) -> Optional[Dict[str, Any]]:
         """Return the entry object currently represented by a visual list row."""
         if row < 0:
             return None
@@ -223,6 +225,7 @@ class PostRephraseMixin:
             return
         entry["caption"] = self.post_rp_caption_edit.text()
         entry["text"] = self.post_rp_text_edit.toPlainText()
+        entry["show_during_recording"] = self.post_rp_show_during_recording_checkbox.isChecked()
         self._sync_config_post_rp_entries()
 
         # Update the matching visual list item, regardless of where it was moved to.
@@ -239,15 +242,21 @@ class PostRephraseMixin:
             # No valid selection, clear and disable editors
             self.post_rp_caption_edit.clear()
             self.post_rp_text_edit.clear()
+            self.post_rp_show_during_recording_checkbox.setChecked(False)
             self.post_rp_caption_edit.setEnabled(False)
             self.post_rp_text_edit.setEnabled(False)
+            self.post_rp_show_during_recording_checkbox.setEnabled(False)
             self._current_pr_entry_id = None
         else:
             # Valid selection, load data from model into editors
             self.post_rp_caption_edit.setEnabled(True)
             self.post_rp_text_edit.setEnabled(True)
+            self.post_rp_show_during_recording_checkbox.setEnabled(True)
             self.post_rp_caption_edit.setText(entry.get("caption", ""))
             self.post_rp_text_edit.setPlainText(entry.get("text", ""))
+            self.post_rp_show_during_recording_checkbox.setChecked(
+                entry.get("show_during_recording") is True
+            )
             # NOTE: deliberately do NOT steal focus here. This runs on every selection change,
             # so focusing the caption edit would break keyboard navigation: after one Down press
             # focus would jump into the editor and further arrow keys would move the text cursor
@@ -277,7 +286,11 @@ class PostRephraseMixin:
         self._save_pr_editor_changes()
 
         # Add new entry to the data model
-        new_entry = self._normalize_post_rp_entry({"caption": "", "text": ""})
+        new_entry = self._normalize_post_rp_entry({
+            "caption": "",
+            "text": "",
+            "show_during_recording": False,
+        })
         self.post_rephrasing_data.append(new_entry)
         self._sync_config_post_rp_entries()
 

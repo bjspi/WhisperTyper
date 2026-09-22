@@ -28,12 +28,15 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
+from unittest.mock import patch
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class FakeAPI(BaseHTTPRequestHandler):
     """Answers transcription/chat requests; /fail paths and FAILME payloads get HTTP 500."""
+
+    last_chat_body = b""
 
     def do_POST(self) -> None:  # noqa: N802 - http.server API
         """Serve one fake transcription/chat response (500 for /fail or FAILME payloads)."""
@@ -47,6 +50,7 @@ class FakeAPI(BaseHTTPRequestHandler):
         if "audio/transcriptions" in self.path:
             payload = {"text": "TRANSCRIBED_FAKE_RESULT"}
         else:
+            FakeAPI.last_chat_body = body
             payload = {"choices": [{"message": {"content": "REPHRASED_FAKE_RESULT"}}]}
         data = json.dumps(payload).encode()
         self.send_response(200)
@@ -114,14 +118,17 @@ def main() -> int:
         clipboard_before = None
 
     # App imports happen only now, after the environment is isolated.
-    from PyQt6.QtCore import QTimer
-    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtCore import QPoint, Qt, QTimer
+    from PyQt6.QtGui import QCursor
+    from PyQt6.QtWidgets import QApplication, QPushButton
 
     from app.bootstrap import configure_base_logging
     configure_base_logging()
 
     from app.application import WhisperTyperApp
     from app.core.netutil import generate_test_wav_bytes
+    from app.ui.floating_buttons import RecordingPromptOverlay
+    from app.ui.tooltip import MouseFollowerTooltip
 
     qapp = QApplication([sys.argv[0]])
     qapp.setQuitOnLastWindowClosed(False)
@@ -167,7 +174,7 @@ def main() -> int:
     def step1_startup() -> None:
         """Assert config creation/migration, tray, and hotkey registration."""
         check("startup: config created + migrated",
-              wt.config["hotkey"] == "<ctrl>+<shift>+<f12>" and wt.config["config_schema_version"] == 1)
+              wt.config["hotkey"] == "<ctrl>+<shift>+<f12>" and wt.config["config_schema_version"] == 2)
         check("startup: tray icon visible", wt.tray_icon.isVisible())
         menu_actions = [a for a in wt.tray_menu.actions() if not a.isSeparator()]
         check("startup: tray menu populated", len(menu_actions) >= 9, f"{len(menu_actions)} actions")
@@ -193,6 +200,104 @@ def main() -> int:
             "startup: transcription status includes language",
             wt._transcription_progress_message("de") == "Transkribiere [German]...",
         )
+        check(
+            "startup: system-positioned recording prompt palette is enabled by default",
+            wt.recording_prompt_overlay_system_position_checkbox.isChecked()
+            and wt.config["recording_prompt_overlay_system_position"] is True,
+        )
+        wt._show_recording_prompt_overlay([{"caption": "Polish", "text": "CUSTOM_OVERLAY_PROMPT"}])
+        overlay = RecordingPromptOverlay._instance
+        mouse_status = MouseFollowerTooltip._instance
+        has_system_status_area = sys.platform.startswith("win") or sys.platform == "darwin"
+        check(
+            "startup: system-positioned prompt palette keeps recording status by the mouse",
+            (
+                bool(
+                    mouse_status
+                    and mouse_status.label.text() == wt.translator.tr("recording_running_message")
+                )
+                if has_system_status_area
+                else mouse_status is None
+            ),
+        )
+        check(
+            "startup: recording prompt overlay is non-activating",
+            bool(overlay and overlay.windowFlags() & Qt.WindowType.WindowDoesNotAcceptFocus),
+        )
+        if overlay and sys.platform.startswith("win"):
+            screen_geometry = QApplication.primaryScreen().availableGeometry()
+            right_gap = screen_geometry.left() + screen_geometry.width() - (overlay.x() + overlay.width())
+            bottom_gap = screen_geometry.top() + screen_geometry.height() - (overlay.y() + overlay.height())
+            check(
+                "startup: recording prompt overlay is positioned by the Windows tray",
+                0 <= right_gap <= 24 and 0 <= bottom_gap <= 24,
+                f"right_gap={right_gap}, bottom_gap={bottom_gap}",
+            )
+        overlay_buttons = overlay.findChildren(QPushButton) if overlay else []
+        check(
+            "startup: recording prompt overlay uses compact labels",
+            len(overlay_buttons) >= 2
+            and overlay_buttons[0].text() == "Standard"
+            and overlay_buttons[1].text() == "Pol"
+            and overlay_buttons[1].toolTip() == "Polish",
+        )
+        if len(overlay_buttons) >= 2:
+            overlay_buttons[1].click()
+        check(
+            "startup: recording prompt overlay updates selection",
+            wt.current_recording_prompt == "CUSTOM_OVERLAY_PROMPT",
+        )
+        wt._abandon_recording_prompt_selection()
+        check(
+            "startup: closing the prompt palette also closes its mouse status",
+            MouseFollowerTooltip._instance is None,
+        )
+        wt._show_recording_prompt_overlay([{"caption": "Polish", "text": "CUSTOM_OVERLAY_PROMPT"}])
+        MouseFollowerTooltip.show_tooltip("Replacement status", 60_000, spinner=True)
+        replacement_status = MouseFollowerTooltip._instance
+        wt._abandon_recording_prompt_selection()
+        check(
+            "startup: closing prompt palette preserves a replacement tooltip",
+            replacement_status is not None and MouseFollowerTooltip._instance is replacement_status,
+        )
+        MouseFollowerTooltip.hide_tooltip()
+        wt.config["recording_prompt_overlay_system_position"] = False
+        QCursor.setPos(QPoint(120, 140))
+        wt._show_recording_prompt_overlay([{"caption": "Polish", "text": "CUSTOM_OVERLAY_PROMPT"}])
+        mouse_overlay = RecordingPromptOverlay._instance
+        check(
+            "startup: recording prompt overlay can use the original mouse-relative position",
+            bool(mouse_overlay and abs(mouse_overlay.x() - 135) <= 2 and abs(mouse_overlay.y() - 155) <= 2),
+            f"overlay=({mouse_overlay.x()},{mouse_overlay.y()})" if mouse_overlay else "missing overlay",
+        )
+        check(
+            "startup: mouse-positioned prompt palette does not duplicate recording status",
+            MouseFollowerTooltip._instance is None,
+        )
+        wt._abandon_recording_prompt_selection()
+        wt.config["recording_prompt_overlay_system_position"] = True
+        with (
+            patch("app.ui.floating_buttons.is_WINDOWS", False),
+            patch("app.ui.floating_buttons.is_MACOS", True),
+        ):
+            mac_overlay = RecordingPromptOverlay(
+                prompts=[{"caption": "Polish", "text": "CUSTOM_OVERLAY_PROMPT"}],
+                status_text="Recording",
+                standard_text="Standard",
+                on_selection_changed=lambda _prompt: None,
+                use_system_position=True,
+                # Deliberately left of center: macOS must still choose top-right.
+                system_anchor=QPoint(300, 10),
+            )
+        mac_screen = QApplication.primaryScreen().availableGeometry()
+        mac_right_gap = mac_screen.left() + mac_screen.width() - (mac_overlay.x() + mac_overlay.width())
+        mac_top_gap = mac_overlay.y() - mac_screen.top()
+        check(
+            "startup: macOS system position remains top-right for a left-side menu-bar icon",
+            0 <= mac_right_gap <= 24 and 0 <= mac_top_gap <= 24,
+            f"right_gap={mac_right_gap}, top_gap={mac_top_gap}",
+        )
+        mac_overlay.close()
         wt.hide()  # Keep QApplication.quit() from being intercepted by the tray-style closeEvent.
         check("startup: hotkey bindings parsed", len(wt.hotkey_bindings) == 2,
               "; ".join(b["display"] for b in wt.hotkey_bindings))
@@ -216,8 +321,33 @@ def main() -> int:
         poll(lambda: wt.last_transcription == "REPHRASED_FAKE_RESULT", 10,
              lambda: (check("liveprompt: rephrased text delivered",
                             clipboard() == "REPHRASED_FAKE_RESULT", repr(clipboard())),
-                      probe1_rephrase_failure()),
-             lambda: (check("liveprompt: rephrase finished", False, "timeout"), probe1_rephrase_failure()))
+                      step4_recording_prompt()),
+             lambda: (check("liveprompt: rephrase finished", False, "timeout"), step4_recording_prompt()))
+
+    def step4_recording_prompt() -> None:
+        """An explicit recording-palette prompt must override automatic LivePrompting."""
+        wt.last_transcription = ""
+        wt.config["liveprompt_enabled"] = True
+        wt.config["liveprompt_system_prompt"] = "LIVEPROMPT_SHOULD_NOT_WIN"
+        wt.on_transcription_finished(
+            "prompt, keep this as ordinary transcript text",
+            "clipboard",
+            "CUSTOM_RECORDING_PROMPT",
+        )
+
+        def recording_prompt_done() -> None:
+            body = FakeAPI.last_chat_body
+            check(
+                "recording prompt: explicit choice overrides LivePrompt",
+                b"CUSTOM_RECORDING_PROMPT" in body and b"LIVEPROMPT_SHOULD_NOT_WIN" not in body,
+                body.decode(errors="replace"),
+            )
+            probe1_rephrase_failure()
+
+        poll(lambda: wt.last_transcription == "REPHRASED_FAKE_RESULT", 10,
+             recording_prompt_done,
+             lambda: (check("recording prompt: rephrase finished", False, "timeout"),
+                      probe1_rephrase_failure()))
 
     def probe1_rephrase_failure() -> None:
         """PROBE: a failing rephrase endpoint must fall back to the raw transcription."""

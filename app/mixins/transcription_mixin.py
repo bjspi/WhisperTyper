@@ -26,13 +26,15 @@ from app.services.transcription_worker import TranscriptionWorker
 class TranscriptionMixin:
     """Transcription/rephrasing worker orchestration."""
 
-    def start_transcription_worker(self, audio_path: str, output_mode: str = "insert") -> None:
+    def start_transcription_worker(self, audio_path: str, output_mode: str = "insert",
+                                   transformation_prompt: Optional[str] = None) -> None:
         """Creates and starts a new thread for the transcription worker.
 
         Args:
             audio_path: Local path of the audio/video file to transcribe.
             output_mode: 'insert' types the result into the focused field; 'clipboard' copies
                 it to the clipboard instead (better when no text field is focused yet).
+            transformation_prompt: Optional system prompt selected for this microphone recording.
         """
         # Resolve ffmpeg so video files get their audio extracted first; harmless for audio.
         ffmpeg_path = resolve_ffmpeg(self.config.get("ffmpeg_path", ""))
@@ -80,8 +82,14 @@ class TranscriptionMixin:
         )
         # Bind this request's output mode into the result handlers so a concurrently started
         # request (with a different mode) cannot redirect this one's delivery.
-        worker.finished.connect(lambda text, mode=output_mode: self.on_transcription_finished(text, mode))
-        worker.error.connect(self.on_transcription_error)
+        worker.finished.connect(
+            lambda text, mode=output_mode, selected_prompt=transformation_prompt:
+                self.on_transcription_finished(text, mode, selected_prompt)
+        )
+        worker.error.connect(
+            lambda message, path, mode=output_mode, selected_prompt=transformation_prompt:
+                self.on_transcription_error(message, path, mode, selected_prompt)
+        )
         worker.finished.connect(thread.quit)
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
@@ -226,12 +234,14 @@ class TranscriptionMixin:
             )
         return ""
 
-    def on_transcription_finished(self, text: str, output_mode: str = "insert") -> None:
+    def on_transcription_finished(self, text: str, output_mode: str = "insert",
+                                  transformation_prompt: Optional[str] = None) -> None:
         """Handles a successful transcription result and routes it through rephrasing if enabled.
 
         Args:
             text: The transcribed text.
             output_mode: How this request's final text should be delivered (insert/clipboard).
+            transformation_prompt: Explicit recording-palette prompt, if one was selected.
         """
         processed = text.strip('"\'“”‘’ ')
         prompt = self.config["prompt"].strip()
@@ -245,7 +255,18 @@ class TranscriptionMixin:
             return
 
         # --- Rephrasing (runs in a worker thread so the spinner keeps animating) ---
-        # 1. LivePrompting via trigger words: the transcription itself is the instruction.
+        # 1. An explicit recording-palette choice overrides every automatic rephrasing mode.
+        if transformation_prompt and transformation_prompt.strip():
+            self._start_post_transcription_rephrase(
+                system_prompt=transformation_prompt.strip(),
+                user_prompt=processed,
+                context="",
+                original_text=processed,
+                output_mode=output_mode,
+            )
+            return
+
+        # 2. LivePrompting via trigger words: the transcription itself is the instruction.
         if self.config["liveprompt_enabled"]:
             trigger_words = liveprompt.parse_trigger_words(self.config.get("liveprompt_trigger_words", ""))
             scan_depth = self.config.get("liveprompt_trigger_word_scan_depth", 5)
@@ -265,7 +286,7 @@ class TranscriptionMixin:
                 )
                 return
 
-        # 2. Generic rephrasing: combine the generic prompt with the transcription.
+        # 3. Generic rephrasing: combine the generic prompt with the transcription.
         if self.config["generic_rephrase_enabled"]:
             self._start_post_transcription_rephrase(
                 system_prompt="",  # System prompt is not used here in the same way
@@ -276,7 +297,7 @@ class TranscriptionMixin:
             )
             return
 
-        # 3. No rephrasing: deliver the raw transcription.
+        # 4. No rephrasing: deliver the raw transcription.
         self._finalize_transcription_output(processed, output_mode=output_mode)
 
     def _start_post_transcription_rephrase(self, system_prompt: str, user_prompt: str,
@@ -352,7 +373,9 @@ class TranscriptionMixin:
                 self.show_tray_balloon(self.translator.tr("transcription_done_message"), 1600, check=True)
             self.insert_transcribed_text(text)
 
-    def on_transcription_error(self, error_message: str, audio_file_path: str) -> None:
+    def on_transcription_error(self, error_message: str, audio_file_path: str,
+                               output_mode: str = "insert",
+                               transformation_prompt: Optional[str] = None) -> None:
         """Handles errors that occur during transcription."""
         logging.error(f"Transcription error: {error_message}")
         # In a batch, don't block on a modal retry dialog — log, skip this file, and keep going.
@@ -370,7 +393,11 @@ class TranscriptionMixin:
         msg_box.setWindowTitle(self.translator.tr("transcription_error_title"))
         msg_box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Retry)
         if msg_box.exec() == QMessageBox.StandardButton.Retry:
-            self.start_transcription_worker(audio_file_path)
+            self.start_transcription_worker(
+                audio_file_path,
+                output_mode=output_mode,
+                transformation_prompt=transformation_prompt,
+            )
 
     def _drain_worker_threads(self) -> None:
         """Ask any in-flight transcription/rephrasing QThreads to finish before exit.

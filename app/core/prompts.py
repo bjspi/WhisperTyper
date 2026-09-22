@@ -1,7 +1,7 @@
 """Default prompts per UI language + swap helpers. Pure data/logic."""
 from __future__ import annotations
 
-from typing import Dict
+from typing import Any, Dict, List
 
 # --- Default Prompts ---
 # Each default prompt is provided per UI language. When the user switches the UI language
@@ -43,3 +43,19 @@ def _is_known_default_prompt(prompt_map: Dict[str, str], text: str) -> bool:
     """Return True if the given text matches one of the known default prompts (any language)."""
     normalized = (text or "").strip()
     return any(normalized == value.strip() for value in prompt_map.values())
+
+
+def recording_prompt_entries(entries: Any) -> List[Dict[str, str]]:
+    """Return valid, explicitly enabled transformation templates in display order."""
+    if not isinstance(entries, list):
+        return []
+
+    result: List[Dict[str, str]] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("show_during_recording") is not True:
+            continue
+        caption = str(entry.get("caption", "")).strip()
+        prompt_text = str(entry.get("text", "")).strip()
+        if caption and prompt_text:
+            result.append({"caption": caption, "text": prompt_text})
+    return result
