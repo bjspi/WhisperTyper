@@ -34,6 +34,7 @@ _QT_SPECIAL_KEYS: Dict[int, str] = {
     Qt.Key.Key_End: "<end>", Qt.Key.Key_Left: "<left>", Qt.Key.Key_Up: "<up>",
     Qt.Key.Key_Right: "<right>", Qt.Key.Key_Down: "<down>", Qt.Key.Key_PageUp: "<page_up>",
     Qt.Key.Key_PageDown: "<page_down>", Qt.Key.Key_CapsLock: "<caps_lock>", Qt.Key.Key_Space: "<space>",
+    Qt.Key.Key_Plus: "<plus>",
 }
 # macOS reports F7-F12 as media keys when the Fn toggle is in media mode.
 _QT_MACOS_FUNCTION_ALIASES: Dict[int, str] = {
@@ -66,7 +67,8 @@ def pynput_key_tokens(key: Any) -> Set[str]:
     char = getattr(key, "char", None)
     if char:
         tokens.add(char.lower())
-    vk_token = hotkeys.vk_to_key_token(getattr(key, "vk", None))
+    # Only Windows reports virtual-key codes here; macOS hardware keycodes would turn e.g. 't' into <ctrl>.
+    vk_token = hotkeys.vk_to_key_token(getattr(key, "vk", None)) if is_WINDOWS else None
     if vk_token:
         tokens.add(vk_token)
     if "<alt_gr>" in tokens:
@@ -77,9 +79,12 @@ def pynput_key_tokens(key: Any) -> Set[str]:
 def qt_key_tokens(key: int, modifiers: Qt.KeyboardModifier, text: str) -> Set[str]:
     """Canonical tokens of a Qt key press (used for capture on macOS, where pynput needs permissions)."""
     tokens: Set[str] = set()
-    for flag, token in ((Qt.KeyboardModifier.ControlModifier, "<ctrl>"), (Qt.KeyboardModifier.ShiftModifier, "<shift>"),
+    ctrl, meta = Qt.KeyboardModifier.ControlModifier, Qt.KeyboardModifier.MetaModifier
+    if is_MACOS:  # Qt reports the Command key as ControlModifier and the Control key as MetaModifier.
+        ctrl, meta = meta, ctrl
+    for flag, token in ((ctrl, "<ctrl>"), (Qt.KeyboardModifier.ShiftModifier, "<shift>"),
                         (Qt.KeyboardModifier.AltModifier, "<alt>"),
-                        (Qt.KeyboardModifier.MetaModifier, "<cmd>" if is_MACOS else "<win>")):
+                        (meta, "<cmd>" if is_MACOS else "<win>")):
         if modifiers & flag:
             tokens.add(token)
     if key in _QT_MODIFIER_KEYS:
@@ -102,4 +107,5 @@ def qt_key_tokens(key: int, modifiers: Qt.KeyboardModifier, text: str) -> Set[st
 
 def injected_event_counts(tokens: Set[str]) -> bool:
     """Whether an injected event may trigger hotkeys: macOS remappers inject special keys such as F-keys."""
-    return is_MACOS and any(hotkeys.is_non_modifier_special_token(token) for token in tokens)
+    # <plus> is a printable key that only needs brackets because '+' separates tokens.
+    return is_MACOS and any(hotkeys.is_non_modifier_special_token(token) and token != "<plus>" for token in tokens)
