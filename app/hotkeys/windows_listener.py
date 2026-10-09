@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Any, Callable, Dict, List, Optional
 
 from app.core.env import is_WINDOWS
@@ -21,7 +22,7 @@ class WindowsHotkeyListener(threading.Thread):
     _REGISTER_RETRIES = 15
     _REGISTER_RETRY_INTERVAL = 0.2
 
-    def __init__(self, bindings: List[Dict[str, Any]], callback: Callable[[str], None],
+    def __init__(self, bindings: List[Dict[str, Any]], callback: Callable[[str, int], None],
                  on_registration_failed: Optional[Callable[[str], None]] = None) -> None:
         """Store the hotkey bindings, the action callback and an optional failure notifier."""
         super().__init__(daemon=True)
@@ -75,12 +76,13 @@ class WindowsHotkeyListener(threading.Thread):
             msg = wintypes.MSG()
             while not self._stop_event.is_set():
                 result = user32.GetMessageW(ctypes.byref(msg), None, 0, 0)
+                detected_ns = time.perf_counter_ns()
                 if result <= 0:
                     break
                 if msg.message == WM_HOTKEY:
                     fired = self.bindings.get(int(msg.wParam))
                     if fired:
-                        self.callback(fired["action"])
+                        self.callback(fired["action"], detected_ns)
         finally:
             for hotkey_id in registered_ids:
                 try:

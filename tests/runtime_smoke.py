@@ -21,11 +21,13 @@ run lives behind ``__main__`` so importing this module has no side effects.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import tempfile
 import threading
 import time
+import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 from unittest.mock import patch
@@ -74,6 +76,7 @@ def _isolate_environment() -> str:
     os.environ["HOME"] = iso_home
     os.environ["TMP"] = iso_tmp
     os.environ["TEMP"] = iso_tmp
+    tempfile.tempdir = iso_tmp  # mkdtemp above cached the real temp dir before the environment switch.
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     return iso
 
@@ -127,6 +130,7 @@ def main() -> int:
 
     from app.application import WhisperTyperApp
     from app.core.netutil import generate_test_wav_bytes
+    from app.core.timing import OperationTiming, add_log_handler, flush_timing_logs
     from app.ui.floating_buttons import RecordingPromptOverlay
     from app.ui.tooltip import MouseFollowerTooltip
 
@@ -135,6 +139,18 @@ def main() -> int:
 
     results: list[str] = []
     failed = False
+    latency_summaries: list[str] = []
+
+    class LatencyCollector(logging.Handler):
+        """Collect completed operations after the background logger formats them."""
+
+        def emit(self, record: logging.LogRecord) -> None:
+            """Keep summaries only, without changing the application's existing sinks."""
+            message = record.getMessage()
+            if message.startswith("latency_summary"):
+                latency_summaries.append(message)
+
+    add_log_handler(LatencyCollector())
 
     def check(name: str, cond: bool, detail: str = "") -> None:
         nonlocal failed
@@ -149,6 +165,7 @@ def main() -> int:
             return "<unreadable>"
 
     wt = WhisperTyperApp()
+    assert os.path.commonpath([wt.recordings.directory, iso_tmp]) == iso_tmp
 
     ok_wav = os.path.join(iso_tmp, "ok_input.wav")
     fail_wav = os.path.join(iso_tmp, "failing_input.wav")
@@ -301,10 +318,35 @@ def main() -> int:
         wt.hide()  # Keep QApplication.quit() from being intercepted by the tray-style closeEvent.
         check("startup: hotkey bindings parsed", len(wt.hotkey_bindings) == 2,
               "; ".join(b["display"] for b in wt.hotkey_bindings))
-        step2_transcribe()
+        step2_recording_stop()
+
+    def step2_recording_stop() -> None:
+        """Stop synthesized PCM via the real hotkey signal, without opening a microphone."""
+        with wave.open(ok_wav, "rb") as audio:
+            wt.recorded_frames = [audio.readframes(audio.getnframes())]
+            wt.current_input_samplerate = audio.getframerate()
+        wt.config["min_recording_seconds"] = 0
+        wt.config["generic_rephrase_enabled"] = True
+        wt.is_recording = True
+        detected_ns = time.perf_counter_ns() - 5_000_000
+        # Deliver to clipboard so the real stop path cannot send paste keys to another application.
+        start_worker = wt.start_transcription_worker
+        with patch.object(wt, "start_transcription_worker", side_effect=lambda path, **kw: start_worker(
+            path, output_mode="clipboard", **kw,
+        )):
+            wt.hotkey_action_signal.emit("stop_transcription", detected_ns)
+        def recording_done() -> None:
+            check("stop hotkey: transcription and rephrasing pipeline completed", not wt.is_recording)
+            wt.config["generic_rephrase_enabled"] = False
+            step2_transcribe()
+
+        poll(lambda: wt.last_transcription == "REPHRASED_FAKE_RESULT", 10,
+             recording_done,
+             lambda: (check("stop hotkey: transcription finished", False, "timeout"), step2_transcribe()))
 
     def step2_transcribe() -> None:
         """Drive one file transcription through the worker pipeline into the clipboard."""
+        wt.last_transcription = ""
         wt.start_transcription_worker(ok_wav, output_mode="clipboard")
         poll(lambda: wt.last_transcription == "TRANSCRIBED_FAKE_RESULT", 10,
              lambda: (check("transcribe: delivered to clipboard",
@@ -374,12 +416,40 @@ def main() -> int:
 
     def finish() -> None:
         """Shut the app down through its real quit path."""
+        operation = OperationTiming("output_failure_probe")
+        with patch("app.mixins.transcription_mixin.copykitten.copy", side_effect=RuntimeError("synthetic clipboard failure")):
+            try:
+                wt._finalize_transcription_output("probe", output_mode="clipboard", timing=operation)
+            except RuntimeError:
+                check("timings: output failure preserves exception behavior", True)
+            else:
+                check("timings: output failure preserves exception behavior", False)
         wt.quit_app()
 
     QTimer.singleShot(400, step1_startup)
     QTimer.singleShot(60_000, qapp.quit)  # watchdog: never hang
 
     rc = qapp.exec()
+
+    check("timings: background writer drained", flush_timing_logs(3))
+    recordings = [line for line in latency_summaries if "source=recording " in line]
+    check("timings: recording has stop-to-API and stop-to-output measurements",
+          len(recordings) == 1 and all(field in recordings[0] for field in (
+              "stop_to_api_ms=", "stop_to_output_ms=", "event_queue_ms=", "file_write_ms=",
+              "rephrase_request_ms=",
+          )))
+    if recordings:
+        queue_ms = float(recordings[0].split("event_queue_ms=")[1].split()[0])
+        check("timings: hotkey carries the original 64-bit timestamp", queue_ms >= 5)
+    check("timings: file jobs do not invent stop measurements", all(
+        "stop_to_" not in line for line in latency_summaries if "source=file " in line
+    ))
+    check("timings: failed request and rephrase fallback have summaries", all(
+        any(f"outcome={outcome} " in line for line in latency_summaries)
+        for outcome in ("transcription_failed", "rephrase_failed_fallback", "batch_buffered", "output_failed")
+    ))
+    ids = [line.split("op=")[1].split()[0] for line in latency_summaries]
+    check("timings: operations keep separate IDs and finish once", len(ids) >= 8 and len(ids) == len(set(ids)))
 
     try:
         if clipboard_before is not None:

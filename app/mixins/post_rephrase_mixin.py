@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import QListWidgetItem, QWidget
 
 from app.core.constants import activate_app, get_active_app_name
 from app.core.env import is_MACOS
+from app.core.timing import OperationTiming
 
 
 class PostRephraseMixin:
@@ -71,17 +72,20 @@ class PostRephraseMixin:
         worker = self._build_rephrasing_worker(system_prompt, selected_text)
         self._start_rephrasing_worker(
             worker,
-            on_finished=self.on_rephrasing_finished,
-            on_error=self.on_rephrasing_error,
+            on_finished=lambda text, operation=worker.timing: self.on_rephrasing_finished(text, operation),
+            on_error=lambda message, operation=worker.timing: self.on_rephrasing_error(message, operation),
         )
 
-    def on_rephrasing_finished(self, rephrased_text: str) -> None:
+    def on_rephrasing_finished(self, rephrased_text: str, timing: Optional[OperationTiming] = None) -> None:
         """
         Callback for when rephrasing from the floating window is successful.
 
         Args:
             rephrased_text (str): The text returned by the AI.
+            timing: The operation's request and output timings.
         """
+        if timing:
+            timing.mark("output_start")
         # On macOS, pasting can be unreliable if the app loses focus.
         # It's safer to copy to clipboard and notify the user.
         if is_MACOS:
@@ -99,14 +103,20 @@ class PostRephraseMixin:
             self.show_tray_balloon(self.translator.tr("rephrasing_done_message"), 1600, check=True)
             self.insert_transcribed_text(rephrased_text)
             logging.info("Successfully inserted rephrased text.")
+        if timing:
+            timing.mark("output_end")
+            timing.finish("ok")
 
-    def on_rephrasing_error(self, error_message: str) -> None:
+    def on_rephrasing_error(self, error_message: str, timing: Optional[OperationTiming] = None) -> None:
         """
         Callback for when rephrasing from the floating window fails.
 
         Args:
             error_message (str): The error message from the worker.
+            timing: The failed operation's timings.
         """
+        if timing:
+            timing.finish("rephrase_failed")
         logging.error(f"Post-rephrasing from floating window failed: {error_message}")
         if "empty text" in error_message:
             self.show_tray_balloon(self.translator.tr("rephrasing_failed_empty_message"), 3000)

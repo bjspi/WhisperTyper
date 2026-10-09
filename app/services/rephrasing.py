@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from app.core.redaction import redact_for_log
+from app.core.timing import OperationTiming
 
 #: Read timeout for chat completions; generous enough for long generations.
 REQUEST_TIMEOUT_S = 30.0
@@ -68,6 +69,7 @@ def rephrase_text(
     context: str = "",
     proxies: Optional[Dict[str, str]] = None,
     timeout: float = REQUEST_TIMEOUT_S,
+    timing: Optional[OperationTiming] = None,
 ) -> str:
     """Send prompts to an OpenAI-compatible chat-completions endpoint and return the reply.
 
@@ -81,6 +83,7 @@ def rephrase_text(
         context: Optional selected-text context, prepended to the user prompt.
         proxies: Optional ``requests`` proxies mapping.
         timeout: Request timeout in seconds.
+        timing: Optional operation timings; the caller owns completion and delivery.
 
     Returns:
         The model's reply text (stripped). May be empty if the model returned nothing.
@@ -119,7 +122,11 @@ def rephrase_text(
     logging.debug(f"Rephrasing request data: {log_data}")
 
     try:
+        if timing:
+            timing.mark("rephrase_request_start")
         response = requests.post(api_url, headers=headers, json=data, timeout=timeout, proxies=proxies)
+        if timing:
+            timing.mark("rephrase_response_received")
     except requests.RequestException as e:
         raise RephrasingError(f"Rephrasing API request failed: {e}") from e
 
@@ -129,5 +136,7 @@ def rephrase_text(
     result = response.json()
     # OpenAI/Groq style: result['choices'][0]['message']['content']
     reply = (result.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+    if timing:
+        timing.mark("rephrase_response_parsed")
     logging.info(f"Rephrasing result: {redact_for_log(reply)}")
     return reply

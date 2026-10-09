@@ -17,6 +17,8 @@ import time
 import traceback
 from typing import Any, Optional, Tuple
 
+from app.core.timing import queue_log_handlers
+
 APP_INSTANCE_LOCK_KEY = "WhisperTyper.instance.lock"
 RESTART_WAIT_TIMEOUT_S = 5.0
 
@@ -32,6 +34,7 @@ def configure_base_logging() -> None:
     and adds the rotating file handler.
     """
     logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(message)s')
+    queue_log_handlers()
 
 
 def redirect_std_streams_if_windowed() -> None:

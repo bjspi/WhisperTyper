@@ -59,7 +59,7 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
     close_recording_prompt_overlay_signal = pyqtSignal()
     show_floating_window_signal = pyqtSignal(list, str)
     show_permission_dialog_signal = pyqtSignal(str, str, str)
-    hotkey_action_signal = pyqtSignal(str)
+    hotkey_action_signal = pyqtSignal(str, object)
     # Hotkey capture runs on a pynput listener thread; these marshal its UI updates
     # (field preview text / capture teardown) onto the main thread.
     hotkey_capture_text_signal = pyqtSignal(str)

@@ -11,6 +11,7 @@ from typing import Dict, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
+from app.core.timing import OperationTiming
 from app.services.rephrasing import rephrase_text
 
 
@@ -31,6 +32,7 @@ class RephrasingWorker(QObject):
         temperature: float,
         context: str = "",
         proxies: Optional[Dict[str, str]] = None,
+        timing: Optional[OperationTiming] = None,
     ) -> None:
         """Store an immutable snapshot of everything the request needs.
 
@@ -43,6 +45,7 @@ class RephrasingWorker(QObject):
             temperature: Sampling temperature.
             context: Additional context (e.g. selected text).
             proxies: Optional ``requests`` proxies mapping (resolved by the caller).
+            timing: This operation's timing state, shared with the result callbacks.
         """
         super().__init__()
         self.system_prompt = system_prompt
@@ -53,10 +56,12 @@ class RephrasingWorker(QObject):
         self.temperature = temperature
         self.context = context
         self.proxies = proxies
+        self.timing = timing or OperationTiming("rephrase")
 
     def run(self) -> None:
         """Execute the rephrasing request and emit ``finished`` or ``error``."""
         logging.info("RephrasingWorker started.")
+        self.timing.mark("rephrase_worker_start")
         try:
             rephrased_text = rephrase_text(
                 system_prompt=self.system_prompt,
@@ -67,14 +72,18 @@ class RephrasingWorker(QObject):
                 temperature=self.temperature,
                 context=self.context,
                 proxies=self.proxies,
+                timing=self.timing,
             )
         except Exception as e:
             error_msg = f"An unexpected error occurred in RephrasingWorker:\n{e}"
             logging.error(error_msg)
+            self.timing.mark("rephrase_failed")
             self.error.emit(error_msg)
             return
 
         if rephrased_text:
+            self.timing.mark("rephrase_worker_ready")
             self.finished.emit(rephrased_text)
         else:
+            self.timing.mark("rephrase_failed")
             self.error.emit("Rephrasing resulted in empty text.")

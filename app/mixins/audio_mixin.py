@@ -16,6 +16,7 @@ from app.core.env import is_MACOS, is_WINDOWS, open_with_default_app
 from app.core.frameworks import NSURL, AVAudioRecorder
 from app.core.prompts import recording_prompt_entries
 from app.core.redaction import redact_for_log
+from app.core.timing import OperationTiming
 
 # The "recording…" balloon has no natural timeout — it stays until the stop/cancel path
 # replaces it. Effectively "forever"; the tooltip's own safety cap is the backstop.
@@ -105,9 +106,11 @@ class AudioMixin:
         """Low-latency playback of a preloaded short WAV (delegates to SoundPlayer)."""
         self.sound_player.play(filename)
 
-    def toggle_recording(self) -> None:
+    def toggle_recording(self, *, detected_ns: Optional[int] = None) -> None:
         """Toggles the audio recording state."""
         if self.is_recording:
+            timing = OperationTiming("recording", detected_ns)
+            timing.mark("stop_handled")
             self._touch_transcription_activity()
             self.is_recording = False
             recording_prompt = self.current_recording_prompt
@@ -122,12 +125,13 @@ class AudioMixin:
                 recorded_file_path = self._stop_macos_native_recording()
             elif (not self._use_windows_keep_mic_hot()) and self.recording_thread and self.recording_thread.is_alive():
                 self.recording_thread.join()
+            timing.mark("recording_stopped")
             logging.info("Recording stopped. Processing audio.")
             self.play_sound('sound_end.wav')
             if recorded_file_path:
-                self._process_recorded_file(recorded_file_path, recording_prompt)
+                self._process_recorded_file(recorded_file_path, recording_prompt, timing)
             else:
-                self.process_recording(recording_prompt)
+                self.process_recording(recording_prompt, timing)
         else:
             self._touch_transcription_activity()
             self._abandon_recording_prompt_selection()
@@ -206,6 +210,9 @@ class AudioMixin:
         if not self.is_recording:
             return
 
+        timing = OperationTiming("recording")
+        timing.mark("stop_handled")
+
         logging.info("Recording canceled by user.")
         self._touch_transcription_activity()
         self.is_recording = False
@@ -218,6 +225,8 @@ class AudioMixin:
             self._stop_macos_native_recording(discard=True)
         elif (not self._use_windows_keep_mic_hot()) and self.recording_thread and self.recording_thread.is_alive():
             self.recording_thread.join()
+        timing.mark("recording_stopped")
+        timing.finish("cancelled")
 
         # Reset UI and provide feedback
         self._set_idle_tray_icon()
@@ -287,18 +296,23 @@ class AudioMixin:
 
         return audio_bytes, output_samplerate
 
-    def process_recording(self, transformation_prompt: Optional[str] = None) -> None:
+    def process_recording(self, transformation_prompt: Optional[str] = None,
+                          timing: Optional[OperationTiming] = None) -> None:
         """Processes the recorded audio, saves it to a file, and starts transcription."""
+        timing = timing or OperationTiming("recording")
+        timing.mark("audio_prepare_start")
         with self.audio_state_lock:
             recorded_frames = list(self.recorded_frames)
 
         if not recorded_frames:
             logging.warning("No audio data was recorded.")
             self.show_tray_balloon(self.translator.tr("no_audio_captured_message"), 2000)
+            timing.finish("no_audio")
             return
         raw_audio = b''.join(recorded_frames)
         if self._is_recording_too_short(raw_audio, self.current_input_samplerate):
             self.show_tray_balloon(self.translator.tr("recording_too_short_message"), 2000)
+            timing.finish("too_short")
             return
         filepath: str = self.recordings.new_path()
         if self._get_pcm_peak(raw_audio) == 0:
@@ -311,13 +325,17 @@ class AudioMixin:
             else:
                 logging.warning("Recorded audio contained only silence.")
             self.show_tray_balloon(self.translator.tr("no_microphone_signal_message"), 2500)
+            timing.finish("silence")
             return
         audio_bytes, output_samplerate = self._prepare_pcm_audio_for_upload(
             raw_audio,
             self.current_input_samplerate,
         )
+        timing.mark("audio_prepare_end")
         try:
+            timing.mark("file_write_start")
             dsp.write_wav(filepath, audio_bytes, output_samplerate)
+            timing.mark("file_write_end")
             logging.info(f"Recording saved to: {filepath}")
             # Enable the play action in the tray menu now that a file exists
             if hasattr(self, 'play_action'):
@@ -326,9 +344,10 @@ class AudioMixin:
         except Exception as e:
             logging.error(f"Failed to write WAV file: {e}")
             self.show_tray_balloon("Failed to save audio.", 3000)
+            timing.finish("save_failed")
             return
         self.keep_only_latest_recording()
-        self.start_transcription_worker(filepath, transformation_prompt=transformation_prompt)
+        self.start_transcription_worker(filepath, transformation_prompt=transformation_prompt, timing=timing)
 
     def cleanup_old_recordings(self) -> None:
         """Delete all old whispertyper_recording_*.wav files on startup."""
@@ -579,8 +598,11 @@ class AudioMixin:
         return recording_path
 
     def _process_recorded_file(self, filepath: str,
-                               transformation_prompt: Optional[str] = None) -> None:
+                               transformation_prompt: Optional[str] = None,
+                               timing: Optional[OperationTiming] = None) -> None:
         """Process a recorder-produced WAV file and start transcription."""
+        timing = timing or OperationTiming("recording")
+        timing.mark("audio_prepare_start")
         try:
             with wave.open(filepath, 'rb') as wf:
                 channels = wf.getnchannels()
@@ -590,15 +612,18 @@ class AudioMixin:
         except Exception as e:
             logging.error(f"Failed to read recorded audio file '{filepath}': {e}")
             self.show_tray_balloon("Failed to save audio.", 3000)
+            timing.finish("audio_read_failed")
             return
 
         if not raw_audio:
             logging.warning("Recorded audio file was empty.")
             self.show_tray_balloon(self.translator.tr("no_audio_captured_message"), 2000)
+            timing.finish("no_audio")
             return
 
         if self._is_recording_too_short(raw_audio, samplerate):
             self.show_tray_balloon(self.translator.tr("recording_too_short_message"), 2000)
+            timing.finish("too_short")
             return
 
         if channels != 1 or sampwidth != 2:
@@ -614,12 +639,16 @@ class AudioMixin:
                 f"(device='{self.current_input_device_name}', rate={self.current_input_samplerate} Hz)."
             )
             self.show_tray_balloon(self.translator.tr("no_microphone_signal_message"), 2500)
+            timing.finish("silence")
             return
 
         audio_bytes, output_samplerate = self._prepare_pcm_audio_for_upload(raw_audio, samplerate)
+        timing.mark("audio_prepare_end")
 
         try:
+            timing.mark("file_write_start")
             dsp.write_wav(filepath, audio_bytes, output_samplerate)
+            timing.mark("file_write_end")
             logging.info(f"Recording saved to: {filepath}")
             if hasattr(self, 'play_action'):
                 self.play_action.setEnabled(True)
@@ -627,7 +656,8 @@ class AudioMixin:
         except Exception as e:
             logging.error(f"Failed to write WAV file: {e}")
             self.show_tray_balloon("Failed to save audio.", 3000)
+            timing.finish("save_failed")
             return
 
         self.keep_only_latest_recording()
-        self.start_transcription_worker(filepath, transformation_prompt=transformation_prompt)
+        self.start_transcription_worker(filepath, transformation_prompt=transformation_prompt, timing=timing)
