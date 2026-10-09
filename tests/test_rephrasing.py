@@ -47,7 +47,7 @@ def test_other_models_keep_configured_temperature() -> None:
 
 def test_api_error_exposes_structured_diagnostics() -> None:
     response = Mock()
-    response.ok = False
+    response.is_success = False
     response.status_code = 400
     response.headers = {"x-request-id": "req_test_123"}
     response.json.return_value = {
@@ -81,11 +81,11 @@ def test_api_error_exposes_structured_diagnostics() -> None:
 
 def test_non_json_api_error_uses_bounded_response_text() -> None:
     response = Mock()
-    response.ok = False
+    response.is_success = False
     response.status_code = 502
     response.headers = {}
     response.text = "Gateway unavailable"
-    response.reason = "Bad Gateway"
+    response.reason_phrase = "Bad Gateway"
     response.json.side_effect = ValueError("not JSON")
 
     with patch("app.services.rephrasing.request", return_value=response):

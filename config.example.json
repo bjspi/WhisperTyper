@@ -18,7 +18,7 @@
   "alt_clipboard_lib": true,
   "windows_sendinput_text": false,
   "windows_sendinput_fallback": true,
-  "windows_fast_paste": false,
+  "fast_paste": false,
   "liveprompt_enabled": true,
   "liveprompt_trigger_words": "prompt, Befehl",
   "liveprompt_trigger_word_scan_depth": 5,

@@ -1,4 +1,4 @@
-"""Real local sockets: pool reuse, phase timing, TLS/proxies, failures and warming."""
+"""Real local sockets: pool reuse, httpx trace timing, TLS/proxies, failures and warming."""
 from __future__ import annotations
 
 import gzip
@@ -9,19 +9,18 @@ import socket
 import ssl
 import threading
 import time
-import warnings
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import httpx
 import pytest
-import requests
-from urllib3.exceptions import InsecureRequestWarning
 
-from app.core.timing import OperationTiming, flush_timing_logs
+from app.core import log_queue
+from app.core.timing import OperationTiming
 from app.services import http_transport as transport
-from app.services.http_warmup import HttpWarmup, _no_auth, warm_url
+from app.services.http_warmup import HttpWarmup, warm_url
 
 CERT = Path(__file__).parent / "fixtures" / "localhost-cert.pem"
 KEY = Path(__file__).parent / "fixtures" / "localhost-key.pem"  # Public test fixture, never used outside localhost.
@@ -115,10 +114,10 @@ def url(server, path="/ok", scheme="http"):
 
 
 def test_warmed_connection_reused_across_threads_and_rotating_keys(server, traces):
-    assert transport.request("HEAD", url(server), auth=_no_auth).status_code == 401
+    assert transport.request("HEAD", url(server)).status_code == 401
     for key in ("dummy-key-one", "dummy-key-two"):
         with ThreadPoolExecutor(max_workers=1) as pool:
-            response = pool.submit(transport.request, "POST", url(server), data=b"audio",
+            response = pool.submit(transport.request, "POST", url(server), content=b"audio",
                                    headers={"Authorization": f"Bearer {key}"}).result(3)
             assert response.content == b"OK"
     assert len({entry[1] for entry in API.seen}) == 1
@@ -132,15 +131,16 @@ def test_warmed_connection_reused_across_threads_and_rotating_keys(server, trace
 
 def test_first_byte_precedes_headers_and_complete_body(server, traces):
     timing = OperationTiming("recording")
-    assert transport.request("POST", url(server, "/slow"), data=b"payload", timing=timing,
+    assert transport.request("POST", url(server, "/slow"), content=b"payload", timing=timing,
                              stage="transcription").content == b"OK"
     metadata, events = traces[0]
     assert metadata["op"] == timing.operation_id
-    phases = ["dns_start", "dns_end", "tcp_start", "tcp_end", "headers_sent", "upload_start",
+    phases = ["connect_start", "tcp_start", "tcp_end", "connect_end", "headers_sent", "upload_start",
               "request_sent", "first_byte", "headers_received", "body_end"]
     assert [events[name] for name in phases] == sorted(events[name] for name in phases)
-    assert 50_000_000 < events["first_byte"] - events["request_sent"]
-    assert 50_000_000 < events["headers_received"] - events["first_byte"]
+    # httpcore reports the parsed status line + headers: both server pauses precede first_byte.
+    assert 100_000_000 < events["first_byte"] - events["request_sent"]
+    assert events["first_byte"] == events["headers_received"]
     assert 50_000_000 < events["body_end"] - events["headers_received"]
     assert timing._events["transcription_http_first_byte"] == events["first_byte"]
     assert metadata["response_body_bytes"] == 2
@@ -149,7 +149,7 @@ def test_first_byte_precedes_headers_and_complete_body(server, traces):
 def test_concurrent_calls_keep_credentials_and_operations_isolated(server, traces):
     def send(index):
         timing = OperationTiming()
-        response = transport.request("POST", url(server, "/slow"), data=str(index).encode(), timing=timing,
+        response = transport.request("POST", url(server, "/slow"), content=str(index).encode(), timing=timing,
                                      headers={"Authorization": f"Bearer key-{index}"})
         assert response.content == b"OK"
         return timing.operation_id
@@ -163,7 +163,7 @@ def test_concurrent_calls_keep_credentials_and_operations_isolated(server, trace
 
 
 def test_redirects_have_separate_exchanges(server, traces):
-    assert transport.request("POST", url(server, "/redirect"), data=b"audio").content == b"OK"
+    assert transport.request("POST", url(server, "/redirect"), content=b"audio").content == b"OK"
     assert [metadata["exchange"] for metadata, _ in traces] == [1, 2]
     assert [metadata["status"] for metadata, _ in traces] == [307, 200]
     assert len({metadata["op"] for metadata, _ in traces}) == 1
@@ -172,21 +172,21 @@ def test_redirects_have_separate_exchanges(server, traces):
 
 @pytest.mark.parametrize("path", ["/chunked", "/gzip", "/close"])
 def test_response_framing_and_decompression_unchanged(server, traces, path):
-    assert transport.request("POST", url(server, path), data=b"audio").content == b"OK"
+    assert transport.request("POST", url(server, path), content=b"audio").content == b"OK"
     assert len(traces) == 1
     assert "body_end" in traces[0][1]
     assert traces[0][0]["response_body_bytes"] >= 2
-    assert transport.request("POST", url(server), data=b"again").content == b"OK"
+    assert transport.request("POST", url(server), content=b"again").content == b"OK"
     assert traces[1][0]["reused"] is (path != "/close")
 
 
 def test_failed_post_is_not_retried_and_has_partial_timing(server, traces):
-    with pytest.raises(requests.ConnectionError):
-        transport.request("POST", url(server, "/drop"), data=b"audio")
+    with pytest.raises(httpx.RemoteProtocolError):
+        transport.request("POST", url(server, "/drop"), content=b"audio")
     assert len(API.seen) == 1
     assert len(traces) == 1
     metadata, events = traces[0]
-    assert metadata["error"] == "ConnectionError"
+    assert metadata["error"] == "RemoteProtocolError"
     assert metadata["last_phase"] == "request_sent"
     assert "request_sent" in events
     assert "first_byte" not in events
@@ -194,11 +194,11 @@ def test_failed_post_is_not_retried_and_has_partial_timing(server, traces):
 
 
 def test_read_timeout_logs_failure_and_releases_connection(server, traces):
-    with pytest.raises(requests.ReadTimeout):
+    with pytest.raises(httpx.ReadTimeout):
         transport.request("POST", url(server, "/slow"), timeout=(1, 0.02))
     assert traces[0][0]["error"] == "ReadTimeout"
     assert "first_byte" not in traces[0][1]
-    assert transport.request("POST", url(server), data=b"audio").content == b"OK"
+    assert transport.request("POST", url(server), content=b"audio").content == b"OK"
 
 
 def test_tls_verification_and_reuse(server, traces):
@@ -206,13 +206,15 @@ def test_tls_verification_and_reuse(server, traces):
     context.load_cert_chain(CERT, KEY)
     server.socket = context.wrap_socket(server.socket, server_side=True)
     endpoint = url(server, scheme="https")
-    with pytest.raises(requests.exceptions.SSLError):
-        transport.request("POST", endpoint, data=b"audio")
+    with pytest.raises(httpx.ConnectError) as failure:
+        transport.request("POST", endpoint, content=b"audio")
+    assert transport.is_tls_failure(failure.value)
     assert traces[0][0]["error"] == "SSLError"
     assert "tls_start" in traces[0][1] and "tls_end" not in traces[0][1]
     for _ in range(2):
-        assert transport.request("POST", endpoint, data=b"audio", verify=str(CERT)).content == b"OK"
+        assert transport.request("POST", endpoint, content=b"audio", verify=str(CERT)).content == b"OK"
     assert "tls_end" in traces[1][1]
+    assert traces[1][0]["reused"] is False  # A fresh HTTPS connection is never reported as reused.
     assert "tls_start" not in traces[2][1]
     assert traces[2][0]["reused"] is True
 
@@ -272,13 +274,8 @@ def test_proxy_routing_and_connect_not_counted_as_api_first_byte(server, traces,
         server.socket = context.wrap_socket(server.socket, server_side=True)
     try:
         route = f"{proxy_scheme}://127.0.0.1:{proxy.server_port}"
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            assert transport.request("POST", url(server, scheme=scheme), data=b"audio", proxies={scheme: route},
-                                     verify=str(CERT)).content == b"OK"
-        # urllib3 flags a plain HTTP origin forwarded through an HTTPS proxy as unverified.
-        insecure = [warning for warning in caught if issubclass(warning.category, InsecureRequestWarning)]
-        assert bool(insecure) is (proxy_scheme == "https" and scheme == "http")
+        assert transport.request("POST", url(server, scheme=scheme), content=b"audio", proxies={scheme: route},
+                                 verify=str(CERT)).content == b"OK"
         metadata, events = traces[0]
         assert metadata["route"] == "proxy"
         if scheme == "https":
@@ -297,9 +294,9 @@ def test_proxy_routing_and_connect_not_counted_as_api_first_byte(server, traces,
 
 def test_transport_summary_is_async_and_contains_no_credentials_or_payload(server, caplog):
     with caplog.at_level(logging.INFO):
-        transport.request("POST", url(server) + "?private-query", data=b"private-transcript",
+        transport.request("POST", url(server) + "?private-query", content=b"private-transcript",
                           headers={"Authorization": "Bearer private-key"})
-        assert flush_timing_logs()
+        assert log_queue.flush()
     line = next(line for line in caplog.messages if line.startswith("http_transport"))
     assert "ttfb_ms=" in line and "after_upload_wait_ms=" in line and "upload_ms=" in line
     assert "private-" not in line and "Authorization" not in line
@@ -349,26 +346,45 @@ def test_warmup_is_throttled_auth_free_and_never_waits_for_network(server, monke
         assert len(calls) == 1
         args, kwargs = calls[0]
         assert args == ("HEAD", url(server, "/"))
-        assert kwargs["auth"] is _no_auth and kwargs["allow_redirects"] is False
-        assert "headers" not in kwargs
+        assert kwargs["follow_redirects"] is False
+        assert "headers" not in kwargs and "auth" not in kwargs
     finally:
         release.set()
         warm.close()
 
 
-def test_warm_request_disables_netrc_credentials(server, monkeypatch):
-    monkeypatch.setattr(requests.sessions, "get_netrc_auth", lambda *_: ("user", "password"))
-    transport.request("HEAD", url(server), auth=_no_auth)
+def test_warm_request_ignores_netrc_credentials(server, monkeypatch, tmp_path):
+    netrc = tmp_path / "netrc"
+    netrc.write_text("machine 127.0.0.1 login user password secret\n")
+    monkeypatch.setenv("NETRC", str(netrc))
+    transport.request("HEAD", url(server))
     assert API.seen[0][2] is None
 
 
-def test_dns_failure_logs_the_phase_without_fake_tcp_timing(server, traces, monkeypatch):
+def test_explicit_proxy_route_and_env_bypass(monkeypatch):
+    assert transport._select_proxy("https://api.test/x", {"https": "http://proxy:1"}) == "http://proxy:1"
+    monkeypatch.setenv("HTTPS_PROXY", "http://env-proxy:3128")
+    monkeypatch.setenv("NO_PROXY", "bypassed.test")
+    assert transport._select_proxy("https://api.test/x", None) == "http://env-proxy:3128"
+    assert transport._select_proxy("https://bypassed.test/x", None) is None
+
+
+def test_client_keeps_no_cookies_and_never_retries_connects(server, traces):
+    for _ in range(2):
+        transport.request("POST", url(server), content=b"audio")
+    assert API.cookies == [None, None]
+    client = next(iter(transport._CLIENTS.values()))
+    assert client.cookies.jar is not None and not list(client.cookies.jar)
+
+
+def test_dns_failure_logs_the_connect_phase_without_fake_completion(server, traces, monkeypatch):
     def fail(*_args, **_kwargs):
         raise socket.gaierror("synthetic DNS failure")
 
-    monkeypatch.setattr(transport.socket, "getaddrinfo", fail)
-    with pytest.raises(requests.ConnectionError):
-        transport.request("POST", url(server), data=b"audio")
+    monkeypatch.setattr(socket, "getaddrinfo", fail)
+    with pytest.raises(httpx.ConnectError):
+        transport.request("POST", url(server), content=b"audio")
     metadata, events = traces[0]
-    assert metadata["last_phase"] == "dns_start"
-    assert "dns_end" not in events and "tcp_start" not in events
+    # DNS runs inside httpcore's connect_tcp, so a resolution failure ends at tcp_start.
+    assert metadata["last_phase"] == "tcp_start" and metadata["error"] == "ConnectError"
+    assert "tcp_end" not in events and "headers_sent" not in events

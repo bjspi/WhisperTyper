@@ -13,6 +13,7 @@ import subprocess
 from typing import Any, Dict
 
 from app.core.env import is_MACOS, is_WINDOWS
+from app.core.models import DEFAULT_REPHRASING_MODEL, DEFAULT_TRANSCRIPTION_MODEL
 from app.core.prompts import (
     DEFAULT_GENERIC_REPHRASE_PROMPTS,
     DEFAULT_LIVEPROMPT_SYSTEM_PROMPTS,
@@ -72,19 +73,6 @@ def activate_app(app_name: str) -> None:
 SYS_LANG = get_system_language_2char()
 logging.info(f"Detected system language: {SYS_LANG}")
 
-# Curated provider catalogs, verified against official documentation on 2026-10-09.
-TRANSCRIPTION_MODEL_OPTIONS = {
-    "openai": ["gpt-transcribe", "gpt-4o-transcribe", "gpt-4o-mini-transcribe",
-               "gpt-4o-mini-transcribe-2025-12-15", "gpt-4o-transcribe-diarize", "whisper-1"],
-    "groq": ["whisper-large-v3-turbo", "whisper-large-v3"],
-}
-REPHRASING_MODEL_OPTIONS = {
-    "openai": ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-5.6-luna",
-               "gpt-5.6-terra", "gpt-5.6-sol", "gpt-4.1-mini", "gpt-4.1", "gpt-4.1-nano", "gpt-4o-mini", "gpt-4o"],
-    "groq": ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
-}
-DEFAULT_TRANSCRIPTION_MODEL = "whisper-1"
-DEFAULT_REPHRASING_MODEL = "gpt-6-luna"
 # Approximate max token length for the Whisper initial prompt.
 WHISPER_PROMPT_TOKEN_LIMIT = 230
 
@@ -184,7 +172,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "alt_clipboard_lib": is_MACOS,
     "windows_sendinput_text": False,
     "windows_sendinput_fallback": True,
-    "windows_fast_paste": False,
+    "fast_paste": False,
 
     # Rephrasing / LivePrompt
     "liveprompt_enabled": True,

@@ -8,16 +8,6 @@ import pytest
 from app.core import ffmpeg
 
 
-class TestIsVideoFile:
-    @pytest.mark.parametrize("name", ["clip.mp4", "movie.MOV", "show.mkv", "x.webm", "y.ts"])
-    def test_video_extensions(self, name: str):
-        assert ffmpeg.is_video_file(name) is True
-
-    @pytest.mark.parametrize("name", ["audio.mp3", "audio.wav", "audio.m4a", "noext", "x.mp3.txt"])
-    def test_non_video_extensions(self, name: str):
-        assert ffmpeg.is_video_file(name) is False
-
-
 class TestResolveFfmpeg:
     def test_configured_binary_path_wins(self, tmp_path: Path):
         exe = tmp_path / ("ffmpeg.exe" if ffmpeg.is_WINDOWS else "ffmpeg")

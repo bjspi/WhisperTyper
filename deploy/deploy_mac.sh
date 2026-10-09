@@ -39,6 +39,13 @@ fi
 APP_BUNDLE="$DIR/dist/WhisperTyper.app"
 ENTITLEMENTS_FILE="${WHISPERTYPER_ENTITLEMENTS_FILE:-$DIR/macos-entitlements.plist}"
 
+# PyAV is optional: the spec's hook bundles it (AAC recordings, ~70 MB) only if it is installed here.
+if python3 -c "import av" 2>/dev/null; then
+    echo "PyAV found: the build includes the AAC recording format."
+else
+    echo "PyAV not installed: the build records WAV only (pip install av to include AAC)."
+fi
+
 # Run PyInstaller with the spec file.
 # The --noconfirm flag automatically removes the old build directory without prompting.
 pyinstaller --noconfirm pyinstaller.spec

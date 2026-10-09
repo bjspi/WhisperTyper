@@ -76,6 +76,12 @@ class ConfigStore:
             cfg["input_language"] = cfg.pop("language")
             changed = True
 
+        # Fast paste applies to Windows and macOS; keep a choice saved under its former name.
+        if "windows_fast_paste" in cfg:
+            cfg.setdefault("fast_paste", cfg["windows_fast_paste"])
+            del cfg["windows_fast_paste"]
+            changed = True
+
         # Check if input_language is a display name and convert to code
         if "input_language" in cfg:
             lang_value = cfg["input_language"]

@@ -10,7 +10,7 @@ import logging
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse
 
-import requests
+import httpx
 
 from app.core.netutil import (
     PX_PROXY_URL,
@@ -19,7 +19,7 @@ from app.core.netutil import (
     is_px_running,
     tcp_check,
 )
-from app.services.http_transport import request
+from app.services.http_transport import is_tls_failure, request
 
 
 def resolve_proxies(proxy_url: str, use_px: bool) -> Optional[Dict[str, str]]:
@@ -41,6 +41,20 @@ def diagnose_connectivity(api_url: str, proxies: Optional[Dict[str, str]]) -> st
     return "blocked" if (raw_internet or api_direct) else "no_internet"
 
 
+def classify_transport_error(error: Exception, api_url: str, proxies: Optional[Dict[str, str]]) -> str:
+    """Map a failed request to 'proxy', 'ssl', 'blocked', 'no_internet' or 'unknown'."""
+    if isinstance(error, httpx.ProxyError):
+        return "proxy"
+    if is_tls_failure(error):
+        return "ssl"
+    if isinstance(error, (httpx.ConnectError, httpx.TimeoutException)):
+        # An unreachable configured proxy fails at connect time, before the API is involved.
+        return "proxy" if proxies and isinstance(error, httpx.ConnectError) else diagnose_connectivity(api_url, proxies)
+    if isinstance(error, httpx.TransportError):
+        return diagnose_connectivity(api_url, proxies)
+    return "unknown"
+
+
 def run_transcription_connection_test(api_url: str, api_key: str, model: str,
                                       proxies: Optional[Dict[str, str]]) -> Tuple[str, str]:
     """Send a tiny test audio to the endpoint and classify the outcome.
@@ -57,15 +71,8 @@ def run_transcription_connection_test(api_url: str, api_key: str, model: str,
         response = request(
             "POST", api_url, headers=headers, files=files, data=data, proxies=proxies, timeout=15
         )
-    except requests.exceptions.ProxyError as e:
-        return ("proxy", str(e))
-    except requests.exceptions.SSLError as e:
-        return ("ssl", str(e))
-    except (requests.exceptions.ConnectTimeout, requests.exceptions.ConnectionError,
-            requests.exceptions.Timeout) as e:
-        return (diagnose_connectivity(api_url, proxies), str(e))
     except Exception as e:
-        return ("unknown", str(e))
+        return (classify_transport_error(e, api_url, proxies), str(e))
 
     status = response.status_code
     body = (response.text or "")[:400]

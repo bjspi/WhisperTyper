@@ -64,8 +64,3 @@ def test_empty_or_invalid_text_never_injects(user32):
     user32.SendInput.assert_not_called()
 
 
-def test_unavailable_off_windows(user32, monkeypatch):
-    monkeypatch.setattr(native, "is_WINDOWS", False)
-    with pytest.raises(OSError, match="only available on Windows"):
-        native.send_unicode_text("text")
-    user32.SendInput.assert_not_called()

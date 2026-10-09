@@ -16,7 +16,7 @@ For a recording, the most useful measurements are:
 | --- | --- |
 | `stop_to_api_ms` | Stop detection → complete transcription HTTP response body |
 | `stop_to_request_sent_ms` | Stop detection → request headers/body handed to the socket |
-| `stop_to_first_byte_ms` | Stop detection → first HTTP response byte observed |
+| `stop_to_first_byte_ms` | Stop detection → HTTP response status/headers received |
 | `stop_to_output_ms` | Stop detection → final text delivery routine completed |
 | `stop_to_text_commit_ms` | Stop detection → input dispatch completed (paste or direct Unicode input) |
 | `text_commit_ms` | Start insertion routine → input dispatch completed |
@@ -31,7 +31,8 @@ For a recording, the most useful measurements are:
 | `stop_feedback_ms` | Recorder stopped → audio processing started (includes stop sound dispatch) |
 | `audio_prepare_ms` | Read/collect PCM, validate, resample and apply gain |
 | `file_write_ms` | Write the recording file |
-| `audio_encode_ms` | Read the prepared WAV and encode native AAC/M4A in the upload worker (AAC only) |
+| `audio_encode_ms` | Read the prepared WAV and encode AAC/M4A with PyAV in the upload worker (AAC only) |
+| `audio_compress_ms` | FFmpeg compression of a recording that exceeds the upload limit (long recordings only) |
 | `recording_cleanup_ms` | Update recording actions and prune older recordings before worker setup |
 | `worker_setup_ms` / `worker_queue_ms` | Configure the worker / wait for its thread to run |
 | `upload_prepare_ms` | Prepare the file for upload |
@@ -94,43 +95,46 @@ failures retain the milestones actually reached, without invented durations.
 
 | Transport field | Interval / meaning |
 | --- | --- |
-| `prepare_ms` | API call start → adapter, including multipart/JSON assembly and environment settings |
-| `dns_ms` | Resolve the target or proxy hostname |
-| `tcp_ms` | TCP setup, including fallback between resolved addresses |
+| `prepare_ms` | API call start → request hook, including multipart/JSON assembly and proxy routing |
+| `tcp_ms` | DNS resolution + TCP setup (httpcore resolves inside its connect step) |
 | `proxy_tls_ms` / `proxy_tunnel_ms` | TLS to an HTTPS proxy / CONNECT tunnel setup |
 | `tls_setup_ms` | Origin TLS setup: context/CA preparation, handshake and certificate verification |
 | `connect_ms` | Entire connection setup including DNS/TCP/TLS and any proxy tunnel |
+| `ttfb_ms` / `after_upload_wait_ms` | Request headers sent / complete request sent → response status and headers received |
 | `upload_ms` | First body send → complete request sent; multipart framing is included |
-| `ttfb_ms` | Request headers sent → first response byte, including upload time |
-| `request_to_first_byte_ms` | API call start → first response byte, including preparation and connection setup |
-| `after_upload_wait_ms` | Complete request sent → first response byte |
-| `response_headers_ms` | First byte → complete final response headers |
+| `request_to_first_byte_ms` | API call start → response headers, including preparation and connection setup |
 | `response_body_ms` | Complete headers → complete consumed/decompressed response body |
 | `total_ms` | API call start → complete response or failure |
 | `connection` / `reused` | Socket identity / whether this exchange reused an existing socket |
 | `error` / `last_phase` | Exception class (without private exception text) / last milestone reached before completion or failure |
-| `upload_bytes` / `response_body_bytes` | Sent body bytes / consumed response bytes after decompression |
+| `upload_bytes` / `response_body_bytes` | Request `Content-Length` / raw response body bytes received |
 
 Transport milestones also appear as `latency_event` phases such as
 `transcription_http_request_sent` and `transcription_http_first_byte` for operations
 with timing state. Use their captured `at_ms` to determine when the POST finished
-sending, rather than the log writer's line date. New connections have DNS/TCP/TLS
-fields; reused ones omit them. `tls_setup_ms` intentionally includes certificate
-verification, rather than pretending to isolate only the cryptographic handshake.
-TTFB observes the first socket read before status/header parsing (an informational
-HTTP response, if present, counts as the first byte). Sending completion means the
-OS accepted the bytes, not that the server acknowledged reading all of them.
+sending, rather than the log writer's line date. New connections have TCP/TLS
+fields; reused ones omit them (`reused=True` means no connect step in this exchange,
+also for HTTPS). `tls_setup_ms` intentionally includes certificate verification,
+rather than pretending to isolate only the cryptographic handshake.
+All milestones come from httpcore's documented `trace` extension and httpx event
+hooks; no transport internals are subclassed. That API reports the parsed status
+line and headers, not the first raw socket byte, so `first_byte` marks "response
+headers received" (providers send status and headers together in practice), and
+DNS is not measured separately from TCP. Sending completion means the OS accepted
+the bytes, not that the server acknowledged reading all of them.
 `after_upload_wait_ms` combines transit and provider processing; the client cannot
 split the provider's queue from inference without server-side timing data.
 
 ## Persistent connections and background warming
 
-All transcription, rephrasing and API connection-test calls share bounded urllib3
-HTTP/1.1 pools, even when each call uses a new Qt worker thread or a different
-Groq key. Headers and cookies remain isolated per logical request. TLS verification,
-environment CA bundles and existing explicit/system/px proxy routing remain active.
-TCP_NODELAY and OS TCP keepalive are enabled; failed paid POSTs are not retried.
-Busy pools create another socket instead of waiting for a warm-up request.
+All transcription, rephrasing and connection-test calls share pooled httpx clients
+(one thread-safe client per proxy route, HTTP/1.1), even when each call uses a new
+Qt worker thread or a different Groq key. Headers are per request and no cookies are
+stored. TLS verification (certifi, `SSL_CERT_FILE`/`SSL_CERT_DIR`, and a legacy
+`REQUESTS_CA_BUNDLE`), explicit/px proxies and system/environment proxies including
+`NO_PROXY` remain active. TCP_NODELAY and OS TCP keepalive are enabled; idle pooled
+connections are kept for 300 s; failed paid POSTs are not retried. Busy pools open
+another connection instead of waiting for a warm-up request.
 
 A daemon performs auth-free HEAD requests at startup, after saving settings and
 when recording begins. Selecting a rephrasing prompt in the recording palette
@@ -140,15 +144,15 @@ reactivates the five-minute activity window; selecting Standard adds no request.
 While recording or for five minutes after recent activity,
 a timer refreshes each configured origin at most every 20 seconds. Groq/OpenAI
 use their `/models` path; custom endpoints use the origin root. URL credentials,
-queries, API keys, netrc origin credentials and audio are excluded. Redirects are
+queries, API keys and audio are excluded; httpx never adds netrc credentials. Redirects are
 disabled. A 401/404/405 still proves that the connection reached the server.
 Warm-up has short timeouts and never delays capture, upload or shutdown waiting
-for completion. The server can still close idle connections; urllib3 reconnects
-when required. There is no guarantee of reuse during overlapping requests.
+for completion. The server can still close idle connections; httpcore detects that
+and reconnects. There is no guarantee of reuse during overlapping requests.
 
-HTTP/HTTPS proxies receive full socket measurements. Optional SOCKS proxy support
-keeps requests' own connection implementation and reports overall/body timing,
-without inventing DNS/TCP/TLS/TTFB measurements for that implementation.
+HTTP and HTTPS proxies (including CONNECT tunnels) receive full measurements. SOCKS
+proxies are not supported by the default install (httpx needs the optional
+`socksio` package).
 
 ## Optional Windows text input
 
@@ -188,49 +192,58 @@ and the existing phase timings. Disable this experimental option if focus/hotkey
 timing makes insertion unreliable in a target application. The alternative clipboard
 library checkbox lives in the same group and remains available on every platform;
 SendInput and its fallback checkbox are individually hidden on macOS and Linux;
-fast paste is hidden only on Linux. Its existing configuration key
-`windows_fast_paste` is retained so saved Windows choices remain valid without migration.
+fast paste is hidden only on Linux. Its configuration key is `fast_paste`; a choice saved
+under the former `windows_fast_paste` key is migrated on load.
 
-## Native recording formats
+## Recording formats
 
-Transcription → Recording offers **WAV (PCM)** and, when an installed native
-encoder is available, **AAC (M4A)**. WAV is the default: mono 16-bit PCM at 16 kHz
-(256 kbit/s). AAC bitrates come from the installed encoder; this Windows machine
-supports 48, 64, 96, 128, 160 and 192 kbit/s. The default AAC bitrate is 64 kbit/s.
-Windows uses Media Foundation via ctypes. macOS uses Apple's included
-`/usr/bin/afconvert` (Core Audio), with synthetic capability probes once during
-settings setup. Linux currently offers WAV only. No extra encoding dependency
-is needed. OPUS is excluded because a native encoder plus a provider-compatible
-container cannot be relied on across these platforms.
+Transcription → Recording offers **WAV (PCM)** and **AAC (M4A)**. WAV is the
+default: mono 16-bit PCM at 16 kHz (256 kbit/s). AAC is encoded with
+[PyAV](https://pyav.basswood-io.com/), whose wheels bundle the FFmpeg libraries, so
+Windows, macOS and Linux share one code path and no external FFmpeg executable is
+needed. The prepared WAV is streamed in 100 ms blocks, resampled to 48 kHz mono and
+written as AAC-LC in an MP4/M4A container at 48, 64, 96, 128, 160 or 192 kbit/s
+(default 64 kbit/s). A background probe after startup checks once that PyAV and its
+AAC encoder load; if not, only WAV is offered. OPUS is excluded because
+transcription providers do not accept it consistently.
 
 Capture, final-block retention, minimum-duration checks, gain and resampling
 remain the same for both formats. The prepared WAV stays available for playback
 and retries. AAC is generated after stop in the existing transcription worker,
 so encoding does not block the GUI. The temporary M4A is uploaded with
-`audio/mp4` and deleted on success or failure. `audio_encode_ms` measures native
+`audio/mp4` and deleted on success or failure. `audio_encode_ms` measures
 encoding, including reading the prepared WAV. It is part of `upload_prepare_ms`
 and the existing stop-to-response/output totals; do not add overlapping fields.
 `recording_upload` logs the operation ID, selected format/bitrate, WAV source size
 and upload size at INFO, without audio or credentials.
 
 Retained recordings, including retry/retranscription, use the current saved
-recording format and never invoke FFmpeg. An encoder error keeps the WAV and
-reports a normal retryable error. A recording still over the configured upload
-limit is rejected with a suggestion to use AAC/a lower bitrate or a shorter clip.
+recording format. An encoder error keeps the WAV and reports a normal retryable
+error. Only a recording still over the configured upload limit (with 16 kHz WAV
+roughly 13 minutes at the default 24 MB) resolves FFmpeg and compresses the
+retained WAV exactly like a picked file; `audio_compress_ms` measures that step.
+Without FFmpeg such a recording is rejected with a suggestion to use AAC/a lower
+bitrate, install FFmpeg or record a shorter clip.
 Picked files/videos keep their existing extraction/compression behavior.
 
 ## Logging does not wait for the disk
 
-The writer starts during bootstrap, before recording/hotkeys. The timing path
-captures timestamps and submits metadata to `SimpleQueue`; it never waits for a
-log consumer or takes a file/console handler lock. Regular application logging is
-queued too, so a handler busy with a timing record cannot stall the next ordinary
-log message. Formatting, handler locks, rotation and file writes run on the daemon
-writer. Removing/closing a file handler is queued as well. No new synchronous
-flush is performed during recording, upload or result delivery.
+All application logging, including the timing records, runs through the standard
+library's `QueueHandler`/`QueueListener` (`app/core/log_queue.py`), installed during
+bootstrap before recording/hotkeys. Producers only enqueue the unformatted record;
+formatting (including the lazily computed `latency_summary`/`http_transport`
+durations), handler locks, rotation and file writes run on the listener thread.
+Output handlers are swapped copy-on-write, so adding or removing the file handler
+never waits for the listener; closing a removed handler is queued behind its records.
+No synchronous flush is performed during recording, upload or result delivery.
+Timing milestones are ordinary records on the `whispertyper.timing` logger
+(`app/core/timing.py`), so they follow the configured log level and sinks.
 
-Capturing timestamps and queueing still have a small CPU/allocation cost; this
-does not promise zero overhead. The queue is unbounded so producers do not wait:
-a persistently blocked sink can grow memory usage. Shutdown allows one second to
-drain queued entries; a blocked sink or forced process termination can lose pending
-logs. Logging failures do not stop the transcription pipeline.
+Creating a log record still costs a few microseconds; this does not promise zero
+overhead. The queue is unbounded so producers do not wait: a persistently blocked
+sink can grow memory usage. At interpreter exit the listener drains the queue.
+Because Qt aborts the process after an uncaught exception in a slot (skipping
+`atexit`), `sys.excepthook` and `threading.excepthook` flush the queue first, so the
+records leading up to a crash reach the log file. Only a hard native crash
+(e.g. a segfault in a driver) can still lose the last queued records. A failing
+sink never stops the other sinks or the transcription pipeline.

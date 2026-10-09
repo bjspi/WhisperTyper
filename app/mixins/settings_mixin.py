@@ -4,11 +4,12 @@ from __future__ import annotations
 import logging
 import logging.handlers
 import os
+import threading
 from html import escape
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, NamedTuple, Optional
 
 from PyQt6 import uic
-from PyQt6.QtCore import Qt, QTimer, QUrl
+from PyQt6.QtCore import QSignalBlocker, Qt, QTimer, QUrl
 from PyQt6.QtGui import QAction, QDesktopServices
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -28,15 +29,22 @@ from PyQt6.QtWidgets import (
     QStyle,
 )
 
-from app.audio.native_encoder import available_aac_bitrates
-from app.core.api_keys import PROVIDER_NAMES, TASK_KEY_FIELDS, masked_api_key, provider_for_url, selected_api_key
+from app.audio.aac_encoder import available_aac_bitrates
+from app.core import log_queue
+from app.core.api_keys import (
+    PROVIDER_NAMES,
+    TASK_KEY_FIELDS,
+    masked_api_key,
+    provider_endpoint,
+    provider_for_url,
+    selected_api_key,
+    usable_profile_ids,
+)
 from app.core.config_store import ConfigStore
 from app.core.constants import (
     CONFIG_FILE,
     LANGUAGES,
     LOG_FILE_PATH,
-    REPHRASING_MODEL_OPTIONS,
-    TRANSCRIPTION_MODEL_OPTIONS,
     WHISPER_PROMPT_TOKEN_LIMIT,
     WINDOW_MIN_HEIGHT,
     WINDOW_MIN_WIDTH,
@@ -44,6 +52,13 @@ from app.core.constants import (
 from app.core.env import is_MACOS, is_WINDOWS, open_with_default_app
 from app.core.ffmpeg import probe_version, resolve_ffmpeg
 from app.core.hotkeys import normalize_hotkey_string
+from app.core.models import (
+    REPHRASING_MODEL_OPTIONS,
+    TRANSCRIPTION_MODEL_OPTIONS,
+    rephrasing_supports_temperature,
+    transcription_supports_prompt,
+    transcription_supports_temperature,
+)
 from app.core.paths import resource_path
 from app.core.prompts import (
     DEFAULT_GENERIC_REPHRASE_PROMPTS,
@@ -55,12 +70,24 @@ from app.core.prompts import (
 from app.core.redaction import LOG_REDACTION_STATE
 from app.core.replacements import ReplacementError, Replacements
 from app.core.textutil import clean_model_name, estimate_tokens
-from app.core.timing import add_log_handler, log_handlers, remove_log_handler
 from app.services import net
 from app.ui.api_keys import ApiKeysTab
 from app.ui.connection_tester import ConnectionTester
 from app.ui.replacements import ReplacementsTab
 from app.ui.theme import palette
+
+API_TASKS = ("transcription", "rephrasing")
+
+
+class _TaskWidgets(NamedTuple):
+    """Settings controls that exist once per API task."""
+
+    endpoint: QLineEdit
+    provider: QComboBox
+    key_profile: QComboBox
+    model: QComboBox
+    model_catalogs: Dict[str, List[str]]
+    model_field: str
 
 
 class SettingsMixin:
@@ -218,15 +245,9 @@ class SettingsMixin:
         self.recording_bitrate_label = QLabel(self)
         self.recording_bitrate_selector = QComboBox(self)
         self.recording_bitrate_selector.setObjectName("recording_bitrate_selector")
-        bitrates = available_aac_bitrates()
-        if bitrates:
-            self.recording_format_selector.addItem("AAC (M4A)", "aac")
-        for bitrate in bitrates:
-            self.recording_bitrate_selector.addItem(f"{bitrate} kbit/s", bitrate)
-        self.recording_format_selector.setCurrentIndex(max(0, self.recording_format_selector.findData(
-            self.config.get("recording_format", "wav"))))
-        self.recording_bitrate_selector.setCurrentIndex(max(0, self.recording_bitrate_selector.findData(
-            self.config.get("recording_aac_bitrate_kbps", 64))))
+        # AAC entries are added by _apply_aac_bitrates once the deferred encoder probe finishes;
+        # without the optional PyAV package the whole row stays hidden (WAV only).
+        self._aac_bitrates_probed = False
         self.recording_format_selector.currentIndexChanged.connect(self._update_recording_format_controls)
         format_layout = QHBoxLayout()
         for widget in (self.recording_format_label, self.recording_format_selector,
@@ -285,8 +306,8 @@ class SettingsMixin:
             ("transcription", self.transcription_provider_selector, self.api_endpoint_input),
             ("rephrasing", self.rephrasing_provider_selector, self.rephrasing_api_url_input),
         ):
-            for provider, name in PROVIDER_NAMES.items():
-                selector.addItem(name, provider)
+            for provider in PROVIDER_NAMES:
+                selector.addItem(self._provider_label(provider), provider)
             selector.setCurrentIndex(selector.findData(provider_for_url(endpoint.text())))
             selector.currentIndexChanged.connect(lambda _index, task=task: self._set_provider_endpoint(task))
         self._refresh_model_selectors(preserve_saved=True)
@@ -404,7 +425,7 @@ class SettingsMixin:
         self.fast_paste_checkbox.setVisible(is_WINDOWS or is_MACOS)
         self.windows_sendinput_text_checkbox.setChecked(self.config.get("windows_sendinput_text", False))
         self.windows_sendinput_fallback_checkbox.setChecked(self.config.get("windows_sendinput_fallback", True))
-        self.fast_paste_checkbox.setChecked(self.config.get("windows_fast_paste", False))
+        self.fast_paste_checkbox.setChecked(self.config.get("fast_paste", False))
         self.windows_sendinput_fallback_checkbox.setEnabled(is_WINDOWS and self.windows_sendinput_text_checkbox.isChecked())
         self.windows_sendinput_text_checkbox.toggled.connect(
             lambda checked: self.windows_sendinput_fallback_checkbox.setEnabled(is_WINDOWS and checked)
@@ -449,91 +470,121 @@ class SettingsMixin:
             width, height = 760, WINDOW_MIN_HEIGHT
         self.resize(width, height)
 
+    def _start_aac_bitrate_probe(self) -> None:
+        """Probe the optional PyAV AAC encoder in the background; importing PyAV takes noticeable time."""
+        def probe() -> None:
+            try:
+                bitrates = available_aac_bitrates()
+            except Exception as error:
+                logging.warning("AAC encoder probe failed: %s", error)
+                bitrates = ()
+            self.aac_bitrates_ready_signal.emit(bitrates)
+
+        threading.Thread(target=probe, name="AacBitrateProbe", daemon=True).start()
+
+    def _apply_aac_bitrates(self, bitrates: tuple[int, ...]) -> None:
+        """Offer AAC once the probe finished and restore the saved format selection."""
+        if bitrates:
+            self.recording_format_selector.addItem("AAC (M4A)", "aac")
+        for bitrate in bitrates:
+            self.recording_bitrate_selector.addItem(f"{bitrate} kbit/s", bitrate)
+        self.recording_format_selector.setCurrentIndex(max(0, self.recording_format_selector.findData(
+            self.config.get("recording_format", "wav"))))
+        self.recording_bitrate_selector.setCurrentIndex(max(0, self.recording_bitrate_selector.findData(
+            self.config.get("recording_aac_bitrate_kbps", 64))))
+        self._aac_bitrates_probed = True
+        self._update_recording_format_controls()
+
     def _update_recording_format_controls(self) -> None:
-        """Compressed bitrate selection only applies to native AAC, not PCM WAV."""
-        aac = self.recording_format_selector.currentData() == "aac"
+        """Show the format row only when AAC is offered; the bitrate applies to AAC only."""
+        offered = self.recording_format_selector.count() > 1
+        self.recording_format_label.setVisible(offered)
+        self.recording_format_selector.setVisible(offered)
+        aac = offered and self.recording_format_selector.currentData() == "aac"
         self.recording_bitrate_selector.setEnabled(aac)
         self.recording_bitrate_label.setEnabled(aac)
         self.recording_bitrate_selector.setVisible(aac)
         self.recording_bitrate_label.setVisible(aac)
 
+    def _task_widgets(self, task: str) -> _TaskWidgets:
+        """The endpoint/provider/key/model controls of one API task (transcription or rephrasing)."""
+        if task == "transcription":
+            return _TaskWidgets(self.api_endpoint_input, self.transcription_provider_selector,
+                                self.transcription_key_profile_selector, self.model_dropdown,
+                                TRANSCRIPTION_MODEL_OPTIONS, "model")
+        return _TaskWidgets(self.rephrasing_api_url_input, self.rephrasing_provider_selector,
+                            self.rephrasing_key_profile_selector, self.rephrasing_model_input,
+                            REPHRASING_MODEL_OPTIONS, "rephrasing_model")
+
+    def _provider_label(self, provider: str) -> str:
+        """Display name of a provider; only the generic 'Custom' entry is translated."""
+        return self.translator.tr("api_key_custom_provider") if provider == "custom" else PROVIDER_NAMES[provider]
+
     def _set_provider_endpoint(self, task: str) -> None:
         """Apply a selected official endpoint, or clear the field for a custom URL."""
-        selector, endpoint = ((self.transcription_provider_selector, self.api_endpoint_input) if task == "transcription"
-                              else (self.rephrasing_provider_selector, self.rephrasing_api_url_input))
-        base = {"openai": "https://api.openai.com/v1/", "groq": "https://api.groq.com/openai/v1/"}.get(selector.currentData())
-        path = "audio/transcriptions" if task == "transcription" else "chat/completions"
-        endpoint.setText(base + path if base else "")
+        widgets = self._task_widgets(task)
+        widgets.endpoint.setText(provider_endpoint(widgets.provider.currentData(), task))
 
     def _refresh_model_selectors(self, preserve_saved: bool = False, only_task: Optional[str] = None) -> None:
         """Filter models by endpoint; keep saved/custom names and replace incompatible built-ins on a provider change."""
-        for task, selector, endpoint, catalogs, config_field in (
-            ("transcription", self.model_dropdown, self.api_endpoint_input, TRANSCRIPTION_MODEL_OPTIONS, "model"),
-            ("rephrasing", self.rephrasing_model_input, self.rephrasing_api_url_input, REPHRASING_MODEL_OPTIONS, "rephrasing_model"),
-        ):
+        for task in API_TASKS:
             if only_task is not None and task != only_task:
                 continue
-            model = self.config[config_field] if preserve_saved else selector.currentText()
-            options = catalogs.get(provider_for_url(endpoint.text()), [])
+            widgets = self._task_widgets(task)
+            selector, catalogs = widgets.model, widgets.model_catalogs
+            model = self.config[widgets.model_field] if preserve_saved else selector.currentText()
+            options = catalogs.get(provider_for_url(widgets.endpoint.text()), [])
             model_id = clean_model_name(model)
             matching = next((option for option in options if clean_model_name(option) == model_id), None)
             known = any(clean_model_name(option) == model_id for models in catalogs.values() for option in models)
             if not preserve_saved and matching is None and known and options:
                 model = options[0]
                 matching = model
-            selector.blockSignals(True)
-            selector.clear()
-            selector.addItems(options)
-            selector.setCurrentText(matching or model)
-            selector.blockSignals(False)
+            with QSignalBlocker(selector):
+                selector.clear()
+                selector.addItems(options)
+                selector.setCurrentText(matching or model)
         self._update_prompt_token_counter()
         self._update_rephrase_api_group_style()
 
     def _refresh_key_profile_selectors(self) -> None:
         """Select a valid profile on provider changes; preserve choices during profile edits."""
         profiles = self._api_keys_tab.profiles()
-        for task, selector, endpoint in (
-            ("transcription", self.transcription_key_profile_selector, self.api_endpoint_input),
-            ("rephrasing", self.rephrasing_key_profile_selector, self.rephrasing_api_url_input),
-        ):
+        for task in API_TASKS:
+            widgets = self._task_widgets(task)
+            selector = widgets.key_profile
+            saved_id = self.config[TASK_KEY_FIELDS[task][1]]
             selected_id = selector.currentData()
             if selected_id is None:
-                selected_id = self.config[TASK_KEY_FIELDS[task][1]]
-            provider = provider_for_url(endpoint.text())
-            provider_selector = self.transcription_provider_selector if task == "transcription" else self.rephrasing_provider_selector
-            provider_selector.blockSignals(True)
-            provider_selector.setCurrentIndex(provider_selector.findData(provider))
-            provider_selector.blockSignals(False)
+                selected_id = saved_id
+            provider = provider_for_url(widgets.endpoint.text())
+            with QSignalBlocker(widgets.provider):
+                widgets.provider.setCurrentIndex(widgets.provider.findData(provider))
             previous_provider = selector.property("key_provider")
             selector.setProperty("key_provider", provider)
             if previous_provider is not None and previous_provider != provider:
-                valid_ids = [profile["id"] for profile in profiles if selected_api_key({
-                    "api_key_profiles": [profile],
-                    TASK_KEY_FIELDS[task][0]: endpoint.text(),
-                    TASK_KEY_FIELDS[task][1]: profile["id"],
-                }, task)]
-                saved_id = self.config[TASK_KEY_FIELDS[task][1]]
+                # The endpoint switched provider: keep the saved key if it fits, else the first usable one.
+                valid_ids = usable_profile_ids(profiles, provider)
                 selected_id = saved_id if saved_id in valid_ids else next(iter(valid_ids), "")
-            selector.blockSignals(True)
-            selector.clear()
-            selector.addItem(self.translator.tr("api_key_none"), "")
-            for profile in profiles:
-                if profile["provider"] == provider:
-                    preview = masked_api_key(profile["key"])
-                    selector.addItem(f"{profile['name']} ({PROVIDER_NAMES[provider]}) — {preview}", profile["id"])
-            selector.setCurrentIndex(max(0, selector.findData(selected_id)))
-            selector.blockSignals(False)
+            with QSignalBlocker(selector):
+                selector.clear()
+                selector.addItem(self.translator.tr("api_key_none"), "")
+                for profile in profiles:
+                    if profile["provider"] == provider:
+                        label = f"{profile['name']} ({self._provider_label(provider)}) — {masked_api_key(profile['key'])}"
+                        selector.addItem(label, profile["id"])
+                selector.setCurrentIndex(max(0, selector.findData(selected_id)))
         self._update_transcription_api_group_style()
         self._update_rephrase_api_group_style()
 
     def _ui_api_key(self, task: str) -> str:
         """Resolve credentials from unsaved form values for highlighting and connection tests."""
+        widgets = self._task_widgets(task)
+        endpoint_field, selection_field, _legacy = TASK_KEY_FIELDS[task]
         return selected_api_key({
             "api_key_profiles": self._api_keys_tab.profiles(),
-            "api_endpoint": self.api_endpoint_input.text(),
-            "rephrasing_api_url": self.rephrasing_api_url_input.text(),
-            "transcription_key_profile_id": self.transcription_key_profile_selector.currentData(),
-            "rephrasing_key_profile_id": self.rephrasing_key_profile_selector.currentData(),
+            endpoint_field: widgets.endpoint.text(),
+            selection_field: widgets.key_profile.currentData(),
         }, task)
 
     def _build_ffmpeg_settings_row(self) -> None:
@@ -686,8 +737,10 @@ class SettingsMixin:
             self.config["windows_keep_mic_hot"] = self.windows_keep_mic_hot_checkbox.isChecked()
             self.config["windows_keep_mic_hot_idle_minutes"] = self.windows_keep_mic_hot_idle_input.value()
         self.config["min_recording_seconds"] = self.min_recording_input.value()
-        self.config["recording_format"] = self.recording_format_selector.currentData() or "wav"
-        self.config["recording_aac_bitrate_kbps"] = self.recording_bitrate_selector.currentData() or 64
+        # Until the probe has populated the selectors, they cannot represent a saved AAC choice.
+        if self._aac_bitrates_probed:
+            self.config["recording_format"] = self.recording_format_selector.currentData() or "wav"
+            self.config["recording_aac_bitrate_kbps"] = self.recording_bitrate_selector.currentData() or 64
         self.config["debug_logging"] = self.debug_logging_checkbox.isChecked()
         try:
             self.config["gain_db"] = float(self.gain_input.text() or 0)
@@ -720,7 +773,7 @@ class SettingsMixin:
             self.config["windows_sendinput_text"] = self.windows_sendinput_text_checkbox.isChecked()
             self.config["windows_sendinput_fallback"] = self.windows_sendinput_fallback_checkbox.isChecked()
         if is_WINDOWS or is_MACOS:
-            self.config["windows_fast_paste"] = self.fast_paste_checkbox.isChecked()
+            self.config["fast_paste"] = self.fast_paste_checkbox.isChecked()
         self.config["post_rephrase_auto_select_all"] = self.post_rephrase_auto_select_all_checkbox.isChecked()
 
         # Rephrasing settings
@@ -789,11 +842,10 @@ class SettingsMixin:
         text = self.prompt_input.toPlainText()
         tokens = estimate_tokens(text)
         model = self.model_dropdown.currentText()
-        model_id = clean_model_name(model)
-        temperature_supported = model_id not in ("gpt-transcribe", "gpt-4o-transcribe-diarize")
+        temperature_supported = transcription_supports_temperature(model)
         self.transcription_temp_slider.setEnabled(temperature_supported)
         self.transcription_temp_label.setEnabled(temperature_supported)
-        self.prompt_input.setEnabled(model_id != "gpt-4o-transcribe-diarize")
+        self.prompt_input.setEnabled(transcription_supports_prompt(model))
         limit = WHISPER_PROMPT_TOKEN_LIMIT if 'whisper' in model.lower() else None
         pal = getattr(self, "_theme_palette", None)
         if limit:
@@ -904,7 +956,7 @@ class SettingsMixin:
 
     def _update_rephrase_api_group_style(self) -> None:
         """Highlight incomplete API settings and mirror that state on the transformations tab."""
-        temperature_supported = not self.rephrasing_model_input.currentText().strip().lower().startswith(("gpt-5.6", "gpt-6"))
+        temperature_supported = rephrasing_supports_temperature(self.rephrasing_model_input.currentText())
         self.rephrasing_temp_slider.setEnabled(temperature_supported)
         self.rephrasing_temp_label.setEnabled(temperature_supported)
         # Check if any of the required fields are empty.
@@ -950,18 +1002,19 @@ class SettingsMixin:
         self.github_action.setText(self.translator.tr("menu_help_github"))
 
         # Tabs
-        self.tabs.setTabText(0, self.translator.tr("tab_transcription"))
-        self.tabs.setTabText(1, self.translator.tr("tab_rephrase"))
-        self.tabs.setTabText(2, self.translator.tr("tab_transformations"))
-        self.tabs.setTabText(3, self.translator.tr("tab_api_keys"))
-        self.tabs.setTabText(4, self.translator.tr("tab_replacements"))
-        self.tabs.setTabText(5, self.translator.tr("tab_general"))
-        self.tabs.setTabToolTip(0, self.translator.tr("tooltip_tab_transcription"))
-        self.tabs.setTabToolTip(1, self.translator.tr("tooltip_tab_rephrase"))
-        self.tabs.setTabToolTip(2, self.translator.tr("tooltip_tab_transformations"))
-        self.tabs.setTabToolTip(3, self.translator.tr("tooltip_tab_api_keys"))
-        self.tabs.setTabToolTip(4, self.translator.tr("tab_replacements"))
-        self.tabs.setTabToolTip(5, self.translator.tr("tooltip_tab_general"))
+        for tab, title_key, tooltip_key in (
+            (self.transcription_tab, "tab_transcription", "tooltip_tab_transcription"),
+            (self.rephrasing_tab, "tab_rephrase", "tooltip_tab_rephrase"),
+            (self.post_rephrasing_tab, "tab_transformations", "tooltip_tab_transformations"),
+            (self._api_keys_tab, "tab_api_keys", "tooltip_tab_api_keys"),
+            (self._replacements_tab, "tab_replacements", "tooltip_tab_replacements"),
+            (self.general_tab, "tab_general", "tooltip_tab_general"),
+        ):
+            index = self.tabs.indexOf(tab)
+            self.tabs.setTabText(index, self.translator.tr(title_key))
+            self.tabs.setTabToolTip(index, self.translator.tr(tooltip_key))
+        for selector in (self.transcription_provider_selector, self.rephrasing_provider_selector):
+            selector.setItemText(selector.findData("custom"), self._provider_label("custom"))
         self._api_keys_tab.retranslate_ui()
         self._replacements_tab.retranslate_ui()
         self._refresh_key_profile_selectors()
@@ -1167,13 +1220,9 @@ class SettingsMixin:
             (self.windows_sendinput_fallback_checkbox, "windows_sendinput_fallback_tooltip"),
             (self.fast_paste_checkbox, "fast_paste_tooltip"),
         ):
-            title = escape(checkbox.text())
-            paragraphs = [
-                escape(sentence)
-                for sentence in self.translator.tr(key).split(". ")
-            ]
-            body = ".<br><br>".join(paragraphs)
-            checkbox.setToolTip(f"<qt><b>{title}</b><br><br>{body}</qt>")
+            # Paragraph breaks come from the translation itself, never from sentence guessing.
+            body = escape(self.translator.tr(key)).replace("\n", "<br>")
+            checkbox.setToolTip(f"<qt><b>{escape(checkbox.text())}</b><br><br>{body}</qt>")
         self.post_rephrase_auto_select_all_checkbox.setText(self.translator.tr("post_rephrase_auto_select_all_checkbox"))
         self.post_rephrase_auto_select_all_checkbox.setToolTip(
             self.translator.tr("post_rephrase_auto_select_all_tooltip")
@@ -1265,13 +1314,13 @@ class SettingsMixin:
         # handler(s) to WARNING there — full detail still goes to the rotating WhisperTyper.log,
         # and crash tracebacks are written directly by the excepthook regardless.
         if os.environ.get("WHISPERTYPER_WINDOWED") == "1":
-            for handler in log_handlers():
+            for handler in log_queue.sinks():
                 if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
                     handler.setLevel(logging.WARNING)
         # Remove existing file handler if present
         if getattr(self, '_file_log_handler', None):
             try:
-                remove_log_handler(self._file_log_handler)
+                log_queue.remove_sink(self._file_log_handler)
             except Exception:
                 pass
             self._file_log_handler = None
@@ -1294,7 +1343,7 @@ class SettingsMixin:
                 fh.suffix = "%Y-%m-%d"
                 fh.setLevel(logging.DEBUG)  # always capture full detail in file
                 fh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
-                add_log_handler(fh)
+                log_queue.add_sink(fh)
                 self._file_log_handler = fh
                 logging.info(
                     f"File logging enabled (daily rotation, keeping {max(0, retention_days)} days): {LOG_FILE_PATH}"

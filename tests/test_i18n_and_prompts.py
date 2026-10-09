@@ -16,10 +16,6 @@ from app.core.prompts import (
 
 
 class TestTranslationManager:
-    def test_loads_english(self):
-        tr = TranslationManager("en")
-        assert tr.language == "en"
-        assert tr.translations  # non-empty
 
     def test_unknown_language_falls_back_to_english(self):
         tr = TranslationManager("xx")

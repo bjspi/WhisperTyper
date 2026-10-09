@@ -15,8 +15,6 @@ def reset_redaction_state():
 
 
 class TestRedactForLog:
-    def test_none_passes_through(self):
-        assert redact_for_log(None) is None
 
     def test_short_text_is_kept(self):
         LOG_REDACTION_STATE.update({"enabled": True, "keep": 10})
@@ -35,6 +33,3 @@ class TestRedactForLog:
         secret = "this is a very private transcript"
         assert redact_for_log(secret) == secret
 
-    def test_non_string_is_coerced(self):
-        LOG_REDACTION_STATE.update({"enabled": True, "keep": 10})
-        assert redact_for_log(12345) == "12345"

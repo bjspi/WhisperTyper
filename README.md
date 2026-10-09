@@ -153,6 +153,8 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
     ```
     > **Note for macOS users**: See the full [macOS installation instructions](docs/INSTALL_MACOS.md).
 
+    > **Optional — AAC recordings**: `requirements.txt` includes [PyAV](https://pyav.basswood-io.com/) for the compact AAC (M4A) recording format. It is optional: skip it (or `pip uninstall av`) and WhisperTyper records WAV only and hides the format setting. A PyInstaller build bundles AAC support only if PyAV is installed in the build environment (~70 MB).
+
     > **Optional — transcribe video files**: Install [FFmpeg](https://ffmpeg.org/download.html) to enable picking video files (MP4, MOV, MKV, …) for transcription. If it's on your `PATH` it is detected automatically; otherwise set its path on the Transcription settings page. On Windows: `winget install ffmpeg` (or `choco install ffmpeg`); on macOS: `brew install ffmpeg`; on Linux: `sudo apt install ffmpeg`.
 
 3.  Run the application:

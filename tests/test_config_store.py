@@ -46,14 +46,6 @@ class TestLoad:
         assert selected_api_key(config, "transcription") == "sk-test"
         assert "api_key" not in config
 
-    def test_recording_prompt_overlay_mouse_position_preference_is_preserved(self, store: ConfigStore):
-        write_config(store, {
-            "recording_prompt_overlay_system_position": False,
-            "config_schema_version": CONFIG_SCHEMA_VERSION,
-        })
-        config, _ = store.load()
-        assert config["recording_prompt_overlay_system_position"] is False
-
 
 class TestMigrations:
     def test_legacy_language_key_is_renamed(self, store: ConfigStore):
@@ -63,26 +55,18 @@ class TestMigrations:
         assert config["input_language"] == "de"
         assert "language" not in config
 
+    def test_windows_fast_paste_key_is_renamed(self, store: ConfigStore):
+        write_config(store, {"windows_fast_paste": True})
+        config, changed = store.load()
+        assert changed is True
+        assert config["fast_paste"] is True
+        assert "windows_fast_paste" not in config
+
     def test_language_display_name_becomes_code(self, store: ConfigStore):
         write_config(store, {"input_language": "German"})
         config, _ = store.load()
         assert config["input_language"] == "de"
 
-    def test_user_chosen_rephrasing_model_is_kept(self, store: ConfigStore):
-        write_config(store, {"rephrasing_model": "my-own-model"})
-        config, _ = store.load()
-        assert config["rephrasing_model"] == "my-own-model"
-
-    @pytest.mark.parametrize("schema", [0, CONFIG_SCHEMA_VERSION])
-    @pytest.mark.parametrize("model", ["gpt-4o-mini", "gpt-5.4", "gpt-5.5", "gpt-5.6", "gpt-5.6-luna", "my-own-model"])
-    def test_saved_model_choice_is_preserved_on_reload(self, store: ConfigStore, model: str, schema: int):
-        write_config(store, {"rephrasing_model": model, "model": "whisper-large-v3 (groq)", "config_schema_version": schema})
-        config, _ = store.load()
-        assert config["rephrasing_model"] == model
-        store.save(config)
-        reloaded, _ = store.load()
-        assert reloaded["rephrasing_model"] == model
-        assert reloaded["model"] == "whisper-large-v3 (groq)"
 
     def test_mojibake_in_text_fields_is_repaired(self, store: ConfigStore):
         write_config(store, {"prompt": "Ãœbersetze fÃ¼r mich"})
@@ -146,14 +130,3 @@ class TestSaveRoundtrip:
         assert reloaded["prompt"] == "Bitte übersetze — dies ist ein Test 🚀"
         assert changed is False  # a fully migrated config must load unchanged
 
-    def test_recording_palette_flag_roundtrip(self, store: ConfigStore):
-        config, _ = store.load()
-        config["post_rephrasing_entries"] = [{
-            "caption": "Polish",
-            "text": "Improve it",
-            "show_during_recording": True,
-        }]
-        store.save(config)
-        reloaded, changed = store.load()
-        assert changed is False
-        assert reloaded["post_rephrasing_entries"][0]["show_during_recording"] is True

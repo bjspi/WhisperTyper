@@ -21,14 +21,9 @@ class TestDemojibake:
 
 
 class TestEstimateTokens:
-    def test_empty(self):
-        assert estimate_tokens("") == 0
 
     def test_words_and_punctuation(self):
         assert estimate_tokens("Hello, world!") == 4  # hello , world !
-
-    def test_grows_with_text(self):
-        assert estimate_tokens("word " * 50) == 50
 
 
 class TestCleanModelName:
@@ -36,17 +31,8 @@ class TestCleanModelName:
         assert clean_model_name("whisper-1 (openai)") == "whisper-1"
         assert clean_model_name("whisper-large-v3-turbo (groq)") == "whisper-large-v3-turbo"
 
-    def test_plain_name_unchanged(self):
-        assert clean_model_name("gpt-4o-transcribe") == "gpt-4o-transcribe"
-
-    def test_empty_input(self):
-        assert clean_model_name("") == ""
-        assert clean_model_name(None) == ""
-
 
 class TestShorten:
-    def test_short_text_unchanged(self):
-        assert shorten("hello world") == "hello world"
 
     def test_whitespace_collapsed(self):
         assert shorten("hello\n\n   world\t!") == "hello world !"

@@ -1,4 +1,4 @@
-"""Recording format uploads preserve originals and never invoke FFmpeg."""
+"""Recording format uploads preserve originals and use FFmpeg only above the upload limit."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -40,8 +40,9 @@ def test_recording_upload_uses_selected_format_and_cleans_temp(monkeypatch, tmp_
         return Mock(status_code=200, json=lambda: {"text": "result"})
 
     monkeypatch.setattr(service, "encode_wav_to_aac", encode)
+    monkeypatch.setattr(service, "available_aac_bitrates", lambda: (64,))
     monkeypatch.setattr(service, "request", request)
-    prepare = Mock(side_effect=AssertionError("Recordings must not invoke FFmpeg"))
+    prepare = Mock(side_effect=AssertionError("Recordings within the limit must not invoke FFmpeg"))
     monkeypatch.setattr(service.ffmpeg, "prepare_upload", prepare)
     finished, errors = [], []
     worker.finished.connect(finished.append)
@@ -66,13 +67,16 @@ def test_recording_failures_retain_wav_and_clean_partial_aac(monkeypatch, tmp_pa
         prepared.append(destination)
         Path(destination).write_bytes(b"partial-aac")
         if failure == "encoder":
-            raise OSError("Simulated native encoder failure")
+            raise OSError("Simulated AAC encoder failure")
 
     monkeypatch.setattr(service, "encode_wav_to_aac", encode)
+    monkeypatch.setattr(service, "available_aac_bitrates", lambda: (64,))
     request = Mock(return_value=Mock(status_code=500, text="Simulated HTTP failure"))
     monkeypatch.setattr(service, "request", request)
     prepare = Mock(side_effect=AssertionError("No FFmpeg"))
     monkeypatch.setattr(service.ffmpeg, "prepare_upload", prepare)
+    # An oversized recording without an installed FFmpeg is rejected with a translated hint.
+    monkeypatch.setattr(service.ffmpeg, "resolve_ffmpeg", lambda _setting: None)
     worker = service.TranscriptionWorker("test-key", "https://example.invalid/transcribe", str(source), "", "whisper", "en", 0,
                                          recording_format="aac", max_upload_bytes=1 if failure == "size" else 1024 * 1024)
     errors = []
@@ -84,3 +88,78 @@ def test_recording_failures_retain_wav_and_clean_partial_aac(monkeypatch, tmp_pa
     assert all(not Path(path).exists() for path in prepared)
     assert request.called == (failure == "http")
     assert not prepare.called
+
+
+@pytest.mark.parametrize("recording_format", ["wav", "aac"])
+def test_oversized_recording_falls_back_to_ffmpeg_from_retained_wav(monkeypatch, tmp_path, recording_format):
+    source = tmp_path / "recording.wav"
+    dsp.write_wav(str(source), b"\x01\x00" * 16000, 16000)
+    original = source.read_bytes()
+    encoded = []
+
+    def encode(_source, destination, _bitrate):
+        Path(destination).write_bytes(b"too-large-aac")
+        encoded.append(destination)
+
+    compressed = tmp_path / "compressed.mp3"
+
+    def prepare(exe, src_path, *, transcode_source, max_bytes, min_bitrate_kbps):
+        assert (exe, src_path, transcode_source) == ("ffmpeg-bin", str(source), False)
+        assert all(not Path(path).exists() for path in encoded)  # The AAC is replaced, not transcoded.
+        compressed.write_bytes(b"x")
+        return str(compressed), str(compressed)
+
+    def request(_method, _url, **kwargs):
+        filename, handle, _content_type = kwargs["files"]["file"]
+        assert filename == "compressed.mp3" and handle.read() == b"x"
+        return Mock(status_code=200, json=lambda: {"text": "result"})
+
+    monkeypatch.setattr(service, "encode_wav_to_aac", encode)
+    monkeypatch.setattr(service, "available_aac_bitrates", lambda: (64,))
+    monkeypatch.setattr(service.ffmpeg, "resolve_ffmpeg", lambda setting: "ffmpeg-bin" if setting == "configured" else None)
+    monkeypatch.setattr(service.ffmpeg, "prepare_upload", prepare)
+    monkeypatch.setattr(service, "request", request)
+    worker = service.TranscriptionWorker("test-key", "https://example.invalid/transcribe", str(source), "", "whisper", "en", 0,
+                                         recording_format=recording_format, max_upload_bytes=5, ffmpeg_setting="configured")
+    finished, compressing = [], []
+    worker.finished.connect(finished.append)
+    worker.compressing.connect(compressing.append)
+    worker.run()
+    assert finished == ["result"]
+    assert compressing == ["recording.wav"]
+    assert "audio_compress_end" in worker.timing._events
+    assert source.read_bytes() == original
+    assert not compressed.exists()
+
+
+def test_worker_errors_are_translated(monkeypatch, tmp_path):
+    source = tmp_path / "recording.wav"
+    dsp.write_wav(str(source), b"\x01\x00" * 16000, 16000)
+    monkeypatch.setattr(service, "request", Mock(return_value=Mock(status_code=401, text="denied")))
+    worker = service.TranscriptionWorker("test-key", "https://example.invalid/transcribe", str(source), "", "whisper", "en", 0,
+                                         recording_format="wav", tr=lambda key, **kwargs: f"<{key}:{sorted(kwargs.items())}>")
+    errors = []
+    worker.error.connect(lambda *args: errors.append(args))
+    worker.run()
+    assert errors == [("<transcription_api_error:[('details', 'denied'), ('status', 401)]>", str(source))]
+
+
+def test_aac_choice_without_pyav_uploads_wav_instead_of_failing(monkeypatch, tmp_path):
+    source = tmp_path / "recording.wav"
+    dsp.write_wav(str(source), b"\x01\x00" * 16000, 16000)
+    original = source.read_bytes()
+
+    def request(_method, _url, **kwargs):
+        filename, handle, _content_type = kwargs["files"]["file"]
+        assert filename == "recording.wav" and handle.read() == original
+        return Mock(status_code=200, json=lambda: {"text": "result"})
+
+    monkeypatch.setattr(service, "available_aac_bitrates", lambda: ())
+    monkeypatch.setattr(service, "encode_wav_to_aac", Mock(side_effect=AssertionError("PyAV is not installed")))
+    monkeypatch.setattr(service, "request", request)
+    worker = service.TranscriptionWorker("test-key", "https://example.invalid/transcribe", str(source), "", "whisper", "en", 0,
+                                         recording_format="aac")
+    finished = []
+    worker.finished.connect(finished.append)
+    worker.run()
+    assert finished == ["result"]

@@ -35,6 +35,12 @@ class RecordingStore:
         stamp = (when or datetime.now()).strftime("%Y%m%d_%H%M%S")
         return os.path.join(self._dir, f"{self.PREFIX}{stamp}{self.SUFFIX}")
 
+    def owns(self, path: str) -> bool:
+        """True if ``path`` names a recording of this store; a pure path check without a directory scan."""
+        directory, name = os.path.split(os.path.abspath(path))
+        return (os.path.normcase(directory) == os.path.normcase(os.path.abspath(self._dir))
+                and name.startswith(self.PREFIX) and name.endswith(self.SUFFIX))
+
     def list(self) -> List[str]:
         """Return all recording paths, newest (by mtime) first."""
         try:

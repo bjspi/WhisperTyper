@@ -25,11 +25,12 @@ def create_recording(store: RecordingStore, when: datetime, mtime: float) -> str
 
 
 class TestRecordingStore:
-    def test_new_path_uses_prefix_suffix_and_directory(self, store: RecordingStore):
-        path = store.new_path(datetime(2026, 7, 11, 12, 30, 45))
-        name = os.path.basename(path)
-        assert name == "whispertyper_recording_20260711_123045.wav"
-        assert os.path.dirname(path) == store.directory
+
+    def test_owns_recognizes_own_recordings_without_listing(self, store: RecordingStore, tmp_path: Path):
+        assert store.owns(store.new_path(datetime(2026, 1, 2, 3, 4, 5)))
+        assert not store.owns(str(tmp_path / "whispertyper_recording_x.mp3"))
+        assert not store.owns(str(tmp_path / "other.wav"))
+        assert not store.owns(str(tmp_path / "sub" / "whispertyper_recording_x.wav"))
 
     def test_empty_directory(self, store: RecordingStore):
         assert store.list() == []

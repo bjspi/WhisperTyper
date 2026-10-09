@@ -351,7 +351,7 @@ def test_fast_paste_retains_clipboard_restore_without_blocking_waits(harness, mo
     original = QMimeData()
     original.setImageData(_make_test_image())
     clipboard.setMimeData(original)
-    mixin.config.update(windows_fast_paste=enabled, windows_sendinput_text=fallback)
+    mixin.config.update(fast_paste=enabled, windows_sendinput_text=fallback)
     monkeypatch.setattr(clipboard_module, "is_WINDOWS", windows)
     monkeypatch.setattr(clipboard_module, "is_MACOS", mac)
     monkeypatch.setattr(clipboard_module, "send_unicode_text", Mock(return_value=(0, 8)))
@@ -371,33 +371,3 @@ def test_fast_paste_retains_clipboard_restore_without_blocking_waits(harness, mo
     assert clipboard.mimeData().imageData().pixelColor(1, 1) == QColor(17, 91, 203, 177)
 
 
-@pytest.mark.parametrize("fast,char", [(True, "v"), (False, "v"), (True, "c")])
-def test_fast_paste_skips_only_the_alternative_library_paste_pause(harness, monkeypatch, fast, char):
-    mixin, _clipboard = harness
-    mixin.config.update(windows_fast_paste=fast, alt_clipboard_lib=True)
-    monkeypatch.setattr(clipboard_module, "is_WINDOWS", True)
-    hotkey = Mock()
-    monkeypatch.setattr(clipboard_module.pyautogui, "hotkey", hotkey)
-    assert ClipboardMixin._simulate_key_combination(mixin, char)
-    if fast and char == "v":
-        hotkey.assert_called_once_with("ctrl", char, _pause=False)
-    else:
-        hotkey.assert_called_once_with("ctrl", char)
-
-
-@pytest.mark.parametrize("osascript_fails", [False, True])
-def test_mac_fast_paste_keeps_osascript_and_removes_optional_fallback_pause(harness, monkeypatch, osascript_fails):
-    mixin, _clipboard = harness
-    mixin.config.update(windows_fast_paste=True, alt_clipboard_lib=True)
-    monkeypatch.setattr(clipboard_module, "is_WINDOWS", False)
-    monkeypatch.setattr(clipboard_module, "is_MACOS", True)
-    script = Mock(side_effect=OSError("synthetic failure") if osascript_fails else None)
-    hotkey = Mock()
-    monkeypatch.setattr(clipboard_module.subprocess, "run", script)
-    monkeypatch.setattr(clipboard_module.pyautogui, "hotkey", hotkey)
-    assert ClipboardMixin._simulate_key_combination(mixin, "v")
-    assert script.call_args.args[0] == ["osascript", "-e", 'tell application "System Events" to keystroke "v" using command down']
-    if osascript_fails:
-        hotkey.assert_called_once_with("command", "v", _pause=False)
-    else:
-        hotkey.assert_not_called()

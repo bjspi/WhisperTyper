@@ -142,11 +142,12 @@ def main() -> int:
     configure_base_logging()
 
     from app.application import WhisperTyperApp
+    from app.core import log_queue
     from app.core.api_keys import selected_api_key
     from app.core.constants import CONFIG_SCHEMA_VERSION
     from app.core.netutil import generate_test_wav_bytes
     from app.core.replacements import Replacements
-    from app.core.timing import OperationTiming, add_log_handler, flush_timing_logs
+    from app.core.timing import OperationTiming
     from app.ui.floating_buttons import RecordingPromptOverlay
     from app.ui.tooltip import MouseFollowerTooltip
 
@@ -176,7 +177,7 @@ def main() -> int:
             elif message.startswith("http_transport"):
                 transport_logs.append(message)
 
-    add_log_handler(LatencyCollector())
+    log_queue.add_sink(LatencyCollector())
 
     def check(name: str, cond: bool, detail: str = "") -> None:
         nonlocal failed
@@ -331,12 +332,12 @@ def main() -> int:
         if len(overlay_buttons) >= 2:
             with patch.dict(wt.config, {"rephrasing_api_url": "https://api.openai.com/v1/chat/completions"}), \
                     patch.object(wt._http_warmup, "schedule") as warmup:
-                wt._http_warm_until = 0
+                wt._http_warmup._warm_until = 0
                 overlay_buttons[1].click()
                 check("HTTP: selecting an overlay prompt immediately prioritizes OpenAI rephrasing warmup",
                       warmup.call_args.args == (("https://api.openai.com/v1/chat/completions", wt.config["api_endpoint"]),
                                                wt.config["proxy_url"], wt.config["use_local_px_proxy"])
-                      and wt._http_warm_until > time.monotonic() + 290)
+                      and wt._http_warmup.active)
                 overlay_buttons[0].click()
                 check("HTTP: Standard selection leaves the prompt empty without another warmup",
                       wt.current_recording_prompt is None and warmup.call_count == 1)
@@ -420,7 +421,7 @@ def main() -> int:
                 wt.fast_paste_checkbox.setChecked(True)
                 with patch.object(wt, "_collect_validation_warnings", return_value=[]):
                     wt.save_settings()
-                check("fast paste: macOS choice persists", wt.config["windows_fast_paste"])
+                check("fast paste: macOS choice persists", wt.config["fast_paste"])
                 wt.fast_paste_checkbox.setChecked(False)
                 with patch.object(wt, "_collect_validation_warnings", return_value=[]):
                     wt.save_settings()
@@ -436,7 +437,7 @@ def main() -> int:
             persisted = json.load(saved)
         check("SendInput: both choices persist on save", persisted["windows_sendinput_text"]
               and not persisted["windows_sendinput_fallback"])
-        check("fast paste: separate setting persists", persisted["windows_fast_paste"])
+        check("fast paste: separate setting persists", persisted["fast_paste"])
         operation = OperationTiming("sendinput_probe")
         operation.mark("stop")
         with (patch("app.mixins.clipboard_mixin.send_unicode_text", return_value=(8, 8)) as send,
@@ -536,7 +537,7 @@ def main() -> int:
         check("resize: short transcription page scrolls", wt.transcription_scroll_area.verticalScrollBar().maximum() > 0)
         wt.tabs.setCurrentWidget(wt.rephrasing_tab)
         qapp.processEvents()
-        from app.core.constants import REPHRASING_MODEL_OPTIONS
+        from app.core.models import REPHRASING_MODEL_OPTIONS
         for width in (680, 760):
             wt.resize(width, 600)
             qapp.processEvents()
@@ -728,7 +729,7 @@ def main() -> int:
 
     def probe_provider_models() -> None:
         """Check provider catalogs, custom/persisted models and real worker request parameters."""
-        from app.core.constants import REPHRASING_MODEL_OPTIONS, TRANSCRIPTION_MODEL_OPTIONS
+        from app.core.models import REPHRASING_MODEL_OPTIONS, TRANSCRIPTION_MODEL_OPTIONS
         from app.services.transcription_worker import TranscriptionWorker
 
         wt.transcription_provider_selector.setCurrentIndex(wt.transcription_provider_selector.findData("groq"))
@@ -939,7 +940,8 @@ def main() -> int:
              lambda: (check("stop hotkey: transcription finished", False, "timeout"), step2_transcribe()))
 
     def step2_native_aac() -> None:
-        """Encode the retained recording with the real native encoder and upload to the fake API."""
+        """Encode the retained recording with the real PyAV AAC encoder and upload to the fake API."""
+        check("recording format: deferred AAC probe finished after startup", wt._aac_bitrates_probed)
         check("recording format: WAV is the default and hides bitrate", wt.recording_format_selector.currentData() == "wav"
               and not wt.recording_bitrate_selector.isEnabled())
         index = wt.recording_format_selector.findData("aac")
@@ -963,7 +965,7 @@ def main() -> int:
 
         def done() -> None:
             body = FakeAPI.last_transcription_body
-            check("recording format: real native AAC/M4A reaches HTTP upload", b".m4a" in body
+            check("recording format: real AAC/M4A reaches HTTP upload", b".m4a" in body
                   and b"audio/mp4" in body and b"ftyp" in body and b"mdat" in body)
             with open(path, "rb") as recording:
                 check("recording format: original WAV remains playable", recording.read() == original)
@@ -1113,7 +1115,7 @@ def main() -> int:
 
     rc = qapp.exec()
 
-    check("timings: background writer drained", flush_timing_logs(3))
+    check("timings: background writer drained", log_queue.flush(3))
     check("replacements: asynchronous logs include matches and disabled state without transcript text",
           any("matches=2" in line and "matched_rules=[1]" in line for line in replacement_logs)
           and any("enabled=False" in line and "matches=0" in line for line in replacement_logs)

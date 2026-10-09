@@ -1,173 +1,58 @@
-"""Per-operation, monotonic latency measurements without recording user content."""
+"""Per-operation, monotonic latency measurements without recording user content.
+
+Milestones are plain log records on the ``whispertyper.timing`` logger. With the queued
+logging from :mod:`app.core.log_queue` they cost the producer one enqueue; durations are
+computed lazily when the listener formats the record.
+"""
 from __future__ import annotations
 
-import atexit
 import logging
-import queue
-import threading
 import time
 import uuid
-from typing import Any, Optional
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from typing import Any, Callable, Optional
 
-# SimpleQueue.put never waits for a consumer; all formatting and handler locks stay off the pipeline.
-_RECORDS: queue.SimpleQueue[tuple[str, tuple[Any, ...]]] = queue.SimpleQueue()
-_START_LOCK = threading.Lock()
-_WRITER: Optional[threading.Thread] = None
-_SINKS: tuple[logging.Handler, ...] = ()
+_LOG = logging.getLogger("whispertyper.timing")
 
-
-class _QueuedLogHandler(logging.Handler):
-    """Enqueue without a handler lock; the writer alone owns file/console handlers."""
-
-    def __init__(self) -> None:
-        """Disable the base handler's lock because SimpleQueue already owns synchronization."""
-        super().__init__()
-        self.lock = None
-
-    def handle(self, record: logging.LogRecord) -> bool:
-        """Apply filters without the base handler's lock, including on Python 3.13+."""
-        result = self.filter(record)
-        if isinstance(result, logging.LogRecord):
-            record = result
-        if result:
-            self.emit(record)
-        return bool(result)
-
-    def emit(self, record: logging.LogRecord) -> None:
-        """Dispatch on the writer, otherwise enqueue without formatting the record."""
-        if threading.current_thread() is _WRITER:
-            _write_log_record(record)
-        else:
-            _RECORDS.put(("log", (record,)))
+# Transport milestones (app.services.http_transport) and the durations derived from them.
+_HTTP_DURATIONS = {
+    "prepare_ms": ("start", "adapter_start"),
+    "tcp_ms": ("tcp_start", "tcp_end"),  # Includes DNS: httpcore resolves inside connect_tcp.
+    "proxy_tls_ms": ("proxy_tls_start", "proxy_tls_end"),
+    "proxy_tunnel_ms": ("proxy_tunnel_start", "proxy_tunnel_end"),
+    "tls_setup_ms": ("tls_start", "tls_end"),
+    "connect_ms": ("connect_start", "connect_end"),
+    "upload_ms": ("upload_start", "request_sent"),
+    "ttfb_ms": ("headers_sent", "first_byte"),
+    "request_to_first_byte_ms": ("start", "first_byte"),
+    "after_upload_wait_ms": ("request_sent", "first_byte"),
+    "response_body_ms": ("headers_received", "body_end"),
+    "total_ms": ("start", "end"),
+}
 
 
-def _write_log_record(record: logging.LogRecord) -> None:
-    """Keep a failed sink from dropping records for the remaining sinks."""
-    for handler in _SINKS:
-        try:
-            if record.levelno >= handler.level:
-                handler.handle(record)
-        except Exception:
-            continue
+class _Durations:
+    """Render ``label=ms`` pairs only when the record is formatted, i.e. on the log listener."""
 
+    def __init__(self, events: Mapping[str, int], table: Mapping[str, tuple[str, str]]) -> None:
+        """Keep references; the events are complete once the operation/exchange has finished."""
+        self._events = events
+        self._table = table
 
-def queue_log_handlers() -> None:
-    """Move existing root handlers behind the writer during application bootstrap."""
-    global _SINKS
-    start_timing_logging()
-    root = logging.getLogger()
-    if any(isinstance(handler, _QueuedLogHandler) for handler in root.handlers):
-        return
-    _SINKS = tuple(root.handlers)
-    root.handlers = [_QueuedLogHandler()]
-
-
-def log_handlers() -> tuple[logging.Handler, ...]:
-    """Return the actual sinks so existing logging settings can adjust their levels."""
-    root = logging.getLogger()
-    return _SINKS if any(isinstance(handler, _QueuedLogHandler) for handler in root.handlers) else tuple(root.handlers)
-
-
-def add_log_handler(handler: logging.Handler) -> None:
-    """Add a file sink on the writer, or directly if bootstrap did not enable queuing."""
-    root = logging.getLogger()
-    if any(isinstance(item, _QueuedLogHandler) for item in root.handlers):
-        _RECORDS.put(("add_handler", (handler,)))
-    else:
-        root.addHandler(handler)
-
-
-def remove_log_handler(handler: logging.Handler) -> None:
-    """Remove and close a file sink on the writer so reconfiguration cannot block capture."""
-    root = logging.getLogger()
-    if any(isinstance(item, _QueuedLogHandler) for item in root.handlers):
-        _RECORDS.put(("remove_handler", (handler,)))
-    else:
-        root.removeHandler(handler)
-        handler.close()
-
-
-def _write_timings() -> None:
-    """Drain metadata on one background thread, using the existing logging handlers."""
-    global _SINKS
-    while True:
-        kind, values = _RECORDS.get()
-        if kind == "flush":
-            values[0].set()
-            continue
-        try:
-            if kind == "add_handler":
-                _SINKS = (*_SINKS, values[0])
-            elif kind == "remove_handler":
-                _SINKS = tuple(handler for handler in _SINKS if handler is not values[0])
-                values[0].close()
-            elif kind == "log":
-                _write_log_record(values[0])
-            elif kind == "event":
-                logging.info(
-                    "latency_event op=%s source=%s phase=%s at_ms=%.3f elapsed_ms=%.3f", *values,
-                )
-            elif kind == "http":
-                metadata, events = values
-                pairs = {
-                    "prepare_ms": ("start", "adapter_start"),
-                    "dns_ms": ("dns_start", "dns_end"),
-                    "tcp_ms": ("tcp_start", "tcp_end"),
-                    "proxy_tls_ms": ("proxy_tls_start", "proxy_tls_end"),
-                    "proxy_tunnel_ms": ("proxy_tunnel_start", "proxy_tunnel_end"),
-                    "tls_setup_ms": ("tls_start", "tls_end"),
-                    "connect_ms": ("connect_start", "connect_end"),
-                    "upload_ms": ("upload_start", "request_sent"),
-                    "ttfb_ms": ("headers_sent", "first_byte"),
-                    "request_to_first_byte_ms": ("start", "first_byte"),
-                    "after_upload_wait_ms": ("request_sent", "first_byte"),
-                    "response_headers_ms": ("first_byte", "headers_received"),
-                    "response_body_ms": ("headers_received", "body_end"),
-                    "total_ms": ("start", "end"),
-                }
-                details = " ".join(f"{key}={value}" for key, value in metadata.items())
-                durations = " ".join(
-                    f"{label}={(events[end] - events[start]) / 1_000_000:.3f}"
-                    for label, (start, end) in pairs.items() if start in events and end in events
-                )
-                logging.info("http_transport %s %s", details, durations)
-            else:
-                operation_id, source, outcome, at_ms, events = values
-                durations = " ".join(
-                    f"{label}={(events[end] - events[start]) / 1_000_000:.3f}"
-                    for label, (start, end) in OperationTiming._DURATIONS.items()
-                    if start in events and end in events
-                )
-                logging.info(
-                    "latency_summary op=%s source=%s outcome=%s at_ms=%.3f %s",
-                    operation_id, source, outcome, at_ms, durations,
-                )
-        except Exception:
-            # A broken log sink must not kill recording or stop this queue from being drained.
-            continue
-
-
-def start_timing_logging() -> None:
-    """Start once during bootstrap, before any hotkey or recording can fire."""
-    global _WRITER
-    with _START_LOCK:
-        if _WRITER is None:
-            _WRITER = threading.Thread(target=_write_timings, name="TimingLogWriter", daemon=True)
-            _WRITER.start()
-            atexit.register(flush_timing_logs)
-
-
-def flush_timing_logs(timeout: float = 1.0) -> bool:
-    """Wait for queued records only at shutdown or in tests, never in the request path."""
-    start_timing_logging()
-    completed = threading.Event()
-    _RECORDS.put(("flush", (completed,)))
-    return completed.wait(timeout)
+    def __str__(self) -> str:
+        """Only measured spans appear; absent milestones never become invented durations."""
+        events = self._events
+        return " ".join(
+            f"{label}={(events[end] - events[start]) / 1_000_000:.3f}"
+            for label, (start, end) in self._table.items() if start in events and end in events
+        )
 
 
 def queue_http_timing(metadata: dict[str, Any], events: dict[str, int]) -> None:
-    """Enqueue transport metadata; formatting and sink locks belong to the writer."""
-    _RECORDS.put(("http", (metadata, events)))
+    """Log one finished HTTP exchange: public routing metadata plus its phase durations."""
+    _LOG.info("http_transport %s %s", " ".join(f"{key}={value}" for key, value in metadata.items()),
+              _Durations(events, _HTTP_DURATIONS))
 
 
 class OperationTiming:
@@ -191,6 +76,7 @@ class OperationTiming:
         "audio_prepare_ms": ("audio_prepare_start", "audio_prepare_end"),
         "file_write_ms": ("file_write_start", "file_write_end"),
         "audio_encode_ms": ("audio_encode_start", "audio_encode_end"),
+        "audio_compress_ms": ("audio_compress_start", "audio_compress_end"),
         "recording_cleanup_ms": ("file_write_end", "transcription_queued"),
         "worker_setup_ms": ("transcription_queued", "transcription_worker_queued"),
         "worker_queue_ms": ("transcription_worker_queued", "transcription_worker_start"),
@@ -230,10 +116,27 @@ class OperationTiming:
             return
         self._events[phase] = now
         elapsed_ns = now - self._started_ns
-        _RECORDS.put(("event", (
-            self.operation_id, self.source, phase,
-            (self._epoch_ns + elapsed_ns) / 1_000_000, elapsed_ns / 1_000_000,
-        )))
+        _LOG.info("latency_event op=%s source=%s phase=%s at_ms=%.3f elapsed_ms=%.3f",
+                  self.operation_id, self.source, phase,
+                  (self._epoch_ns + elapsed_ns) / 1_000_000, elapsed_ns / 1_000_000)
+
+    @contextmanager
+    def span(self, name: str) -> Iterator[None]:
+        """Mark ``<name>_start``, and ``<name>_end`` only if the block completes without raising."""
+        self.mark(f"{name}_start")
+        yield
+        self.mark(f"{name}_end")
+
+    def measure_output(self, deliver: Callable[[], bool], outcome: str = "ok") -> None:
+        """Time the final delivery and close the operation; a False result or exception is a failure."""
+        self.mark("output_start")
+        try:
+            delivered = deliver()
+        except Exception:
+            self.finish("output_failed")
+            raise
+        self.mark("output_end")
+        self.finish(outcome if delivered else "output_failed")
 
     def finish(self, outcome: str) -> None:
         """Log exactly one summary; absent milestones never become invented durations."""
@@ -242,7 +145,22 @@ class OperationTiming:
         self._finished = True
         now = time.perf_counter_ns()
         self._events["operation_end"] = now
-        _RECORDS.put(("summary", (
-            self.operation_id, self.source, outcome,
-            (self._epoch_ns + now - self._started_ns) / 1_000_000, self._events,
-        )))
+        _LOG.info("latency_summary op=%s source=%s outcome=%s at_ms=%.3f %s",
+                  self.operation_id, self.source, outcome,
+                  (self._epoch_ns + now - self._started_ns) / 1_000_000,
+                  _Durations(self._events, self._DURATIONS))
+
+
+class _NoTiming(OperationTiming):
+    """Null object for callers outside a measured operation: records and logs nothing."""
+
+    def __init__(self) -> None:
+        """Start finished, so the inherited mark/finish return without queuing records."""
+        self.operation_id = "none"
+        self.source = "none"
+        self._events = {}
+        self._finished = True
+
+
+#: Shared default for optional timing parameters; avoids ``if timing:`` guards at every milestone.
+NO_TIMING: OperationTiming = _NoTiming()
