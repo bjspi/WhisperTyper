@@ -53,10 +53,11 @@ def main() -> int:
         QMessageBox.information(None, "WhisperTyper", message)
         return 0
 
-    # Keep the lock alive for the lifetime of the Qt application.
-    app._instance_lock = instance_lock
-    WhisperTyperApp()
-    return app.exec()
+    # The instance lock and the application stay referenced while the event loop runs.
+    application = WhisperTyperApp()
+    exit_code = app.exec()
+    del application, instance_lock
+    return exit_code
 
 
 if __name__ == '__main__':

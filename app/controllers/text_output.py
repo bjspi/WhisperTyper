@@ -1,11 +1,12 @@
-"""ClipboardMixin — text insertion strategy and the selection/clipboard choreography around it."""
+"""Text insertion into the focused application and reading its current selection."""
 from __future__ import annotations
 
 import logging
 import time
-from typing import Optional
+from typing import Any, Callable, Dict, Optional
 
 import copykitten
+from PyQt6.QtCore import QObject, QTimer
 
 from app.core.env import is_MACOS, is_WINDOWS
 from app.core.timing import NO_TIMING, OperationTiming
@@ -14,7 +15,6 @@ from app.services.key_simulation import simulate_shortcut
 from app.services.windows_text_input import send_unicode_text
 from app.ui.durations import (
     BALLOON_LONG_MS,
-    BALLOON_SHORT_MS,
     CLIPBOARD_RESTORE_FAST_MS,
     CLIPBOARD_RESTORE_MS,
     COPY_SETTLE_S,
@@ -24,23 +24,34 @@ from app.ui.durations import (
 )
 
 
-class ClipboardMixin:
+class TextOutput(QObject):
     """Insert text via SendInput or clipboard paste; read the selection via a simulated copy."""
 
-    _pending_clipboard_restore_state: Optional[ClipboardSnapshot]
+    def __init__(self, config: Dict[str, Any], tr: Callable[..., str], notify: Callable[..., None],
+                 warn_permission: Callable[[str], None]) -> None:
+        """``notify`` shows a balloon; ``warn_permission`` explains a missing macOS permission."""
+        super().__init__()
+        self._config = config
+        self._tr = tr
+        self._notify = notify
+        self._warn_permission = warn_permission
+        self._pending_restore: Optional[ClipboardSnapshot] = None
+        self._restore_timer: Any = QTimer(self)
+        self._restore_timer.setSingleShot(True)
+        self._restore_timer.timeout.connect(self.restore_clipboard_now)
 
     def _simulate_key_combination(self, char: str) -> bool:
         """Press Ctrl/Cmd+``char`` with the configured key library; fast paste skips its pause."""
-        return simulate_shortcut(char, alt_lib=bool(self.config.get("alt_clipboard_lib", False)),
+        return simulate_shortcut(char, alt_lib=bool(self._config.get("alt_clipboard_lib", False)),
                                  fast=char == 'v' and self._fast_paste_enabled())
 
     def _capture_clipboard_state(self) -> ClipboardSnapshot:
         """Snapshot the user's clipboard before a temporary copy/paste."""
-        if self._pending_clipboard_restore_state:
+        if self._pending_restore:
             # A paste-triggered restore is still pending: the clipboard holds the app's temporary
             # text, so the pending snapshot is the user's real content.
             logging.debug("Using pending clipboard restore snapshot as the current clipboard baseline.")
-            return self._pending_clipboard_restore_state
+            return self._pending_restore
         return ClipboardSnapshot.capture()
 
     def _schedule_clipboard_restore(self, snapshot: ClipboardSnapshot, delay_ms: int = CLIPBOARD_RESTORE_MS) -> None:
@@ -52,14 +63,20 @@ class ClipboardMixin:
         simulation returns, so restoring synchronously can replace the temporary text
         before the target reads it.
         """
-        self._pending_clipboard_restore_state = snapshot
-        self._clipboard_restore_timer.stop()
-        self._clipboard_restore_timer.start(max(0, delay_ms))
+        self._pending_restore = snapshot
+        self._restore_timer.stop()
+        self._restore_timer.start(max(0, delay_ms))
         logging.debug("Scheduled clipboard restore %sms after paste.", delay_ms)
 
-    def _perform_clipboard_restore(self) -> None:
-        """Restore the delayed clipboard snapshot after the target paste has settled."""
-        snapshot, self._pending_clipboard_restore_state = self._pending_clipboard_restore_state, None
+    @property
+    def restore_pending(self) -> bool:
+        """Whether a delayed clipboard restore is still scheduled."""
+        return self._pending_restore is not None
+
+    def restore_clipboard_now(self) -> None:
+        """Restore the delayed clipboard snapshot (timer expiry, or immediately at quit)."""
+        self._restore_timer.stop()
+        snapshot, self._pending_restore = self._pending_restore, None
         if not snapshot:
             return
         try:
@@ -80,11 +97,11 @@ class ClipboardMixin:
         Returns:
             str: The selected text, or an empty string if nothing is selected or an error occurs.
         """
-        self._check_and_warn_macos_permissions('accessibility')
+        self._warn_permission('accessibility')
         selected_text = ""
         snapshot: Optional[ClipboardSnapshot] = None
         try:
-            if self.config["restore_clipboard"]:
+            if self._config["restore_clipboard"]:
                 snapshot = self._capture_clipboard_state()
             if select_all_first:
                 logging.debug("Selecting all text in the focused field before copying selection.")
@@ -109,9 +126,9 @@ class ClipboardMixin:
 
     def _fast_paste_enabled(self) -> bool:
         """Skip the fixed paste waits; offered on Windows and macOS only."""
-        return (is_WINDOWS or is_MACOS) and bool(self.config.get("fast_paste", False))
+        return (is_WINDOWS or is_MACOS) and bool(self._config.get("fast_paste", False))
 
-    def insert_transcribed_text(self, text: str, timing: OperationTiming = NO_TIMING) -> bool:
+    def insert(self, text: str, timing: OperationTiming = NO_TIMING) -> bool:
         """
         Inserts text using optional Windows Unicode input or the clipboard paste path.
 
@@ -128,7 +145,7 @@ class ClipboardMixin:
         if not text:
             return True
         timing.mark("text_commit_start")
-        if is_WINDOWS and self.config.get("windows_sendinput_text", False):
+        if is_WINDOWS and self._config.get("windows_sendinput_text", False):
             result = self._insert_via_sendinput(text, timing)
             if result is not None:
                 return result
@@ -152,9 +169,9 @@ class ClipboardMixin:
             timing.mark("text_commit_end")
             return True
         # A partially accepted batch is never retried: the accepted prefix would appear twice.
-        if accepted or not can_fallback or not self.config.get("windows_sendinput_fallback", True):
+        if accepted or not can_fallback or not self._config.get("windows_sendinput_fallback", True):
             timing.mark("text_commit_failed")
-            self.show_tray_balloon(self.translator.tr("windows_sendinput_failed_message"), BALLOON_LONG_MS)
+            self._notify(self._tr("windows_sendinput_failed_message"), BALLOON_LONG_MS)
             return False
         timing.mark("sendinput_fallback")
         logging.info("text_input op=%s mode=clipboard fallback=sendinput_rejected", timing.operation_id)
@@ -163,13 +180,13 @@ class ClipboardMixin:
     def _insert_via_clipboard(self, text: str, timing: OperationTiming) -> bool:
         """Paste through the clipboard, which handles every character reliably."""
         # Ensure the user is prompted for permissions on macOS before trying to paste.
-        self._check_and_warn_macos_permissions('accessibility')
+        self._warn_permission('accessibility')
 
         fast_paste = self._fast_paste_enabled()
         logging.info("text_input op=%s mode=clipboard fast_paste=%s", timing.operation_id, fast_paste)
         snapshot: Optional[ClipboardSnapshot] = None
         try:
-            if self.config["restore_clipboard"]:
+            if self._config["restore_clipboard"]:
                 with timing.span("clipboard_snapshot"):
                     snapshot = self._capture_clipboard_state()
             with timing.span("clipboard_write"):
@@ -200,11 +217,3 @@ class ClipboardMixin:
                         snapshot, CLIPBOARD_RESTORE_FAST_MS if fast_paste else CLIPBOARD_RESTORE_MS)
                 except Exception as e:
                     logging.error(f"Failed to restore clipboard after insertion: {e}")
-
-    def copy_last_transcription_to_clipboard(self) -> None:
-        """Copies the last transcription to the system clipboard."""
-        if not self.last_transcription:
-            self.show_tray_balloon(self.translator.tr("no_transcription_to_copy_message"), BALLOON_SHORT_MS)
-            return
-        copykitten.copy(self.last_transcription)
-        self.show_tray_balloon(self.translator.tr("transcription_copied_message"), BALLOON_SHORT_MS)

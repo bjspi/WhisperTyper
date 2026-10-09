@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushBu
 from app.core.models import prompt_token_limit, transcription_supports_prompt, transcription_supports_temperature
 from app.core.textutil import estimate_tokens
 from app.services.ffmpeg import probe_version, resolve_ffmpeg
+from app.ui.settings.base import SettingsWindowBase
 from app.ui.theme import set_style_state
 
 #: The counter turns to the accent colour once the prompt uses this share of the model's budget.
@@ -15,7 +16,7 @@ _TOKEN_WARNING_SHARE = 0.85
 _FFMPEG_PROBE_DEBOUNCE_MS = 400
 
 
-class TranscriptionPageMixin:
+class TranscriptionPage(SettingsWindowBase):
     """Layout of the transcription page and its live status indicators."""
 
     def _init_transcription_page(self) -> None:
