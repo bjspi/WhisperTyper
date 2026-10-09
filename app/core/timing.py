@@ -178,6 +178,7 @@ class OperationTiming:
         "stop_to_output_ms": ("stop", "output_end"),
         "event_queue_ms": ("stop", "stop_handled"),
         "recording_stop_ms": ("stop_handled", "recording_stopped"),
+        "recording_tail_wait_ms": ("recording_tail_wait_start", "recording_tail_wait_end"),
         "stop_feedback_ms": ("recording_stopped", "audio_prepare_start"),
         "audio_prepare_ms": ("audio_prepare_start", "audio_prepare_end"),
         "file_write_ms": ("file_write_start", "file_write_end"),

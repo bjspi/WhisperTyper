@@ -61,7 +61,7 @@ jobs:
       - run: pytest --ignore=tests/test_clipboard.py
 
   clipboard-test:
-    name: Clipboard tests (Windows, py3.12)
+    name: Clipboard and audio tests (Windows, py3.12)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -70,5 +70,5 @@ jobs:
           python-version: "3.12"
       # ClipboardMixin imports the application's input backends as well as Qt. Install
       # exactly that dependency slice instead of the full audio/application stack.
-      - run: pip install pytest PyQt6 copykitten pynput pyautogui
-      - run: pytest tests/test_clipboard.py
+      - run: pip install pytest PyQt6 copykitten pynput pyautogui pyaudio ftfy
+      - run: pytest tests/test_clipboard.py tests/test_audio_capture.py

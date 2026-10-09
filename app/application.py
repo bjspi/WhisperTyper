@@ -26,6 +26,7 @@ from app.core.api_keys import GroqKeyRotation
 from app.core.env import is_MACOS, is_WINDOWS
 from app.core.i18n import TranslationManager
 from app.core.paths import resource_path
+from app.core.timing import OperationTiming
 from app.hotkeys.windows_listener import WindowsHotkeyListener
 from app.mixins.audio_mixin import RECORDING_BALLOON_TIMEOUT_MS, AudioMixin
 from app.mixins.clipboard_mixin import ClipboardMixin
@@ -110,6 +111,8 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         self.active_hotkey_actions: Set[str] = set()
         self.push_to_talk_active = False
         self.audio_state_lock = threading.Lock()
+        self._background_read_pending = False
+        self._background_stop: Optional[tuple[threading.Event, List[bytes], OperationTiming]] = None
         self.audio_capture_running = False
         self.audio_capture_thread: Optional[threading.Thread] = None
         self.input_stream = None
