@@ -62,13 +62,28 @@ def test_adding_legacy_key_preserves_existing_profiles_and_explicit_selection():
     assert config["api_key_profiles"][-1]["key"] == "gsk-legacy-new"
 
 
-@pytest.mark.parametrize("profiles", [None, {}, [{"id": "secret-value"}]])
-def test_malformed_profiles_are_rejected_without_exposing_their_content(profiles):
+@pytest.mark.parametrize("profiles", [None, {}, [{"id": "secret-value"}], ["secret-value"]])
+def test_malformed_profiles_are_dropped_without_exposing_their_content(profiles, caplog):
     config = deepcopy(DEFAULT_CONFIG)
     config["api_key_profiles"] = profiles
-    with pytest.raises(ValueError) as error:
-        migrate_api_keys(config)
-    assert "secret-value" not in str(error.value)
+    assert migrate_api_keys(config)
+    assert config["api_key_profiles"] == []
+    assert "secret-value" not in caplog.text
+
+
+def test_hand_edited_profiles_are_repaired_instead_of_failing_startup(caplog):
+    config = deepcopy(DEFAULT_CONFIG)
+    config["api_key_profiles"] = [
+        {"id": "a", "name": "Mine", "provider": " Groq ", "key": "gsk-secret-1"},
+        {"id": "a", "name": "", "provider": "unknown", "key": "sk-secret-2"},
+    ]
+    config["api_key"] = 123  # Non-string legacy value is dropped, not fatal.
+    assert migrate_api_keys(config)
+    first, second = config["api_key_profiles"]
+    assert first == {"id": "a", "name": "Mine", "provider": "groq", "key": "gsk-secret-1"}
+    assert second["id"] != "a" and second["provider"] == "custom" and second["name"] == "Custom"
+    assert "api_key" not in config
+    assert "secret" not in caplog.text
 
 
 def rotation_config():

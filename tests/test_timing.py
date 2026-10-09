@@ -8,11 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from app.core import timing
+from app.core import log_queue, timing
 
 
 def test_recording_summary_uses_detection_time_and_monotonic_durations(monkeypatch, caplog):
-    assert timing.flush_timing_logs()
+    assert log_queue.flush()
     clock = iter([12_000_000, 15_000_000])
     monkeypatch.setattr(timing.time, "perf_counter_ns", lambda: next(clock))
     monkeypatch.setattr(timing.time, "time_ns", lambda: 1_700_000_000_000_000_000)
@@ -24,7 +24,7 @@ def test_recording_summary_uses_detection_time_and_monotonic_durations(monkeypat
         operation.mark("output_start", 14_000_000)
         operation.mark("output_end", 15_000_000)
         operation.finish("ok")
-        assert timing.flush_timing_logs()
+        assert log_queue.flush()
     summary = next(line for line in caplog.messages if line.startswith("latency_summary"))
     assert "stop_to_api_ms=3.000" in summary
     assert "stop_to_output_ms=5.000" in summary
@@ -44,7 +44,7 @@ def test_failed_file_has_no_invented_stop_or_output_duration(caplog):
         operation.finish("transcription_failed")
         operation.finish("ok")
         operation.mark("output_end")
-        assert timing.flush_timing_logs()
+        assert log_queue.flush()
     summaries = [line for line in caplog.messages if line.startswith("latency_summary")]
     assert len(summaries) == 1
     assert "outcome=transcription_failed" in summaries[0]
@@ -62,7 +62,7 @@ def test_interleaved_jobs_have_independent_milestones(caplog):
         first.mark("rephrase_response_received")
         second.finish("transcription_failed")
         first.finish("rephrase_failed_fallback")
-        assert timing.flush_timing_logs()
+        assert log_queue.flush()
     assert first.operation_id != second.operation_id
     first_summary = next(line for line in caplog.messages if line.startswith(f"latency_summary op={first.operation_id}"))
     second_summary = next(line for line in caplog.messages if line.startswith(f"latency_summary op={second.operation_id}"))
@@ -71,23 +71,11 @@ def test_interleaved_jobs_have_independent_milestones(caplog):
     assert "rephrase_request_ms=" not in second_summary
 
 
-def test_queue_handler_applies_filters_without_using_base_handler_lock(monkeypatch):
-    handler = timing._QueuedLogHandler()
-    records = []
-    monkeypatch.setattr(handler, "emit", records.append)
-    record = logging.makeLogRecord({"msg": "original"})
-    handler.addFilter(lambda _record: False)
-    assert not handler.handle(record)
-    assert records == []
-    handler.filters.clear()
-    assert handler.lock is None
-    assert handler.handle(record)
-    assert records == [record]
-    if sys.version_info >= (3, 12):
-        replacement = logging.makeLogRecord({"msg": "filtered"})
-        handler.addFilter(lambda _record: replacement)
-        assert handler.handle(record)
-        assert records[-1] is replacement
+def test_queue_handler_defers_formatting_to_the_listener():
+    handler = log_queue._InProcessQueueHandler(log_queue._QUEUE)
+    record = logging.makeLogRecord({"msg": "value=%s", "args": ("lazy",)})
+    assert handler.prepare(record) is record
+    assert record.msg == "value=%s" and record.args == ("lazy",)
 
 
 @pytest.mark.parametrize("stall", ["handler_lock", "slow_emit"])
@@ -97,7 +85,7 @@ def test_blocked_sink_does_not_block_producers_or_handler_reconfiguration(stall)
 import logging
 import sys
 import threading
-from app.core import timing
+from app.core import log_queue, timing
 
 entered = threading.Event()
 release = threading.Event()
@@ -121,8 +109,8 @@ class BrokenSink(logging.Handler):
 sink = Sink()
 logging.getLogger().handlers = [sink]
 logging.getLogger().setLevel(logging.INFO)
-timing.queue_log_handlers()
-timing.queue_log_handlers()  # Repeated bootstrap must not wrap the queue again.
+log_queue.install()
+log_queue.install()  # Repeated bootstrap must not wrap the queue again.
 if sys.argv[1] == "handler_lock":
     sink.acquire()
 logging.info("block sink")
@@ -136,9 +124,9 @@ def produce():
     operation.finish("ok")
     timing.queue_http_timing({"op": operation.operation_id, "stage": "transcription"},
                             {"start": 1, "headers_sent": 2, "first_byte": 3, "end": 4})
-    timing.remove_log_handler(sink)
-    timing.add_log_handler(BrokenSink())
-    timing.add_log_handler(sink)
+    log_queue.remove_sink(sink)
+    log_queue.add_sink(BrokenSink())
+    log_queue.add_sink(sink)
     logging.info("after reconfiguration")
     produced.set()
 
@@ -151,7 +139,7 @@ finally:
     if sys.argv[1] == "handler_lock":
         sink.release()
 producer.join(2)
-assert timing.flush_timing_logs(3)
+assert log_queue.flush(3)
 assert "after reconfiguration" in records  # A broken sink must not kill the writer.
 summaries = [line for line in records if line.startswith("latency_summary")]
 assert len(summaries) == 1

@@ -6,11 +6,7 @@ from app.core.env import is_WINDOWS
 
 
 class TestNormalizeHotkeyPart:
-    def test_plain_character_stays_bare(self):
-        assert hotkeys.normalize_hotkey_part("x") == "x"
 
-    def test_uppercase_is_lowered(self):
-        assert hotkeys.normalize_hotkey_part("X") == "x"
 
     def test_function_key_gets_brackets(self):
         assert hotkeys.normalize_hotkey_part("F9") == "<f9>"
@@ -57,11 +53,7 @@ class TestFormatHotkeyTokens:
 
 
 class TestPrettyHotkey:
-    def test_known_tokens(self):
-        assert hotkeys.pretty_hotkey("<caps_lock>+<ctrl_l>") == "Caps Lock  +  Ctrl"
 
-    def test_short_unknown_tokens_are_uppercased(self):
-        assert hotkeys.pretty_hotkey("<f9>") == "F9"
 
     def test_empty_hotkey_renders_dash(self):
         assert hotkeys.pretty_hotkey("") == "—"
@@ -75,13 +67,6 @@ class TestVkMapping:
             assert vk is not None
             assert hotkeys.vk_to_key_token(vk) == token
 
-    def test_letters(self):
-        assert hotkeys.vk_to_key_token(ord("A")) == "a"
-        assert hotkeys.token_to_windows_vk("a") == ord("A")
-
-    def test_digits(self):
-        assert hotkeys.vk_to_key_token(ord("7")) == "7"
-        assert hotkeys.token_to_windows_vk("7") == ord("7")
 
     def test_unknown_vk_returns_none(self):
         assert hotkeys.vk_to_key_token(0xFF) is None

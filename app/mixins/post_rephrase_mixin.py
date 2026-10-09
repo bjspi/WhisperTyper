@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import QListWidgetItem, QWidget
 from app.core.api_keys import selected_api_key
 from app.core.constants import activate_app, get_active_app_name
 from app.core.env import is_MACOS
-from app.core.timing import OperationTiming
+from app.core.timing import NO_TIMING, OperationTiming
 
 
 class PostRephraseMixin:
@@ -77,7 +77,7 @@ class PostRephraseMixin:
             on_error=lambda message, operation=worker.timing: self.on_rephrasing_error(message, operation),
         )
 
-    def on_rephrasing_finished(self, rephrased_text: str, timing: Optional[OperationTiming] = None) -> None:
+    def on_rephrasing_finished(self, rephrased_text: str, timing: OperationTiming = NO_TIMING) -> None:
         """
         Callback for when rephrasing from the floating window is successful.
 
@@ -85,41 +85,28 @@ class PostRephraseMixin:
             rephrased_text (str): The text returned by the AI.
             timing: The operation's request and output timings.
         """
-        if timing:
-            timing.mark("output_start")
-        inserted = True
-        try:
-            # On macOS, pasting can be unreliable if the app loses focus.
-            # It's safer to copy to clipboard and notify the user.
-            if is_MACOS:
-                if self.macos_active_application:
-                    # Try to reactivate the original app using osascript
-                    activate_app(self.macos_active_application)
-                    # Swap the spinner for a brief "done ✓" balloon, then type the text.
-                    self.show_tray_balloon(self.translator.tr("rephrasing_done_message"), 1600, check=True)
-                    inserted = self.insert_transcribed_text(rephrased_text, timing=timing)
-                else: # Fallback in case the app name could not be determined using osascript beforehand
-                    if timing:
-                        timing.mark("clipboard_write_start")
-                    copykitten.copy(rephrased_text)
-                    if timing:
-                        timing.mark("clipboard_write_end")
-                    self.show_tray_balloon(self.translator.tr("rephrasing_finished_macos_message"), 3500, check=True)
-            else:
-                # Swap the spinner for a brief "done ✓" balloon, then type the text.
-                self.show_tray_balloon(self.translator.tr("rephrasing_done_message"), 1600, check=True)
-                inserted = self.insert_transcribed_text(rephrased_text, timing=timing)
-                if inserted:
-                    logging.info("Successfully dispatched rephrased text for insertion.")
-        except Exception:
-            if timing:
-                timing.finish("output_failed")
-            raise
-        if timing:
-            timing.mark("output_end")
-            timing.finish("ok" if inserted else "output_failed")
+        timing.measure_output(lambda: self._deliver_rephrased_text(rephrased_text, timing))
 
-    def on_rephrasing_error(self, error_message: str, timing: Optional[OperationTiming] = None) -> None:
+    def _deliver_rephrased_text(self, rephrased_text: str, timing: OperationTiming) -> bool:
+        """Insert into the original application, or copy on macOS when it cannot be reactivated."""
+        # On macOS, pasting can be unreliable if the app loses focus.
+        # It's safer to copy to clipboard and notify the user.
+        if is_MACOS and not self.macos_active_application:
+            with timing.span("clipboard_write"):
+                copykitten.copy(rephrased_text)
+            self.show_tray_balloon(self.translator.tr("rephrasing_finished_macos_message"), 3500, check=True)
+            return True
+        if is_MACOS:
+            # Try to reactivate the original app using osascript
+            activate_app(self.macos_active_application)
+        # Swap the spinner for a brief "done ✓" balloon, then type the text.
+        self.show_tray_balloon(self.translator.tr("rephrasing_done_message"), 1600, check=True)
+        inserted = self.insert_transcribed_text(rephrased_text, timing=timing)
+        if inserted:
+            logging.info("Successfully dispatched rephrased text for insertion.")
+        return inserted
+
+    def on_rephrasing_error(self, error_message: str, timing: OperationTiming = NO_TIMING) -> None:
         """
         Callback for when rephrasing from the floating window fails.
 
@@ -127,8 +114,7 @@ class PostRephraseMixin:
             error_message (str): The error message from the worker.
             timing: The failed operation's timings.
         """
-        if timing:
-            timing.finish("rephrase_failed")
+        timing.finish("rephrase_failed")
         logging.error(f"Post-rephrasing from floating window failed: {error_message}")
         if "empty text" in error_message:
             self.show_tray_balloon(self.translator.tr("rephrasing_failed_empty_message"), 3000)

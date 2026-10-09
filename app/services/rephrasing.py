@@ -10,10 +10,11 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-import requests
+import httpx
 
+from app.core.models import rephrasing_supports_temperature
 from app.core.redaction import redact_for_log
-from app.core.timing import OperationTiming
+from app.core.timing import NO_TIMING, OperationTiming
 from app.services.http_transport import request
 
 #: Read timeout for chat completions; generous enough for long generations.
@@ -25,12 +26,12 @@ class RephrasingError(RuntimeError):
     """The rephrasing API request failed (network error or non-2xx response)."""
 
 
-def _format_api_error(response: requests.Response) -> str:
+def _format_api_error(response: httpx.Response) -> str:
     """Return useful, bounded diagnostics from an OpenAI-compatible error response."""
     lines = [f"HTTP {response.status_code}"]
     try:
         payload = response.json()
-    except (ValueError, requests.exceptions.JSONDecodeError):
+    except ValueError:  # json.JSONDecodeError
         payload = None
 
     error = payload.get("error") if isinstance(payload, dict) else None
@@ -50,8 +51,8 @@ def _format_api_error(response: requests.Response) -> str:
             if len(body) > MAX_ERROR_DETAIL_CHARS:
                 body = body[:MAX_ERROR_DETAIL_CHARS].rstrip() + "…"
             lines.append(body)
-        elif response.reason:
-            lines.append(str(response.reason))
+        elif response.reason_phrase:
+            lines.append(response.reason_phrase)
 
     request_id = response.headers.get("x-request-id")
     if request_id:
@@ -70,7 +71,7 @@ def rephrase_text(
     context: str = "",
     proxies: Optional[Dict[str, str]] = None,
     timeout: float = REQUEST_TIMEOUT_S,
-    timing: Optional[OperationTiming] = None,
+    timing: OperationTiming = NO_TIMING,
 ) -> str:
     """Send prompts to an OpenAI-compatible chat-completions endpoint and return the reply.
 
@@ -82,9 +83,9 @@ def rephrase_text(
         model: Model identifier.
         temperature: Sampling temperature.
         context: Optional selected-text context, prepended to the user prompt.
-        proxies: Optional ``requests`` proxies mapping.
+        proxies: Optional ``{"http": url, "https": url}`` proxies mapping.
         timeout: Request timeout in seconds.
-        timing: Optional operation timings; the caller owns completion and delivery.
+        timing: Operation timings; the caller owns completion and delivery.
 
     Returns:
         The model's reply text (stripped). May be empty if the model returned nothing.
@@ -112,8 +113,7 @@ def rephrase_text(
     messages.append({"role": "user", "content": final_user_prompt})
 
     data: Dict[str, Any] = {"model": model, "messages": messages}
-    # GPT-5.6/GPT-6 reasoning defaults reject a configurable temperature.
-    if not model.strip().lower().startswith(("gpt-5.6", "gpt-6")):
+    if rephrasing_supports_temperature(model):
         data["temperature"] = temperature
     log_data = {**data, "messages": [
         {**m, "content": redact_for_log(m.get("content", ""))} for m in messages
@@ -121,21 +121,19 @@ def rephrase_text(
     logging.debug(f"Rephrasing request data: {log_data}")
 
     try:
-        if timing:
-            timing.mark("rephrase_request_start")
-        response = request("POST", api_url, timing=timing, stage="rephrase", headers=headers, json=data, timeout=timeout, proxies=proxies)
-        if timing:
-            timing.mark("rephrase_response_received")
-    except requests.RequestException as e:
+        timing.mark("rephrase_request_start")
+        response = request("POST", api_url, timing=timing, stage="rephrase", headers=headers, json=data,
+                           timeout=timeout, proxies=proxies)
+        timing.mark("rephrase_response_received")
+    except httpx.HTTPError as e:
         raise RephrasingError(f"Rephrasing API request failed: {e}") from e
 
-    if not response.ok:
+    if not response.is_success:
         raise RephrasingError(f"Rephrasing API request failed:\n{_format_api_error(response)}")
 
     result = response.json()
     # OpenAI/Groq style: result['choices'][0]['message']['content']
     reply = (result.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
-    if timing:
-        timing.mark("rephrase_response_parsed")
+    timing.mark("rephrase_response_parsed")
     logging.info(f"Rephrasing result: {redact_for_log(reply)}")
     return reply

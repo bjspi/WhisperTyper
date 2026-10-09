@@ -4,8 +4,10 @@ PyQt6
 pyaudio
 pynput
 pyautogui # Alternative to pynput for copy/paste on macOS
-requests>=2.32
-urllib3>=2.2,<3
+httpx>=0.28 # shared HTTP pools; latency milestones via its official trace extension
+# Optional: PyAV adds the AAC/M4A recording format (~70 MB of FFmpeg libraries in builds).
+# Without it the app records and uploads WAV only and hides the format setting.
+av>=14
 copykitten
 ftfy # robust mojibake repair (fixes UTF-8 mis-decoded as cp1252/latin-1, e.g. "Ãœ" -> "Ü")
 audioop-lts; python_version >= "3.13" # backport of stdlib audioop (removed in Py 3.13)

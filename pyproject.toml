@@ -30,8 +30,8 @@ dependencies = [
   "pyaudio",
   "pynput",
   "pyautogui",
-  "requests>=2.32",
-  "urllib3>=2.2,<3",
+  # Shared HTTP pools; latency milestones via its official trace extension.
+  "httpx>=0.28",
   "copykitten",
   # Robust mojibake repair (fixes UTF-8 mis-decoded as cp1252/latin-1, e.g. "Ãœ" -> "Ü").
   "ftfy",
@@ -40,11 +40,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# AAC/M4A recording format (PyAV with bundled FFmpeg libraries, ~70 MB). Without it: WAV only.
+aac = ["av>=14"]
 dev = [
   "pytest>=8",
   "ruff>=0.8",
   "mypy>=1.13",
-  "types-requests",
 ]
 
 [project.urls]

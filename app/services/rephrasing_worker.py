@@ -44,7 +44,7 @@ class RephrasingWorker(QObject):
             model: Model identifier.
             temperature: Sampling temperature.
             context: Additional context (e.g. selected text).
-            proxies: Optional ``requests`` proxies mapping (resolved by the caller).
+            proxies: Optional scheme -> proxy mapping (resolved by the caller).
             timing: This operation's timing state, shared with the result callbacks.
         """
         super().__init__()

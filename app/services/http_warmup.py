@@ -6,10 +6,15 @@ import threading
 import time
 from urllib.parse import urlsplit, urlunsplit
 
-import requests
+import httpx
 
 from app.services.http_transport import request
 from app.services.net import resolve_proxies
+
+#: Origins stay warm this long after the last recording/request/settings activity.
+WARM_WINDOW_S = 300.0
+#: Re-warm cadence, and the minimum gap between two probes of the same origin/route.
+WARM_INTERVAL_S = 20.0
 
 
 def warm_url(endpoint: str) -> str:
@@ -25,20 +30,25 @@ def warm_url(endpoint: str) -> str:
     return urlunsplit((parts.scheme, authority, path, "", ""))
 
 
-def _no_auth(prepared: requests.PreparedRequest) -> requests.PreparedRequest:
-    """Explicit auth disables requests' implicit netrc origin credentials."""
-    return prepared
-
-
 class HttpWarmup:
     """Coalesce GUI snapshots and throttle each origin/route to once per 20 seconds."""
 
     def __init__(self) -> None:
-        """Start one daemon independently of recording and inference workers."""
+        """Start one daemon independently of recording and inference workers; warm from launch."""
+        self._warm_until = time.monotonic() + WARM_WINDOW_S
         self._queue: queue.SimpleQueue[tuple[tuple[str, ...], str, bool] | None] = queue.SimpleQueue()
         self._stopped = False
         self._thread = threading.Thread(target=self._run, name="HttpWarmup", daemon=True)
         self._thread.start()
+
+    def touch(self) -> None:
+        """Extend the warm window after user activity (GUI thread only)."""
+        self._warm_until = time.monotonic() + WARM_WINDOW_S
+
+    @property
+    def active(self) -> bool:
+        """Whether recent activity still justifies keeping connections warm."""
+        return time.monotonic() <= self._warm_until
 
     def schedule(self, endpoints: tuple[str, ...], proxy_url: str, use_px: bool) -> None:
         """Enqueue only a URL/proxy snapshot; DNS/proxy detection happen off the GUI."""
@@ -71,11 +81,11 @@ class HttpWarmup:
                     route = repr(proxies)  # Used only as a throttle key, never logged.
                     key = (url, route)
                     now = time.monotonic()
-                    if not url or now - last.get(key, -float("inf")) < 20:
+                    if not url or now - last.get(key, -float("inf")) < WARM_INTERVAL_S:
                         continue
                     last[key] = now
-                    request("HEAD", url, stage="prewarm", auth=_no_auth, proxies=proxies,
-                            timeout=(3, 3), allow_redirects=False)
-                except (requests.RequestException, ValueError):
+                    # No headers/auth: httpx never adds netrc credentials, so the probe stays anonymous.
+                    request("HEAD", url, stage="prewarm", proxies=proxies, timeout=(3, 3), follow_redirects=False)
+                except (httpx.HTTPError, ValueError):
                     # Failure already has a transport trace; it must never block the actual request.
                     continue

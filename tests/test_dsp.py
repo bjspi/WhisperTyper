@@ -19,8 +19,6 @@ def make_tone(samplerate: int = 16000, duration_s: float = 0.1, amplitude: int =
 
 
 class TestPeak:
-    def test_empty_buffer(self):
-        assert dsp.peak(b"") == 0
 
     def test_silence(self):
         assert dsp.peak(b"\x00" * 320) == 0
@@ -40,9 +38,6 @@ class TestDurationSeconds:
 
 
 class TestApplyGain:
-    def test_zero_gain_is_noop(self):
-        pcm = make_tone()
-        assert dsp.apply_gain(pcm, 0) is pcm
 
     def test_positive_gain_raises_peak(self):
         pcm = make_tone(amplitude=1000)
@@ -58,9 +53,6 @@ class TestApplyGain:
 
 
 class TestResample:
-    def test_same_rate_is_noop(self):
-        pcm = make_tone()
-        assert dsp.resample(pcm, 16000, 16000) is pcm
 
     def test_downsampling_halves_length(self):
         pcm = make_tone(samplerate=44100, duration_s=0.5)

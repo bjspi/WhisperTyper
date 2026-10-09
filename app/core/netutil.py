@@ -39,9 +39,9 @@ def is_px_running(timeout: float = 1.0) -> bool:
 
 def build_proxies(proxy_url: str) -> Optional[Dict[str, str]]:
     """
-    Build a ``requests`` proxies dict from a configured proxy URL.
+    Build a scheme -> proxy mapping (``{"http": …, "https": …}``) from a configured proxy URL.
 
-    Empty ``proxy_url`` returns None so ``requests`` falls back to system/environment
+    Empty ``proxy_url`` returns None so the HTTP transport falls back to system/environment
     proxy settings.
     """
     proxy_url = (proxy_url or "").strip()

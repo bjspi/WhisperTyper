@@ -14,7 +14,7 @@ from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import QApplication
 
 from app.core.env import is_MACOS, is_WINDOWS
-from app.core.timing import OperationTiming
+from app.core.timing import NO_TIMING, OperationTiming
 from app.services.windows_text_input import send_unicode_text
 
 
@@ -53,7 +53,7 @@ class ClipboardMixin:
             logging.debug("Using pyautogui for key simulation.")
             modifier = 'command' if is_MACOS else 'ctrl'
             try:
-                if (is_WINDOWS or is_MACOS) and char == 'v' and self.config.get("windows_fast_paste", False):
+                if char == 'v' and self._fast_paste_enabled():
                     pyautogui.hotkey(modifier, char, _pause=False)
                 else:
                     pyautogui.hotkey(modifier, char)
@@ -307,7 +307,11 @@ class ClipboardMixin:
 
         return selected_text.strip()
 
-    def insert_transcribed_text(self, text: str, timing: Optional[OperationTiming] = None) -> bool:
+    def _fast_paste_enabled(self) -> bool:
+        """Skip the fixed paste waits; offered on Windows and macOS only."""
+        return (is_WINDOWS or is_MACOS) and bool(self.config.get("fast_paste", False))
+
+    def insert_transcribed_text(self, text: str, timing: OperationTiming = NO_TIMING) -> bool:
         """
         Inserts text using optional Windows Unicode input or the existing clipboard path.
 
@@ -316,22 +320,25 @@ class ClipboardMixin:
 
         Args:
             text (str): The text to insert.
-            timing: Optional operation milestones; no synchronous log writes.
+            timing: Operation milestones; no synchronous log writes.
 
         Returns:
             Whether input dispatch succeeded; the target application does not acknowledge it.
         """
         if not text:
             return True
-
-        if timing:
-            timing.mark("text_commit_start")
-
+        timing.mark("text_commit_start")
         if is_WINDOWS and self.config.get("windows_sendinput_text", False):
-            if timing:
-                timing.mark("sendinput_dispatch_start")
-            accepted, expected = 0, 0
-            can_fallback = True
+            result = self._insert_via_sendinput(text, timing)
+            if result is not None:
+                return result
+        return self._insert_via_clipboard(text, timing)
+
+    def _insert_via_sendinput(self, text: str, timing: OperationTiming) -> Optional[bool]:
+        """Type via SendInput; None means nothing was accepted and the clipboard may take over."""
+        accepted, expected = 0, 0
+        can_fallback = True
+        with timing.span("sendinput_dispatch"):
             try:
                 accepted, expected = send_unicode_text(text)
             except (OSError, ValueError) as error:
@@ -339,73 +346,58 @@ class ClipboardMixin:
             except Exception as error:
                 can_fallback = False
                 logging.error("text_input mode=sendinput unknown_failure error=%s", type(error).__name__)
-            if timing:
-                timing.mark("sendinput_dispatch_end")
-            logging.info(
-                "text_input op=%s mode=sendinput accepted_events=%s total_events=%s",
-                timing.operation_id if timing else "none", accepted, expected,
-            )
-            if expected and accepted == expected:
-                if timing:
-                    timing.mark("text_commit_end")
-                return True
-            if accepted or not can_fallback or not self.config.get("windows_sendinput_fallback", True):
-                if timing:
-                    timing.mark("text_commit_failed")
-                self.show_tray_balloon(self.translator.tr("windows_sendinput_failed_message"), 4500)
-                return False
-            if timing:
-                timing.mark("sendinput_fallback")
-            logging.info("text_input op=%s mode=clipboard fallback=sendinput_rejected", timing.operation_id if timing else "none")
+        logging.info("text_input op=%s mode=sendinput accepted_events=%s total_events=%s",
+                     timing.operation_id, accepted, expected)
+        if expected and accepted == expected:
+            timing.mark("text_commit_end")
+            return True
+        # A partially accepted batch is never retried: the accepted prefix would appear twice.
+        if accepted or not can_fallback or not self.config.get("windows_sendinput_fallback", True):
+            timing.mark("text_commit_failed")
+            self.show_tray_balloon(self.translator.tr("windows_sendinput_failed_message"), 4500)
+            return False
+        timing.mark("sendinput_fallback")
+        logging.info("text_input op=%s mode=clipboard fallback=sendinput_rejected", timing.operation_id)
+        return None
 
+    def _insert_via_clipboard(self, text: str, timing: OperationTiming) -> bool:
+        """Paste through the clipboard, which handles every character reliably."""
         # Ensure the user is prompted for permissions on macOS before trying to paste.
         self._check_and_warn_macos_permissions('accessibility')
 
-        logging.debug("Inserting transcribed text via clipboard paste for reliability.")
-        fast_paste = (is_WINDOWS or is_MACOS) and self.config.get("windows_fast_paste", False)
-        logging.info("text_input op=%s mode=clipboard fast_paste=%s", timing.operation_id if timing else "none", fast_paste)
+        fast_paste = self._fast_paste_enabled()
+        logging.info("text_input op=%s mode=clipboard fast_paste=%s", timing.operation_id, fast_paste)
         restore = self.config["restore_clipboard"]
         old_clipboard_state: Dict[str, Any] = {}
         try:
             if restore:
-                if timing:
-                    timing.mark("clipboard_snapshot_start")
-                old_clipboard_state = self._capture_clipboard_state()
-                if timing:
-                    timing.mark("clipboard_snapshot_end")
+                with timing.span("clipboard_snapshot"):
+                    old_clipboard_state = self._capture_clipboard_state()
 
             # Copy the new text to the clipboard. This is necessary for special characters.
-            if timing:
-                timing.mark("clipboard_write_start")
-            copykitten.copy(text)
-            if timing:
-                timing.mark("clipboard_write_end")
+            with timing.span("clipboard_write"):
+                copykitten.copy(text)
 
             # Wait a moment to ensure the OS has processed the copy command.
             if not fast_paste:
                 time.sleep(0.1)
 
             # Platform-aware paste hotkey
-            if timing:
-                timing.mark("paste_dispatch_start")
+            timing.mark("paste_dispatch_start")
             if not self._simulate_key_combination('v'):
-                if timing:
-                    timing.mark("text_commit_failed")
+                timing.mark("text_commit_failed")
                 return False
-            if timing:
-                timing.mark("paste_dispatch_end")
-                timing.mark("text_commit_end")
+            timing.mark("paste_dispatch_end")
+            timing.mark("text_commit_end")
 
             # Give the target application a moment to process the paste command.
             if not fast_paste:
                 time.sleep(0.1)
-            if timing:
-                timing.mark("paste_settle_end")
+            timing.mark("paste_settle_end")
             return True
 
         except Exception as e:
-            if timing:
-                timing.mark("text_commit_failed")
+            timing.mark("text_commit_failed")
             logging.error(f"Failed to insert text via clipboard: {e}")
             return False
         finally:

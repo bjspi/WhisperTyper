@@ -10,13 +10,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-import requests
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from app.core.netutil import PX_PROXY_PORT, is_px_running
 from app.core.redaction import redact_for_log
 from app.core.textutil import clean_model_name
 from app.services import net
+from app.services.http_transport import request
 from app.services.rephrasing import rephrase_text
 
 
@@ -95,8 +95,8 @@ class ConnectionTester:
         try:
             # generate_204 is a tiny, well-known connectivity endpoint (returns HTTP 204).
             try:
-                response = requests.get(
-                    "https://www.google.com/generate_204", proxies=proxies, timeout=10
+                response = request(
+                    "GET", "https://www.google.com/generate_204", stage="internet_test", proxies=proxies, timeout=10
                 )
                 reachable = response.status_code in (200, 204)
                 detail = f"HTTP {response.status_code}"
@@ -108,15 +108,8 @@ class ConnectionTester:
                     )
                     return
                 reason_key, detail = "unknown", f"HTTP {response.status_code}: {(response.text or '')[:200]}"
-            except requests.exceptions.ProxyError as e:
-                reason_key, detail = "proxy", str(e)
-            except requests.exceptions.SSLError as e:
-                reason_key, detail = "ssl", str(e)
-            except (requests.exceptions.ConnectTimeout, requests.exceptions.ConnectionError,
-                    requests.exceptions.Timeout) as e:
-                reason_key, detail = net.diagnose_connectivity("https://www.google.com", proxies), str(e)
             except Exception as e:
-                reason_key, detail = "unknown", str(e)
+                reason_key, detail = net.classify_transport_error(e, "https://www.google.com", proxies), str(e)
 
             logging.info(f"Internet test failed: {reason_key} ({redact_for_log(detail)})")
             message = w.translator.tr("internet_test_fail", detail=f"[{reason_key}] {detail}")

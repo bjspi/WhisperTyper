@@ -39,7 +39,7 @@ from app.mixins.transcription_mixin import TranscriptionMixin
 from app.mixins.tray_mixin import TrayMixin
 from app.mixins.widget_attrs import WidgetAttrs
 from app.services.http_transport import close_transport
-from app.services.http_warmup import HttpWarmup
+from app.services.http_warmup import WARM_INTERVAL_S, HttpWarmup
 from app.services.rephrasing_worker import RephrasingWorker
 from app.services.transcription_worker import TranscriptionWorker
 from app.ui.floating_buttons import FloatingButtonWindow, RecordingPromptOverlay
@@ -68,6 +68,8 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
     # (field preview text / capture teardown) onto the main thread.
     hotkey_capture_text_signal = pyqtSignal(str)
     hotkey_capture_finished_signal = pyqtSignal()
+    # The AAC encoder probe (importing PyAV) runs off the GUI thread once the UI is up.
+    aac_bitrates_ready_signal = pyqtSignal(object)
 
     def __init__(self) -> None:
         """Initializes the application."""
@@ -143,9 +145,8 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         # After loading config ensure logging handlers reflect settings
         self.apply_logging_configuration()
         self._http_warmup = HttpWarmup()
-        self._http_warm_until = time.monotonic() + 300
         self._http_warm_timer = QTimer(self)
-        self._http_warm_timer.setInterval(20_000)
+        self._http_warm_timer.setInterval(int(WARM_INTERVAL_S * 1000))
         self._http_warm_timer.timeout.connect(self._schedule_http_warmup)
         self._http_warm_timer.start()
         QTimer.singleShot(0, self._schedule_http_warmup)
@@ -166,6 +167,7 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         self.hotkey_action_signal.connect(self._handle_hotkey_action)
         self.hotkey_capture_text_signal.connect(self._apply_captured_hotkey_text)
         self.hotkey_capture_finished_signal.connect(self._finish_hotkey_capture)
+        self.aac_bitrates_ready_signal.connect(self._apply_aac_bitrates)
         self._recording_tray_timer.timeout.connect(self._update_recording_tray_icon)
 
         self.tray_icon.setToolTip(self.translator.tr("tray_ready_tooltip", hotkey=self.hotkey_str))
@@ -181,6 +183,8 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         self._update_rephrase_api_group_style()  # Set initial style
         self._update_transcription_api_group_style()  # Set initial style
 
+        QTimer.singleShot(0, self._start_aac_bitrate_probe)
+
         if self._should_request_macos_startup_permissions():
             QTimer.singleShot(900, self._request_macos_startup_permissions)
 
@@ -193,8 +197,8 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
     def _schedule_http_warmup(self, *, activate: bool = False) -> None:
         """Snapshot endpoints only; keep active origins warm for five minutes after use."""
         if activate or self.is_recording:
-            self._http_warm_until = time.monotonic() + 300
-        if time.monotonic() > self._http_warm_until:
+            self._http_warmup.touch()
+        if not self._http_warmup.active:
             return
         endpoints = (self.config.get("api_endpoint", ""), self.config.get("rephrasing_api_url", ""))
         if self.current_recording_prompt:
