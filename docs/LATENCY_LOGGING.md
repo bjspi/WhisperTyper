@@ -133,7 +133,11 @@ TCP_NODELAY and OS TCP keepalive are enabled; failed paid POSTs are not retried.
 Busy pools create another socket instead of waiting for a warm-up request.
 
 A daemon performs auth-free HEAD requests at startup, after saving settings and
-when recording begins. While recording or for five minutes after recent activity,
+when recording begins. Selecting a rephrasing prompt in the recording palette
+also triggers warming immediately and puts the configured rephrasing endpoint
+(including OpenAI) first, before the transcription endpoint. The selection
+reactivates the five-minute activity window; selecting Standard adds no request.
+While recording or for five minutes after recent activity,
 a timer refreshes each configured origin at most every 20 seconds. Groq/OpenAI
 use their `/models` path; custom endpoints use the origin root. URL credentials,
 queries, API keys, netrc origin credentials and audio are excluded. Redirects are

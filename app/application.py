@@ -197,6 +197,8 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         if time.monotonic() > self._http_warm_until:
             return
         endpoints = (self.config.get("api_endpoint", ""), self.config.get("rephrasing_api_url", ""))
+        if self.current_recording_prompt:
+            endpoints = endpoints[::-1]
         self._http_warmup.schedule(endpoints, self.config.get("proxy_url", ""), self.config.get("use_local_px_proxy", False))
 
     def _show_tooltip_slot(self, message: str, timeout_ms: int, spinner: bool, check: bool) -> None:
@@ -260,6 +262,8 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
     def _on_recording_prompt_selected(self, prompt_text: Optional[str]) -> None:
         """Remember the current palette choice until this recording is stopped."""
         self.current_recording_prompt = prompt_text
+        if prompt_text:
+            self._schedule_http_warmup(activate=True)
 
     def _close_recording_prompt_overlay(self) -> None:
         """Close the recording selector without changing the already selected prompt."""
