@@ -270,7 +270,7 @@ class _Adapter(requests.adapters.HTTPAdapter):
                 trace.mark("body_end")
                 trace.finish()
 
-            response.raw.stream = measured_stream
+            response.raw.stream = measured_stream  # type: ignore[method-assign]  # Intentional per-response timing wrapper.
             if request.method == "HEAD" or response.raw.length_remaining == 0:
                 trace.mark("body_end")
                 trace.finish()
