@@ -122,9 +122,9 @@ _DEFAULT_UI_LANG = SYS_LANG if SYS_LANG in UI_LANG_FILES else "en"
 CONFIG_SCHEMA_VERSION = 2
 
 # Window sizing: default on fresh install + the enforced minimum the user can't shrink past.
-# The minimum is sized so the tallest settings page (Rephrasing) shows fully without scrolling.
+# Shorter windows use the settings pages' scroll areas.
 WINDOW_MIN_WIDTH = 680
-WINDOW_MIN_HEIGHT = 1080
+WINDOW_MIN_HEIGHT = 600
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "config_schema_version": CONFIG_SCHEMA_VERSION,

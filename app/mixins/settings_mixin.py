@@ -89,6 +89,10 @@ class SettingsMixin:
         self.splitter.setSizePolicy(self.splitter.sizePolicy().horizontalPolicy(), QSizePolicy.Policy.Expanding)
         # Token counter renders as a compact pill badge, so it should hug its content.
         self.prompt_token_label.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        # Keep the controls at their preferred height; the prompt takes the resizing space.
+        self.prompt_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
+        self.prompt_input.setMinimumHeight(80)
+        self.transcription_layout.setStretch(self.transcription_layout.indexOf(self.prompt_input), 1)
 
 
         # --- Menu Bar Setup ---

@@ -118,7 +118,7 @@ class ConfigStore:
         # Schema migration: configs from before the redesign (no/older schema version) get their
         # window height bumped to at least the minimum that fits the new UI, once.
         if cfg.get("config_schema_version", 0) < CONFIG_SCHEMA_VERSION:
-            current_h = int(cfg.get("window_height", 0) or 0)
+            current_h = int(cfg.get("window_height", DEFAULT_CONFIG["window_height"]) or 0)
             cfg["window_height"] = max(current_h, WINDOW_MIN_HEIGHT)
             cfg["config_schema_version"] = CONFIG_SCHEMA_VERSION
             changed = True

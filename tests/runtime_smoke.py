@@ -12,7 +12,7 @@ It is fully isolated and safe to run while a production instance is running:
   * own TMP/TEMP          -> own single-instance lock + recordings directory
   * offscreen Qt platform -> no visible windows or tray icon
   * seeded hotkeys        -> combos that don't collide with the defaults
-  * the microphone is never opened; the system clipboard is snapshotted and restored
+  * microphone/speaker streams are never opened; the system clipboard is snapshotted and restored
 
 Requires the full runtime environment (PyQt6, pyaudio, ...), so it is NOT part of CI.
 It deliberately has no ``test_`` prefix — pytest must never collect it — and the whole
@@ -164,7 +164,9 @@ def main() -> int:
         except Exception:
             return "<unreadable>"
 
-    wt = WhisperTyperApp()
+    with patch("app.audio.sound.SoundPlayer.preload"):
+        wt = WhisperTyperApp()
+    wt.play_sound = lambda _filename: None
     assert os.path.commonpath([wt.recordings.directory, iso_tmp]) == iso_tmp
 
     ok_wav = os.path.join(iso_tmp, "ok_input.wav")
@@ -315,10 +317,48 @@ def main() -> int:
             f"right_gap={mac_right_gap}, top_gap={mac_top_gap}",
         )
         mac_overlay.close()
+        probe_window_resize()
         wt.hide()  # Keep QApplication.quit() from being intercepted by the tray-style closeEvent.
         check("startup: hotkey bindings parsed", len(wt.hotkey_bindings) == 2,
               "; ".join(b["display"] for b in wt.hotkey_bindings))
         step2_recording_stop()
+
+    def probe_window_resize() -> None:
+        """Shrink the real settings window and check prompt allocation and control reachability."""
+        original_size = wt.size()
+        wt.tabs.setCurrentWidget(wt.transcription_tab)
+        wt.resize(760, 1080)
+        qapp.processEvents()
+        large_prompt_height = wt.prompt_input.height()
+        controls_size = (wt.transcription_api_group.size(), wt.recording_group.size())
+        prompt = wt.prompt_input.toPlainText()
+        wt.resize(760, 900)
+        qapp.processEvents()
+        check("resize: prompt absorbs the height change", abs(large_prompt_height - wt.prompt_input.height() - 180) <= 2,
+              f"prompt={large_prompt_height}->{wt.prompt_input.height()}")
+        check("resize: API and recording controls retain their sizes",
+              controls_size == (wt.transcription_api_group.size(), wt.recording_group.size()))
+        wt.resize(760, 600)
+        qapp.processEvents()
+        check("resize: window reaches 600px height", wt.height() == 600, f"height={wt.height()}")
+        check("resize: prompt content is preserved", wt.prompt_input.toPlainText() == prompt)
+        check("resize: short transcription page scrolls", wt.transcription_scroll_area.verticalScrollBar().maximum() > 0)
+        wt.tabs.setCurrentWidget(wt.general_tab)
+        qapp.processEvents()
+        wt.general_scroll_area.ensureWidgetVisible(wt.play_g_button)
+        qapp.processEvents()
+        check("resize: short General page scrolls", wt.general_scroll_area.verticalScrollBar().maximum() > 0)
+        bottom = wt.play_g_button.mapTo(wt.general_tab, QPoint(0, wt.play_g_button.height())).y()
+        check("resize: last General control is reachable", bottom <= wt.general_tab.height(),
+              f"last-control-bottom={bottom}, page-height={wt.general_tab.height()}")
+        general_controls = [wt.general_layout.itemAt(i).widget() for i in range(wt.general_layout.count())]
+        compressed = [widget.objectName() for widget in general_controls if widget is not None
+                      and widget.isVisible() and widget.height() < widget.minimumSizeHint().height()]
+        check("resize: General controls retain usable heights", not compressed, ", ".join(compressed))
+        check("resize: save button stays in the window", wt.save_button.mapTo(wt, QPoint(0, wt.save_button.height())).y() <= wt.height())
+        wt.resize(original_size)
+        wt.tabs.setCurrentWidget(wt.transcription_tab)
+        qapp.processEvents()
 
     def step2_recording_stop() -> None:
         """Stop synthesized PCM via the real hotkey signal, without opening a microphone."""
