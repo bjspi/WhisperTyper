@@ -24,6 +24,15 @@ class _QueuedLogHandler(logging.Handler):
         super().__init__()
         self.lock = None
 
+    def handle(self, record: logging.LogRecord) -> bool:
+        """Apply filters without the base handler's lock, including on Python 3.13+."""
+        result = self.filter(record)
+        if isinstance(result, logging.LogRecord):
+            record = result
+        if result:
+            self.emit(record)
+        return bool(result)
+
     def emit(self, record: logging.LogRecord) -> None:
         """Dispatch on the writer, otherwise enqueue without formatting the record."""
         if threading.current_thread() is _WRITER:
