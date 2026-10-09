@@ -8,8 +8,9 @@ import pytest
 from app.services.rephrasing import RephrasingError, rephrase_text
 
 
-@pytest.mark.parametrize("model", ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])
-def test_gpt_5_6_omits_unsupported_temperature(model: str) -> None:
+@pytest.mark.parametrize("model", ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
+                                   "gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-astra"])
+def test_reasoning_models_omit_unsupported_temperature(model: str) -> None:
     response = Mock()
     response.json.return_value = {"choices": [{"message": {"content": "Success"}}]}
 

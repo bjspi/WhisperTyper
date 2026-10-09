@@ -111,10 +111,8 @@ def rephrase_text(
     messages.append({"role": "user", "content": final_user_prompt})
 
     data: Dict[str, Any] = {"model": model, "messages": messages}
-    # GPT-5.6 Chat Completions accepts only its default temperature (1). Omitting the field
-    # preserves that default; sending the configurable 0.0-1.0 value would make every Luna,
-    # Terra, Sol, or family-alias request fail with HTTP 400.
-    if not model.strip().lower().startswith("gpt-5.6"):
+    # GPT-5.6/GPT-6 reasoning defaults reject a configurable temperature.
+    if not model.strip().lower().startswith(("gpt-5.6", "gpt-6")):
         data["temperature"] = temperature
     log_data = {**data, "messages": [
         {**m, "content": redact_for_log(m.get("content", ""))} for m in messages

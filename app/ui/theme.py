@@ -93,7 +93,13 @@ QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus,
 QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid %(accent)s; }
 QLineEdit:hover, QComboBox:hover, QSpinBox:hover { border-color: %(muted)s; }
-QComboBox::drop-down { border: none; width: 22px; }
+QComboBox { padding-right: 36px; }
+QComboBox::drop-down {
+    subcontrol-origin: padding; subcontrol-position: top right; width: 28px;
+    border: none; border-left: 1px solid %(field_border)s;
+    border-top-right-radius: 7px; border-bottom-right-radius: 7px; background: %(panel2)s;
+}
+QComboBox::drop-down:hover { background: %(hover)s; }
 QComboBox QAbstractItemView {
     background: %(panel)s; color: %(text)s; border: 1px solid %(border)s; border-radius: 8px;
     selection-background-color: %(accent)s; selection-color: %(on_accent)s; outline: none;
@@ -142,6 +148,17 @@ QListWidget {
 }
 QListWidget::item { padding: 6px 8px; border-radius: 6px; }
 QListWidget::item:selected { background: %(accent)s; color: %(on_accent)s; }
+QTableWidget {
+    background: %(panel)s; alternate-background-color: %(panel2)s;
+    border: 1px solid %(border)s; border-radius: 8px;
+    selection-background-color: %(hover)s; selection-color: %(text)s;
+}
+QTableWidget::item { padding: 0 8px; border-bottom: 1px solid %(border)s; }
+QHeaderView::section {
+    background: %(panel2)s; color: %(muted)s; padding: 8px;
+    border: none; border-bottom: 1px solid %(border)s; font-weight: 600;
+}
+QLabel#apiKeyPreview { color: %(muted)s; }
 QSplitter::handle { background: %(border)s; }
 
 QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }
@@ -209,6 +226,7 @@ def write_icon_qss(dark: bool, cache_dir: str) -> str:
         paths[name] = fp.replace("\\", "/")
     return f"""
 QCheckBox::indicator:checked {{ image: url({paths['check']}); }}
+QComboBox::down-arrow {{ image: url({paths['down']}); width: 16px; height: 16px; }}
 QSpinBox, QDoubleSpinBox {{ padding-right: 26px; }}
 QSpinBox::up-button, QDoubleSpinBox::up-button {{
     subcontrol-origin: border; subcontrol-position: top right;

@@ -112,10 +112,16 @@ class TranscriptionWorker(QObject):
                 self.transcribing.emit()
 
             headers: Dict[str, str] = {"Authorization": f"Bearer {self.api_key}"}
-            data: Dict[str, Any] = {"model": self.model, "prompt": self.prompt, "temperature": self.temperature}
+            data: Dict[str, Any] = {"model": self.model}
+            if self.model == "gpt-4o-transcribe-diarize":
+                data.update(response_format="json", chunking_strategy="auto")
+            else:
+                data["prompt"] = self.prompt
+            if self.model not in ("gpt-transcribe", "gpt-4o-transcribe-diarize"):
+                data["temperature"] = self.temperature
             # Only add language if it's not empty (for auto-detection)
             if self.language:
-                data["language"] = self.language
+                data["languages[]" if self.model == "gpt-transcribe" else "language"] = self.language
 
             log_data = dict(data)
             if "prompt" in log_data:

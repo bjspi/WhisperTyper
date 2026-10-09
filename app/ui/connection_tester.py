@@ -36,8 +36,6 @@ class ConnectionTester:
         """Send a tiny test audio to the endpoint and classify (delegates to services.net)."""
         w = self._w
         model = clean_model_name(w.model_dropdown.currentText())
-        if w.model_dropdown.currentText() == "Custom":
-            model = w.model_input.text().strip() or "whisper-1"
         return net.run_transcription_connection_test(api_url, api_key, model, proxies)
 
     def test_transcription(self) -> None:
@@ -135,7 +133,7 @@ class ConnectionTester:
         w = self._w
         api_url = w.rephrasing_api_url_input.text().strip()
         api_key = w._ui_api_key("rephrasing")
-        model = w.rephrasing_model_input.text().strip()
+        model = w.rephrasing_model_input.currentText().strip()
 
         if not all([api_url, api_key, model]):
             QMessageBox.warning(

@@ -5,8 +5,17 @@ from copy import deepcopy
 
 import pytest
 
-from app.core.api_keys import GroqKeyRotation, migrate_api_keys, provider_for_url, selected_api_key
+from app.core.api_keys import GroqKeyRotation, masked_api_key, migrate_api_keys, provider_for_url, selected_api_key
 from app.core.constants import DEFAULT_CONFIG
+
+
+@pytest.mark.parametrize("key,expected", [
+    ("", ""), ("short", "•••••"), ("12345678901234", "•" * 14),
+    ("1234567890HIDDENabcd", "1234567890••••••abcd"),
+    (" 1234567890HIDDENabcd ", "1234567890••••••abcd"),
+])
+def test_masked_api_key(key, expected):
+    assert masked_api_key(key) == expected
 
 
 @pytest.mark.parametrize("same_key,same_provider,count", [(True, True, 1), (False, True, 2), (True, False, 2)])
