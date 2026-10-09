@@ -11,8 +11,6 @@ from app.core.config_store import ConfigStore
 from app.core.constants import (
     CONFIG_SCHEMA_VERSION,
     DEFAULT_CONFIG,
-    DEFAULT_REPHRASING_MODEL,
-    PREVIOUS_DEFAULT_REPHRASING_MODELS,
     WINDOW_MIN_HEIGHT,
 )
 from app.core.hotkeys import normalize_hotkey_string
@@ -70,16 +68,21 @@ class TestMigrations:
         config, _ = store.load()
         assert config["input_language"] == "de"
 
-    def test_old_default_rephrasing_models_are_migrated(self, store: ConfigStore):
-        for old_model in PREVIOUS_DEFAULT_REPHRASING_MODELS:
-            write_config(store, {"rephrasing_model": old_model})
-            config, _ = store.load()
-            assert config["rephrasing_model"] == DEFAULT_REPHRASING_MODEL
-
     def test_user_chosen_rephrasing_model_is_kept(self, store: ConfigStore):
         write_config(store, {"rephrasing_model": "my-own-model"})
         config, _ = store.load()
         assert config["rephrasing_model"] == "my-own-model"
+
+    @pytest.mark.parametrize("schema", [0, CONFIG_SCHEMA_VERSION])
+    @pytest.mark.parametrize("model", ["gpt-4o-mini", "gpt-5.4", "gpt-5.5", "gpt-5.6", "gpt-5.6-luna", "my-own-model"])
+    def test_saved_model_choice_is_preserved_on_reload(self, store: ConfigStore, model: str, schema: int):
+        write_config(store, {"rephrasing_model": model, "model": "whisper-large-v3 (groq)", "config_schema_version": schema})
+        config, _ = store.load()
+        assert config["rephrasing_model"] == model
+        store.save(config)
+        reloaded, _ = store.load()
+        assert reloaded["rephrasing_model"] == model
+        assert reloaded["model"] == "whisper-large-v3 (groq)"
 
     def test_mojibake_in_text_fields_is_repaired(self, store: ConfigStore):
         write_config(store, {"prompt": "Ãœbersetze fÃ¼r mich"})

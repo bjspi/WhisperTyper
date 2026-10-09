@@ -1,4 +1,4 @@
-"""Central editor for named API credentials; secret values are always masked."""
+"""Central credential editor with partially masked previews and password inputs."""
 from __future__ import annotations
 
 import uuid
@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLayout,
     QLineEdit,
     QPushButton,
     QTableWidget,
@@ -20,7 +21,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from app.core.api_keys import PROVIDER_NAMES
+from app.core.api_keys import PROVIDER_NAMES, masked_api_key
 from app.core.i18n import TranslationManager
 
 
@@ -38,6 +39,7 @@ class ApiKeysTab(QWidget):
         self.description.setWordWrap(True)
         layout.addWidget(self.description)
         self.table = QTableWidget(0, 3, self)
+        self.table.setShowGrid(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         vertical_header, horizontal_header = self.table.verticalHeader(), self.table.horizontalHeader()
@@ -45,6 +47,7 @@ class ApiKeysTab(QWidget):
         vertical_header.hide()
         vertical_header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         horizontal_header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        horizontal_header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         layout.addWidget(self.table)
         buttons = QHBoxLayout()
         self.add_button = QPushButton(self)
@@ -69,8 +72,12 @@ class ApiKeysTab(QWidget):
         profiles = []
         for row in range(self.table.rowCount()):
             name = self.table.item(row, 0)
-            provider = self.table.cellWidget(row, 1)
-            secret = self.table.cellWidget(row, 2)
+            provider_cell = self.table.cellWidget(row, 1)
+            assert provider_cell is not None
+            provider = provider_cell.findChild(QComboBox)
+            key_cell = self.table.cellWidget(row, 2)
+            assert key_cell is not None
+            secret = key_cell.findChild(QLineEdit)
             assert name is not None and isinstance(provider, QComboBox) and isinstance(secret, QLineEdit)
             profiles.append({"id": name.data(Qt.ItemDataRole.UserRole), "name": name.text().strip(),
                              "provider": provider.currentData(), "key": secret.text().strip()})
@@ -84,15 +91,31 @@ class ApiKeysTab(QWidget):
         name = QTableWidgetItem(profile["name"])
         name.setData(Qt.ItemDataRole.UserRole, profile["id"])
         self.table.setItem(row, 0, name)
-        provider = QComboBox(self.table)
+        provider_cell = QWidget(self.table)
+        provider_layout = QHBoxLayout(provider_cell)
+        provider_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        provider_layout.setContentsMargins(8, 6, 8, 6)
+        provider = QComboBox(provider_cell)
+        provider_layout.addWidget(provider, alignment=Qt.AlignmentFlag.AlignVCenter)
         for provider_id, label in PROVIDER_NAMES.items():
             provider.addItem(label, provider_id)
         provider.setCurrentIndex(provider.findData(profile["provider"]))
-        self.table.setCellWidget(row, 1, provider)
-        secret = QLineEdit(profile["key"], self.table)
+        self.table.setCellWidget(row, 1, provider_cell)
+        key_cell = QWidget(self.table)
+        key_layout = QVBoxLayout(key_cell)
+        key_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        key_layout.setContentsMargins(8, 6, 8, 6)
+        key_layout.setSpacing(2)
+        preview = QLabel(masked_api_key(profile["key"]), key_cell)
+        preview.setObjectName("apiKeyPreview")
+        preview.setTextFormat(Qt.TextFormat.PlainText)
+        key_layout.addWidget(preview)
+        secret = QLineEdit(profile["key"], key_cell)
         secret.setEchoMode(QLineEdit.EchoMode.Password)
-        self.table.setCellWidget(row, 2, secret)
+        key_layout.addWidget(secret)
+        self.table.setCellWidget(row, 2, key_cell)
         provider.currentIndexChanged.connect(lambda _index: self.profiles_changed.emit())
+        secret.textChanged.connect(lambda text: preview.setText(masked_api_key(text)))
         secret.textChanged.connect(lambda _text: self.profiles_changed.emit())
         self.table.blockSignals(False)
 
@@ -119,8 +142,12 @@ class ApiKeysTab(QWidget):
         self.groq_rotation.setText(tr("groq_key_rotation"))
         self.groq_rotation.setToolTip(tr("groq_key_rotation_tooltip"))
         for row in range(self.table.rowCount()):
-            provider = self.table.cellWidget(row, 1)
-            secret = self.table.cellWidget(row, 2)
+            provider_cell = self.table.cellWidget(row, 1)
+            assert provider_cell is not None
+            provider = provider_cell.findChild(QComboBox)
+            key_cell = self.table.cellWidget(row, 2)
+            assert key_cell is not None
+            secret = key_cell.findChild(QLineEdit)
             assert isinstance(provider, QComboBox) and isinstance(secret, QLineEdit)
             provider.setItemText(provider.findData("custom"), tr("api_key_custom_provider"))
             secret.setAccessibleName(tr("api_key_label"))

@@ -89,18 +89,14 @@
           <item>
            <layout class="QHBoxLayout" name="api_button_layout">
             <item>
-             <widget class="QPushButton" name="openai_button">
+             <widget class="QLabel" name="transcription_provider_label">
               <property name="text">
-               <string>Set OpenAI Defaults</string>
+               <string>Provider:</string>
               </property>
              </widget>
             </item>
             <item>
-             <widget class="QPushButton" name="groq_button">
-              <property name="text">
-               <string>Set Groq Defaults</string>
-              </property>
-             </widget>
+             <widget class="QComboBox" name="transcription_provider_selector"/>
             </item>
             <item>
              <widget class="QPushButton" name="test_transcription_api_button">
@@ -138,10 +134,14 @@
               <item>
                <layout class="QHBoxLayout" name="model_layout">
                 <item>
-                 <widget class="QComboBox" name="model_dropdown"/>
-                </item>
-                <item>
-                 <widget class="QLineEdit" name="model_input"/>
+                 <widget class="QComboBox" name="model_dropdown">
+                  <property name="editable">
+                   <bool>true</bool>
+                  </property>
+                  <property name="insertPolicy">
+                   <enum>QComboBox::NoInsert</enum>
+                  </property>
+                 </widget>
                 </item>
                </layout>
               </item>
@@ -336,7 +336,7 @@
          </property>
          <layout class="QVBoxLayout" name="shared_api_layout">
           <item>
-           <layout class="QHBoxLayout" name="rephrasing_url_model_layout">
+           <layout class="QHBoxLayout" name="rephrasing_url_model_layout" stretch="1,1">
             <item>
              <layout class="QVBoxLayout" name="rephrasing_url_v_layout">
               <item>
@@ -361,9 +361,49 @@
                </widget>
               </item>
               <item>
-               <widget class="QLineEdit" name="rephrasing_model_input"/>
+               <widget class="QComboBox" name="rephrasing_model_input">
+                <property name="minimumSize">
+                 <size>
+                  <width>300</width>
+                  <height>0</height>
+                 </size>
+                </property>
+                <property name="editable">
+                 <bool>true</bool>
+                </property>
+                <property name="insertPolicy">
+                 <enum>QComboBox::NoInsert</enum>
+                </property>
+               </widget>
               </item>
              </layout>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="rephrasing_provider_buttons_layout">
+            <item>
+             <widget class="QLabel" name="rephrasing_provider_label">
+              <property name="text">
+               <string>Provider:</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QComboBox" name="rephrasing_provider_selector"/>
+            </item>
+            <item>
+             <spacer name="rephrasing_provider_buttons_spacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
             </item>
            </layout>
           </item>

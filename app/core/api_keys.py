@@ -12,6 +12,12 @@ TASK_KEY_FIELDS = {
 PROVIDER_NAMES = {"openai": "OpenAI", "groq": "Groq", "custom": "Custom"}
 
 
+def masked_api_key(key: str) -> str:
+    """Show recognizable ends without revealing an entire short credential."""
+    key = key.strip()
+    return key[:10] + "••••••" + key[-4:] if len(key) > 14 else "•" * len(key)
+
+
 def provider_for_url(url: str) -> str:
     """Recognize official provider hosts, without accepting lookalike domains."""
     try:

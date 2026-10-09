@@ -26,12 +26,13 @@ from PyQt6.QtWidgets import (
     QStyle,
 )
 
-from app.core.api_keys import PROVIDER_NAMES, TASK_KEY_FIELDS, provider_for_url, selected_api_key
+from app.core.api_keys import PROVIDER_NAMES, TASK_KEY_FIELDS, masked_api_key, provider_for_url, selected_api_key
 from app.core.config_store import ConfigStore
 from app.core.constants import (
     CONFIG_FILE,
     LANGUAGES,
     LOG_FILE_PATH,
+    REPHRASING_MODEL_OPTIONS,
     TRANSCRIPTION_MODEL_OPTIONS,
     WHISPER_PROMPT_TOKEN_LIMIT,
     WINDOW_MIN_HEIGHT,
@@ -49,7 +50,7 @@ from app.core.prompts import (
     _is_known_default_prompt,
 )
 from app.core.redaction import LOG_REDACTION_STATE
-from app.core.textutil import estimate_tokens
+from app.core.textutil import clean_model_name, estimate_tokens
 from app.core.timing import add_log_handler, log_handlers, remove_log_handler
 from app.services import net
 from app.ui.api_keys import ApiKeysTab
@@ -142,10 +143,6 @@ class SettingsMixin:
 
         # Transcription Tab Connections
         self.api_endpoint_input.setText(self.config["api_endpoint"])
-        self.openai_button.clicked.connect(
-            lambda: self.api_endpoint_input.setText("https://api.openai.com/v1/audio/transcriptions"))
-        self.groq_button.clicked.connect(
-            lambda: self.api_endpoint_input.setText("https://api.groq.com/openai/v1/audio/transcriptions"))
         self._connection_tester = ConnectionTester(self)
         self.test_transcription_api_button.clicked.connect(self._connection_tester.test_transcription)
 
@@ -153,18 +150,7 @@ class SettingsMixin:
         self.transcription_key_profile_selector.currentIndexChanged.connect(self._update_transcription_api_group_style)
         self.api_endpoint_input.textChanged.connect(self._update_transcription_api_group_style)
 
-        self.model_dropdown.addItems(TRANSCRIPTION_MODEL_OPTIONS)
-        model_value = self.config["model"]
-        if self.model_dropdown.findText(model_value) != -1:
-            self.model_dropdown.setCurrentText(model_value)
-            self.model_input.setVisible(False)
-        else:
-            self.model_dropdown.setCurrentText("Custom")
-            self.model_input.setText(model_value)
-            self.model_input.setVisible(True)
-        self.model_dropdown.currentTextChanged.connect(lambda text: self.model_input.setVisible(text == "Custom"))
         self.model_dropdown.currentTextChanged.connect(lambda _t: self._update_prompt_token_counter())
-        self.model_input.textChanged.connect(lambda _t: self._update_prompt_token_counter())
 
         self.transcription_temp_slider.setRange(0, 100)
         self.transcription_temp_slider.setValue(int(self.config["transcription_temperature"] * 100))
@@ -267,12 +253,22 @@ class SettingsMixin:
         self.generic_rephrase_enabled_checkbox.stateChanged.connect(self._update_rephrase_api_group_style)
 
         self.rephrasing_api_url_input.setText(self.config["rephrasing_api_url"])
-        self.rephrasing_model_input.setText(self.config["rephrasing_model"])
+        for task, selector, endpoint in (
+            ("transcription", self.transcription_provider_selector, self.api_endpoint_input),
+            ("rephrasing", self.rephrasing_provider_selector, self.rephrasing_api_url_input),
+        ):
+            for provider, name in PROVIDER_NAMES.items():
+                selector.addItem(name, provider)
+            selector.setCurrentIndex(selector.findData(provider_for_url(endpoint.text())))
+            selector.currentIndexChanged.connect(lambda _index, task=task: self._set_provider_endpoint(task))
+        self._refresh_model_selectors(preserve_saved=True)
+        self.api_endpoint_input.textChanged.connect(lambda _url: self._refresh_model_selectors(only_task="transcription"))
+        self.rephrasing_api_url_input.textChanged.connect(lambda _url: self._refresh_model_selectors(only_task="rephrasing"))
 
         # Connect text inputs to update the API group styling
         self.rephrasing_api_url_input.textChanged.connect(self._update_rephrase_api_group_style)
         self.rephrasing_key_profile_selector.currentIndexChanged.connect(self._update_rephrase_api_group_style)
-        self.rephrasing_model_input.textChanged.connect(self._update_rephrase_api_group_style)
+        self.rephrasing_model_input.currentTextChanged.connect(self._update_rephrase_api_group_style)
         self._refresh_key_profile_selectors()
         self._api_keys_tab.profiles_changed.connect(self._refresh_key_profile_selectors)
         self.api_endpoint_input.textChanged.connect(self._refresh_key_profile_selectors)
@@ -415,8 +411,40 @@ class SettingsMixin:
             width, height = 760, WINDOW_MIN_HEIGHT
         self.resize(width, height)
 
+    def _set_provider_endpoint(self, task: str) -> None:
+        """Apply a selected official endpoint, or clear the field for a custom URL."""
+        selector, endpoint = ((self.transcription_provider_selector, self.api_endpoint_input) if task == "transcription"
+                              else (self.rephrasing_provider_selector, self.rephrasing_api_url_input))
+        base = {"openai": "https://api.openai.com/v1/", "groq": "https://api.groq.com/openai/v1/"}.get(selector.currentData())
+        path = "audio/transcriptions" if task == "transcription" else "chat/completions"
+        endpoint.setText(base + path if base else "")
+
+    def _refresh_model_selectors(self, preserve_saved: bool = False, only_task: Optional[str] = None) -> None:
+        """Filter models by endpoint; keep saved/custom names and replace incompatible built-ins on a provider change."""
+        for task, selector, endpoint, catalogs, config_field in (
+            ("transcription", self.model_dropdown, self.api_endpoint_input, TRANSCRIPTION_MODEL_OPTIONS, "model"),
+            ("rephrasing", self.rephrasing_model_input, self.rephrasing_api_url_input, REPHRASING_MODEL_OPTIONS, "rephrasing_model"),
+        ):
+            if only_task is not None and task != only_task:
+                continue
+            model = self.config[config_field] if preserve_saved else selector.currentText()
+            options = catalogs.get(provider_for_url(endpoint.text()), [])
+            model_id = clean_model_name(model)
+            matching = next((option for option in options if clean_model_name(option) == model_id), None)
+            known = any(clean_model_name(option) == model_id for models in catalogs.values() for option in models)
+            if not preserve_saved and matching is None and known and options:
+                model = options[0]
+                matching = model
+            selector.blockSignals(True)
+            selector.clear()
+            selector.addItems(options)
+            selector.setCurrentText(matching or model)
+            selector.blockSignals(False)
+        self._update_prompt_token_counter()
+        self._update_rephrase_api_group_style()
+
     def _refresh_key_profile_selectors(self) -> None:
-        """Retain stable selections when profiles are renamed; never fall back after deletion."""
+        """Select a valid profile on provider changes; preserve choices during profile edits."""
         profiles = self._api_keys_tab.profiles()
         for task, selector, endpoint in (
             ("transcription", self.transcription_key_profile_selector, self.api_endpoint_input),
@@ -426,12 +454,27 @@ class SettingsMixin:
             if selected_id is None:
                 selected_id = self.config[TASK_KEY_FIELDS[task][1]]
             provider = provider_for_url(endpoint.text())
+            provider_selector = self.transcription_provider_selector if task == "transcription" else self.rephrasing_provider_selector
+            provider_selector.blockSignals(True)
+            provider_selector.setCurrentIndex(provider_selector.findData(provider))
+            provider_selector.blockSignals(False)
+            previous_provider = selector.property("key_provider")
+            selector.setProperty("key_provider", provider)
+            if previous_provider is not None and previous_provider != provider:
+                valid_ids = [profile["id"] for profile in profiles if selected_api_key({
+                    "api_key_profiles": [profile],
+                    TASK_KEY_FIELDS[task][0]: endpoint.text(),
+                    TASK_KEY_FIELDS[task][1]: profile["id"],
+                }, task)]
+                saved_id = self.config[TASK_KEY_FIELDS[task][1]]
+                selected_id = saved_id if saved_id in valid_ids else next(iter(valid_ids), "")
             selector.blockSignals(True)
             selector.clear()
             selector.addItem(self.translator.tr("api_key_none"), "")
             for profile in profiles:
                 if profile["provider"] == provider:
-                    selector.addItem(f"{profile['name']} ({PROVIDER_NAMES[provider]})", profile["id"])
+                    preview = masked_api_key(profile["key"])
+                    selector.addItem(f"{profile['name']} ({PROVIDER_NAMES[provider]}) — {preview}", profile["id"])
             selector.setCurrentIndex(max(0, selector.findData(selected_id)))
             selector.blockSignals(False)
         self._update_transcription_api_group_style()
@@ -550,7 +593,7 @@ class SettingsMixin:
     def save_settings(self) -> None:
         """Saves settings, restarts the hotkey listener."""
         # Clean model name: remove anything in parentheses and trailing whitespace
-        model_raw = self.model_input.text() if self.model_dropdown.currentText() == "Custom" else self.model_dropdown.currentText()
+        model_raw = self.model_dropdown.currentText().strip()
         # Perform validation (warnings only)
         warnings = self._collect_validation_warnings(model_raw)
         if warnings:
@@ -628,7 +671,7 @@ class SettingsMixin:
 
         # Shared API settings
         self.config["rephrasing_api_url"] = self.rephrasing_api_url_input.text()
-        self.config["rephrasing_model"] = self.rephrasing_model_input.text()
+        self.config["rephrasing_model"] = self.rephrasing_model_input.currentText().strip()
         self.config["rephrasing_temperature"] = self.rephrasing_temp_slider.value() / 100.0
         # Post Rewording entries (new)
         if hasattr(self, 'post_rephrasing_data'):
@@ -680,7 +723,13 @@ class SettingsMixin:
         """Update the token counter label (rendered as a pill badge) below the prompt."""
         text = self.prompt_input.toPlainText()
         tokens = estimate_tokens(text)
-        limit = WHISPER_PROMPT_TOKEN_LIMIT if 'whisper' in (self.model_dropdown.currentText().lower() + ' ' + self.model_input.text().lower()) else None
+        model = self.model_dropdown.currentText()
+        model_id = clean_model_name(model)
+        temperature_supported = model_id not in ("gpt-transcribe", "gpt-4o-transcribe-diarize")
+        self.transcription_temp_slider.setEnabled(temperature_supported)
+        self.transcription_temp_label.setEnabled(temperature_supported)
+        self.prompt_input.setEnabled(model_id != "gpt-4o-transcribe-diarize")
+        limit = WHISPER_PROMPT_TOKEN_LIMIT if 'whisper' in model.lower() else None
         pal = getattr(self, "_theme_palette", None)
         if limit:
             over = tokens > limit
@@ -728,26 +777,17 @@ class SettingsMixin:
 
     def _collect_validation_warnings(self, model_raw: str) -> List[str]:
         """Return a list of validation warning strings based on current form values.
-        Rules (all case-insensitive):
-        - If endpoint contains 'openai': model must contain 'openai' AND key must start with 'sk-'
-        - If endpoint contains 'groq': model must contain 'groq' AND key must start with 'gsk'
         (Warnings are hints only; saving proceeds regardless.)
         """
         warnings: List[str] = []
-        endpoint = self.api_endpoint_input.text().strip().lower()
+        provider = provider_for_url(self.api_endpoint_input.text())
         model_lc = model_raw.strip().lower()
         api_key = self._ui_api_key("transcription")
         api_key_lc = api_key.lower()
-        is_custom_model = self.model_dropdown.currentText() == "Custom"
-
-        if 'openai.com' in endpoint:
-            if not is_custom_model and 'openai' not in model_lc:
-                warnings.append("API endpoint contains 'openai', but the selected model does not contain 'openai'.")
+        if provider == "openai":
             if not api_key_lc.startswith('sk-'):
                 warnings.append("OpenAI API Key should start with 'sk-'.")
-        if 'groq' in endpoint:
-            if not is_custom_model and 'groq' not in model_lc:
-                warnings.append("API endpoint contains 'groq', but the selected model does not contain 'groq'.")
+        if provider == "groq":
             if not api_key_lc.startswith('gsk'):
                 warnings.append("Groq API Key should start with 'gsk'.")
 
@@ -799,11 +839,14 @@ class SettingsMixin:
 
     def _update_rephrase_api_group_style(self) -> None:
         """Highlight incomplete API settings and mirror that state on the transformations tab."""
+        temperature_supported = not self.rephrasing_model_input.currentText().strip().lower().startswith(("gpt-5.6", "gpt-6"))
+        self.rephrasing_temp_slider.setEnabled(temperature_supported)
+        self.rephrasing_temp_label.setEnabled(temperature_supported)
         # Check if any of the required fields are empty.
         # This validation is for the UI highlight only and is intentionally strict.
         url_missing = not self.rephrasing_api_url_input.text().strip()
         key_missing = not self._ui_api_key("rephrasing")
-        model_missing = not self.rephrasing_model_input.text().strip()
+        model_missing = not self.rephrasing_model_input.currentText().strip()
 
         settings_incomplete = url_missing or key_missing or model_missing
 
@@ -866,23 +909,14 @@ class SettingsMixin:
         api_endpoint_tooltip = self.translator.tr("api_endpoint_tooltip")
         self.api_endpoint_label.setToolTip(api_endpoint_tooltip)
         self.api_endpoint_input.setToolTip(api_endpoint_tooltip)
-        self.openai_button.setToolTip(api_endpoint_tooltip)
-        self.groq_button.setToolTip(api_endpoint_tooltip)
-
-        self.openai_button.setText("🤖  " + self.translator.tr("openai_button"))
-        self.groq_button.setText("⚡  " + self.translator.tr("groq_button"))
+        self.transcription_provider_label.setText(self.translator.tr("api_key_provider") + ":")
+        self.transcription_provider_selector.setToolTip(api_endpoint_tooltip)
         self.test_transcription_api_button.setText("🔌  " + self.translator.tr("test_connection_button"))
         self.test_transcription_api_button.setToolTip(self.translator.tr("test_connection_tooltip"))
         self.model_label.setText(self.translator.tr("model_label"))
         model_tooltip = self.translator.tr("model_tooltip")
         self.model_label.setToolTip(model_tooltip)
         self.model_dropdown.setToolTip(model_tooltip)
-        self.model_input.setToolTip(model_tooltip)
-
-        if is_MACOS:
-            self.model_input.setPlaceholderText("whisper-1")
-        else:
-            self.model_input.setPlaceholderText(self.translator.tr("custom_model_placeholder"))
         self.transcription_temp_label_title.setText(self.translator.tr("temperature_label"))
         temp_tooltip = self.translator.tr("temperature_tooltip")
         self.transcription_temp_label_title.setToolTip(temp_tooltip)
@@ -959,6 +993,7 @@ class SettingsMixin:
 
         self.generic_rephrase_group.setTitle(self.translator.tr("generic_rephrase_group_title"))
         self.generic_rephrase_enabled_checkbox.setText(self.translator.tr("generic_rephrase_enable_checkbox"))
+        self.generic_rephrase_enabled_checkbox.setToolTip(self.translator.tr("generic_rephrase_enable_tooltip"))
         self.generic_rephrase_prompt_label.setText(self.translator.tr("generic_rephrase_prompt_label"))
         gr_prompt_tooltip = self.translator.tr("generic_rephrase_prompt_tooltip")
         self.generic_rephrase_prompt_label.setToolTip(gr_prompt_tooltip)
@@ -967,8 +1002,11 @@ class SettingsMixin:
         self.shared_api_group.setTitle(self.translator.tr("shared_api_group_title"))
         self.shared_api_group.setToolTip(self.translator.tr("shared_api_group_tooltip"))
         self.rephrasing_api_url_label.setText(self.translator.tr("rephrase_api_url_label"))
-        self.rephrasing_api_url_label.setToolTip(api_endpoint_tooltip)
-        self.rephrasing_api_url_input.setToolTip(api_endpoint_tooltip)
+        rephrase_url_tooltip = self.translator.tr("rephrase_api_url_tooltip")
+        self.rephrasing_api_url_label.setToolTip(rephrase_url_tooltip)
+        self.rephrasing_api_url_input.setToolTip(rephrase_url_tooltip)
+        self.rephrasing_provider_label.setText(self.translator.tr("api_key_provider") + ":")
+        self.rephrasing_provider_selector.setToolTip(rephrase_url_tooltip)
 
         self.rephrasing_api_key_label.setText(self.translator.tr("api_key_profile_label"))
         self.rephrasing_api_key_label.setToolTip(api_key_tooltip)

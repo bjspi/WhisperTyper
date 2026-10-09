@@ -14,9 +14,7 @@ from app.core.api_keys import migrate_api_keys
 from app.core.constants import (
     CONFIG_SCHEMA_VERSION,
     DEFAULT_CONFIG,
-    DEFAULT_REPHRASING_MODEL,
     LANGUAGES,
-    PREVIOUS_DEFAULT_REPHRASING_MODELS,
     WINDOW_MIN_HEIGHT,
 )
 from app.core.textutil import demojibake
@@ -85,12 +83,6 @@ class ConfigStore:
             if isinstance(lang_value, str) and len(lang_value) > 2 and lang_value in LANGUAGES:
                 cfg["input_language"] = LANGUAGES[lang_value]
                 changed = True
-
-        # Migrate the rephrasing model from a previous built-in default to the current one,
-        # but only if the user never chose their own model (still on an old default).
-        if cfg.get("rephrasing_model") in PREVIOUS_DEFAULT_REPHRASING_MODELS:
-            cfg["rephrasing_model"] = DEFAULT_REPHRASING_MODEL
-            changed = True
 
         # Self-heal mojibake: UTF-8 text once mis-decoded as latin-1 ("fÃ¼hrt" -> "führt").
         # Repairs text fields (incl. rephrase entries) on load, regardless of disk state.
