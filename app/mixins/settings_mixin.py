@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import logging.handlers
 import os
+from html import escape
 from typing import Any, Dict, List, Optional
 
 from PyQt6 import uic
@@ -371,6 +372,16 @@ class SettingsMixin:
         )
         self.quit_without_confirmation_checkbox.setChecked(self.config["quit_without_confirmation"])
         self.alt_clipboard_lib_checkbox.setChecked(self.config["alt_clipboard_lib"])
+        self.windows_sendinput_text_checkbox.setVisible(is_WINDOWS)
+        self.windows_sendinput_fallback_checkbox.setVisible(is_WINDOWS)
+        self.fast_paste_checkbox.setVisible(is_WINDOWS or is_MACOS)
+        self.windows_sendinput_text_checkbox.setChecked(self.config.get("windows_sendinput_text", False))
+        self.windows_sendinput_fallback_checkbox.setChecked(self.config.get("windows_sendinput_fallback", True))
+        self.fast_paste_checkbox.setChecked(self.config.get("windows_fast_paste", False))
+        self.windows_sendinput_fallback_checkbox.setEnabled(is_WINDOWS and self.windows_sendinput_text_checkbox.isChecked())
+        self.windows_sendinput_text_checkbox.toggled.connect(
+            lambda checked: self.windows_sendinput_fallback_checkbox.setEnabled(is_WINDOWS and checked)
+        )
         self.post_rephrase_auto_select_all_checkbox.setChecked(self.config["post_rephrase_auto_select_all"])
 
         self.play_g_button.clicked.connect(self.play_latest_recording)
@@ -668,6 +679,11 @@ class SettingsMixin:
         self.config["quit_without_confirmation"] = self.quit_without_confirmation_checkbox.isChecked()
         # Alternative clipboard lib
         self.config["alt_clipboard_lib"] = self.alt_clipboard_lib_checkbox.isChecked()
+        if is_WINDOWS:
+            self.config["windows_sendinput_text"] = self.windows_sendinput_text_checkbox.isChecked()
+            self.config["windows_sendinput_fallback"] = self.windows_sendinput_fallback_checkbox.isChecked()
+        if is_WINDOWS or is_MACOS:
+            self.config["windows_fast_paste"] = self.fast_paste_checkbox.isChecked()
         self.config["post_rephrase_auto_select_all"] = self.post_rephrase_auto_select_all_checkbox.isChecked()
 
         # Rephrasing settings
@@ -1098,7 +1114,23 @@ class SettingsMixin:
         self.play_g_button.setText(self.translator.tr("play_last_recording_button"))
         self.play_g_button.setToolTip(self.translator.tr("play_last_recording_tooltip"))
         self.alt_clipboard_lib_checkbox.setText(self.translator.tr("alt_clipboard_lib_checkbox"))
-        self.alt_clipboard_lib_checkbox.setToolTip(self.translator.tr("alt_clipboard_lib_tooltip"))
+        self.text_insertion_group.setTitle(self.translator.tr("text_insertion_group_title"))
+        self.windows_sendinput_text_checkbox.setText(self.translator.tr("windows_sendinput_text_checkbox"))
+        self.windows_sendinput_fallback_checkbox.setText(self.translator.tr("windows_sendinput_fallback_checkbox"))
+        self.fast_paste_checkbox.setText(self.translator.tr("fast_paste_checkbox"))
+        for checkbox, key in (
+            (self.alt_clipboard_lib_checkbox, "alt_clipboard_lib_tooltip"),
+            (self.windows_sendinput_text_checkbox, "windows_sendinput_text_tooltip"),
+            (self.windows_sendinput_fallback_checkbox, "windows_sendinput_fallback_tooltip"),
+            (self.fast_paste_checkbox, "fast_paste_tooltip"),
+        ):
+            title = escape(checkbox.text())
+            paragraphs = [
+                escape(sentence)
+                for sentence in self.translator.tr(key).split(". ")
+            ]
+            body = ".<br><br>".join(paragraphs)
+            checkbox.setToolTip(f"<qt><b>{title}</b><br><br>{body}</qt>")
         self.post_rephrase_auto_select_all_checkbox.setText(self.translator.tr("post_rephrase_auto_select_all_checkbox"))
         self.post_rephrase_auto_select_all_checkbox.setToolTip(
             self.translator.tr("post_rephrase_auto_select_all_tooltip")

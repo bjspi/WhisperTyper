@@ -419,7 +419,11 @@ class TranscriptionMixin:
                 # Copy instead of type — used for tray re-transcribe / file transcription, where the
                 # user hasn't focused a text field. Confirm with a green checkmark balloon (this also
                 # replaces the persistent "transcribing…" spinner).
+                if timing:
+                    timing.mark("clipboard_write_start")
                 copykitten.copy(text)
+                if timing:
+                    timing.mark("clipboard_write_end")
                 self.show_tray_balloon(self.translator.tr("transcribed_to_clipboard_message"), 2500, check=True)
             else:
                 # Insert mode: swap the spinner for a brief "done ✓" balloon, then type the text. If
@@ -427,7 +431,8 @@ class TranscriptionMixin:
                 # that notice alone rather than clobbering it with a success checkmark.
                 if spinner_active:
                     self.show_tray_balloon(self.translator.tr("transcription_done_message"), 1600, check=True)
-                self.insert_transcribed_text(text)
+                if not self.insert_transcribed_text(text, timing=timing):
+                    outcome = "output_failed"
         except Exception:
             if timing:
                 timing.finish("output_failed")

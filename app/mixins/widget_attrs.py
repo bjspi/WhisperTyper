@@ -136,6 +136,10 @@ class WidgetAttrs:
     recording_prompt_overlay_system_position_checkbox: "QCheckBox"
     quit_without_confirmation_checkbox: "QCheckBox"
     alt_clipboard_lib_checkbox: "QCheckBox"
+    text_insertion_group: "QGroupBox"
+    windows_sendinput_text_checkbox: "QCheckBox"
+    windows_sendinput_fallback_checkbox: "QCheckBox"
+    fast_paste_checkbox: "QCheckBox"
     post_rephrase_auto_select_all_checkbox: "QCheckBox"
     play_g_button: "QPushButton"
 

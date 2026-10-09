@@ -13,7 +13,9 @@ from PyQt6.QtCore import QByteArray, QMimeData
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import QApplication
 
-from app.core.env import is_MACOS
+from app.core.env import is_MACOS, is_WINDOWS
+from app.core.timing import OperationTiming
+from app.services.windows_text_input import send_unicode_text
 
 
 class ClipboardMixin:
@@ -21,7 +23,7 @@ class ClipboardMixin:
 
     _pending_clipboard_restore_state: Optional[Dict[str, Any]]
 
-    def _simulate_key_combination(self, char: str) -> None:
+    def _simulate_key_combination(self, char: str) -> bool:
         """
         Simulates pressing a key combination like Ctrl+C or Cmd+C.
         Uses either pynput or pyautogui based on user configuration.
@@ -35,7 +37,7 @@ class ClipboardMixin:
                 # more reliable than synthesized key-down/key-up sequences.
                 script = f'tell application "System Events" to keystroke "{char}" using command down'
                 subprocess.run(['osascript', '-e', script], check=True, capture_output=True, text=True)
-                return
+                return True
             except subprocess.CalledProcessError as e:
                 logging.warning(
                     "macOS System Events key simulation failed for Cmd+%s: %s",
@@ -51,7 +53,11 @@ class ClipboardMixin:
             logging.debug("Using pyautogui for key simulation.")
             modifier = 'command' if is_MACOS else 'ctrl'
             try:
-                pyautogui.hotkey(modifier, char)
+                if (is_WINDOWS or is_MACOS) and char == 'v' and self.config.get("windows_fast_paste", False):
+                    pyautogui.hotkey(modifier, char, _pause=False)
+                else:
+                    pyautogui.hotkey(modifier, char)
+                return True
             except Exception as e:
                 logging.error(f"pyautogui key simulation failed: {e}")
         else:
@@ -61,8 +67,10 @@ class ClipboardMixin:
                 with self.keyboard_controller.pressed(modifier):
                     self.keyboard_controller.press(char)
                     self.keyboard_controller.release(char)
+                return True
             except Exception as e:
                 logging.error(f"pynput key simulation failed: {e}")
+        return False
 
     def _capture_clipboard_state(self) -> Dict[str, Any]:
         """Capture the clipboard state before temporary copy/paste operations."""
@@ -299,50 +307,114 @@ class ClipboardMixin:
 
         return selected_text.strip()
 
-    def insert_transcribed_text(self, text: str) -> None:
+    def insert_transcribed_text(self, text: str, timing: Optional[OperationTiming] = None) -> bool:
         """
-        Inserts transcribed text using the clipboard to ensure reliability with special characters.
-        This is more robust than simulating typing.
+        Inserts text using optional Windows Unicode input or the existing clipboard path.
 
-        If 'Restore clipboard' is enabled, the original clipboard content is saved and restored.
+        On the clipboard path, 'Restore clipboard' saves and restores the original content.
         If disabled, the new text remains on the clipboard after pasting.
 
         Args:
             text (str): The text to insert.
+            timing: Optional operation milestones; no synchronous log writes.
+
+        Returns:
+            Whether input dispatch succeeded; the target application does not acknowledge it.
         """
         if not text:
-            return
+            return True
+
+        if timing:
+            timing.mark("text_commit_start")
+
+        if is_WINDOWS and self.config.get("windows_sendinput_text", False):
+            if timing:
+                timing.mark("sendinput_dispatch_start")
+            accepted, expected = 0, 0
+            can_fallback = True
+            try:
+                accepted, expected = send_unicode_text(text)
+            except (OSError, ValueError) as error:
+                logging.warning("text_input mode=sendinput rejected error=%s", type(error).__name__)
+            except Exception as error:
+                can_fallback = False
+                logging.error("text_input mode=sendinput unknown_failure error=%s", type(error).__name__)
+            if timing:
+                timing.mark("sendinput_dispatch_end")
+            logging.info(
+                "text_input op=%s mode=sendinput accepted_events=%s total_events=%s",
+                timing.operation_id if timing else "none", accepted, expected,
+            )
+            if expected and accepted == expected:
+                if timing:
+                    timing.mark("text_commit_end")
+                return True
+            if accepted or not can_fallback or not self.config.get("windows_sendinput_fallback", True):
+                if timing:
+                    timing.mark("text_commit_failed")
+                self.show_tray_balloon(self.translator.tr("windows_sendinput_failed_message"), 4500)
+                return False
+            if timing:
+                timing.mark("sendinput_fallback")
+            logging.info("text_input op=%s mode=clipboard fallback=sendinput_rejected", timing.operation_id if timing else "none")
 
         # Ensure the user is prompted for permissions on macOS before trying to paste.
         self._check_and_warn_macos_permissions('accessibility')
 
         logging.debug("Inserting transcribed text via clipboard paste for reliability.")
+        fast_paste = (is_WINDOWS or is_MACOS) and self.config.get("windows_fast_paste", False)
+        logging.info("text_input op=%s mode=clipboard fast_paste=%s", timing.operation_id if timing else "none", fast_paste)
         restore = self.config["restore_clipboard"]
         old_clipboard_state: Dict[str, Any] = {}
         try:
             if restore:
+                if timing:
+                    timing.mark("clipboard_snapshot_start")
                 old_clipboard_state = self._capture_clipboard_state()
+                if timing:
+                    timing.mark("clipboard_snapshot_end")
 
             # Copy the new text to the clipboard. This is necessary for special characters.
+            if timing:
+                timing.mark("clipboard_write_start")
             copykitten.copy(text)
+            if timing:
+                timing.mark("clipboard_write_end")
 
             # Wait a moment to ensure the OS has processed the copy command.
-            time.sleep(0.1)
+            if not fast_paste:
+                time.sleep(0.1)
 
             # Platform-aware paste hotkey
-            self._simulate_key_combination('v')
+            if timing:
+                timing.mark("paste_dispatch_start")
+            if not self._simulate_key_combination('v'):
+                if timing:
+                    timing.mark("text_commit_failed")
+                return False
+            if timing:
+                timing.mark("paste_dispatch_end")
+                timing.mark("text_commit_end")
 
             # Give the target application a moment to process the paste command.
-            time.sleep(0.1)
+            if not fast_paste:
+                time.sleep(0.1)
+            if timing:
+                timing.mark("paste_settle_end")
+            return True
 
         except Exception as e:
+            if timing:
+                timing.mark("text_commit_failed")
             logging.error(f"Failed to insert text via clipboard: {e}")
+            return False
         finally:
             # Once the original state was captured, always put it back—even if copying
             # or simulating the paste fails halfway through the operation.
             if restore and old_clipboard_state:
                 try:
-                    self._schedule_clipboard_restore(old_clipboard_state)
+                    # Keep ~600 ms after dispatch without blocking the GUI for the first 100 ms.
+                    self._schedule_clipboard_restore(old_clipboard_state, delay_ms=600 if fast_paste else 500)
                 except Exception as e:
                     logging.error(f"Failed to restore clipboard after insertion: {e}")
 
