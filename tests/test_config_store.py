@@ -122,6 +122,15 @@ class TestMigrations:
         assert config["window_height"] >= WINDOW_MIN_HEIGHT
         assert config["config_schema_version"] == CONFIG_SCHEMA_VERSION
 
+    @pytest.mark.parametrize("schema", [0, CONFIG_SCHEMA_VERSION])
+    def test_short_window_height_survives_reload_and_migration(self, store: ConfigStore, schema: int):
+        config, _ = store.load()
+        config["window_height"] = 640
+        config["config_schema_version"] = schema
+        store.save(config)
+        reloaded, _ = store.load()
+        assert reloaded["window_height"] == 640
+
 
 class TestSaveRoundtrip:
     def test_utf8_roundtrip(self, store: ConfigStore):

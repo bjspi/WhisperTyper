@@ -283,19 +283,6 @@
          </property>
         </widget>
        </item>
-           <item>
-            <spacer name="verticalSpacer">
-             <property name="orientation">
-              <enum>Qt::Vertical</enum>
-             </property>
-             <property name="sizeHint" stdset="0">
-              <size>
-               <width>20</width>
-               <height>40</height>
-              </size>
-             </property>
-            </spacer>
-           </item>
           </layout>
          </widget>
         </widget>
@@ -782,6 +769,31 @@
       <attribute name="title">
        <string>General</string>
       </attribute>
+      <layout class="QVBoxLayout" name="general_tab_outer_layout">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="QScrollArea" name="general_scroll_area">
+         <property name="frameShape">
+          <enum>QFrame::NoFrame</enum>
+         </property>
+         <property name="widgetResizable">
+          <bool>true</bool>
+         </property>
+         <property name="horizontalScrollBarPolicy">
+          <enum>Qt::ScrollBarAlwaysOff</enum>
+         </property>
+         <widget class="QWidget" name="general_scroll_widget">
       <layout class="QVBoxLayout" name="general_layout">
        <item>
         <widget class="QLabel" name="ui_language_label">
@@ -970,6 +982,10 @@
           </size>
          </property>
         </spacer>
+       </item>
+      </layout>
+         </widget>
+        </widget>
        </item>
       </layout>
      </widget>
