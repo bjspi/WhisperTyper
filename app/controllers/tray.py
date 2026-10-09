@@ -202,7 +202,10 @@ class TrayController(QObject):
         add(sp.SP_BrowserReload, "tray_restart_action", "n", self._restart)
         add(sp.SP_DialogCloseButton, "tray_quit_action", "q", self._quit)
 
-        self.tray_icon.setContextMenu(tray_menu)
+        # macOS opens a context menu natively on every click, on top of the popup from
+        # _on_activated, which stacked two menus; there the popup alone handles both clicks.
+        if not is_MACOS:
+            self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
         self.tray_icon.activated.connect(self._on_activated)
         self.refresh_actions()
