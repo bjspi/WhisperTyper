@@ -119,7 +119,7 @@ UI_LANG_FILES = [
 # Default UI language used to pick the initial default prompts.
 _DEFAULT_UI_LANG = SYS_LANG if SYS_LANG in UI_LANG_FILES else "en"
 
-CONFIG_SCHEMA_VERSION = 2
+CONFIG_SCHEMA_VERSION = 3
 
 # Window sizing: default on fresh install + the enforced minimum the user can't shrink past.
 # Shorter windows use the settings pages' scroll areas.
@@ -132,7 +132,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "input_device_name": "",  # "" = system default input; else a device name from the dropdown
     "window_width": 760,
     "window_height": 1080,
-    "api_key": "",
+    "api_key_profiles": [],
+    "transcription_key_profile_id": "",
+    "rephrasing_key_profile_id": "",
+    "groq_key_rotation": False,
     "api_endpoint": "https://api.openai.com/v1/audio/transcriptions",
     "model": DEFAULT_TRANSCRIPTION_MODEL,
     "transcription_temperature": 0.0,
@@ -187,7 +190,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "generic_rephrase_enabled": False,
     "generic_rephrase_prompt": _default_prompt_for(DEFAULT_GENERIC_REPHRASE_PROMPTS, _DEFAULT_UI_LANG),
     "rephrasing_api_url": "https://api.openai.com/v1/chat/completions",
-    "rephrasing_api_key": "",
     "rephrasing_model": DEFAULT_REPHRASING_MODEL,
     "rephrasing_temperature": 0.7,
     "post_rephrasing_entries": [],

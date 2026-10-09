@@ -237,5 +237,19 @@
   "color_theme_light": "Claro",
   "color_theme_dark": "Oscuro",
   "input_device_label": "Dispositivo de entrada (micrófono):",
-  "input_device_default": "Predeterminado del sistema (auto)"
+  "input_device_default": "Predeterminado del sistema (auto)",
+  "tab_api_keys": "Claves API",
+  "tooltip_tab_api_keys": "Gestionar claves API con nombre para transcripción y reformulación.",
+  "api_key_profile_label": "Perfil de clave:",
+  "api_key_profile_tooltip": "Elige una clave guardada para este endpoint. Gestiona los perfiles en Claves API y guarda la configuración.",
+  "api_key_none": "Ninguna clave seleccionada",
+  "api_key_profiles_description": "Guarda claves con nombre y elige un perfil independiente en Transcripción y Reformulación. Las claves se guardan localmente sin cifrado.",
+  "api_key_name": "Nombre",
+  "api_key_provider": "Proveedor",
+  "api_key_custom_provider": "Personalizado",
+  "api_key_add": "Añadir clave",
+  "api_key_remove": "Eliminar clave",
+  "api_key_name_required": "Asigna un nombre a cada perfil de clave.",
+  "groq_key_rotation": "Rotar claves Groq para transcripción",
+  "groq_key_rotation_tooltip": "Usa por turnos todas las claves Groq distintas y no vacías, empezando por la clave de transcripción seleccionada. La reformulación siempre usa su propio perfil. Los cambios se aplican al guardar."
 }

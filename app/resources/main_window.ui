@@ -74,11 +74,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QLineEdit" name="api_key_input">
-            <property name="echoMode">
-             <enum>QLineEdit::Password</enum>
-            </property>
-           </widget>
+           <widget class="QComboBox" name="transcription_key_profile_selector"/>
           </item>
           <item>
            <widget class="QLabel" name="api_endpoint_label">
@@ -379,11 +375,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QLineEdit" name="rephrasing_api_key_input">
-            <property name="echoMode">
-             <enum>QLineEdit::Password</enum>
-            </property>
-           </widget>
+           <widget class="QComboBox" name="rephrasing_key_profile_selector"/>
           </item>
           <item>
            <widget class="QLabel" name="rephrasing_temp_label_title">

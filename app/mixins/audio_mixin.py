@@ -12,6 +12,7 @@ import pyaudio
 
 from app.audio.device_selector import InputDeviceSelector
 from app.core import dsp
+from app.core.api_keys import selected_api_key
 from app.core.env import is_MACOS, is_WINDOWS, open_with_default_app
 from app.core.frameworks import NSURL, AVAudioRecorder
 from app.core.prompts import recording_prompt_entries
@@ -138,9 +139,7 @@ class AudioMixin:
             # Check if API settings are complete before starting recording.
             # A fresh install has no API key yet, so recording is blocked and the
             # settings window is opened so the user can add a key first.
-            api_url = self.api_endpoint_input.text().strip()
-            api_key = self.api_key_input.text().strip()
-            if not api_url or not api_key:
+            if not self._has_valid_api_settings():
                 self.push_to_talk_active = False
                 self.show_tray_balloon(self.translator.tr("recording_no_api_keys"), 2500)
                 self.show_settings_window()
@@ -197,8 +196,8 @@ class AudioMixin:
 
         rephrasing_ready = all(
             str(self.config.get(key, "")).strip()
-            for key in ("rephrasing_api_url", "rephrasing_api_key", "rephrasing_model")
-        )
+            for key in ("rephrasing_api_url", "rephrasing_model")
+        ) and bool(selected_api_key(self.config, "rephrasing"))
         if not rephrasing_ready:
             self.show_tray_balloon(self.translator.tr("recording_prompt_api_missing"), 4000)
             return

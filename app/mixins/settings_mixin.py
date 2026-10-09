@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
     QStyle,
 )
 
+from app.core.api_keys import PROVIDER_NAMES, TASK_KEY_FIELDS, provider_for_url, selected_api_key
 from app.core.config_store import ConfigStore
 from app.core.constants import (
     CONFIG_FILE,
@@ -51,6 +52,7 @@ from app.core.redaction import LOG_REDACTION_STATE
 from app.core.textutil import estimate_tokens
 from app.core.timing import add_log_handler, log_handlers, remove_log_handler
 from app.services import net
+from app.ui.api_keys import ApiKeysTab
 from app.ui.connection_tester import ConnectionTester
 
 
@@ -134,8 +136,11 @@ class SettingsMixin:
 
         # --- Post-UI Load Configuration and Connections ---
 
+        self._api_keys_tab = ApiKeysTab(self.config["api_key_profiles"], self.translator, self)
+        self._api_keys_tab.groq_rotation.setChecked(self.config["groq_key_rotation"])
+        self.tabs.insertTab(self.tabs.indexOf(self.general_tab), self._api_keys_tab, "")
+
         # Transcription Tab Connections
-        self.api_key_input.setText(self.config["api_key"])
         self.api_endpoint_input.setText(self.config["api_endpoint"])
         self.openai_button.clicked.connect(
             lambda: self.api_endpoint_input.setText("https://api.openai.com/v1/audio/transcriptions"))
@@ -145,7 +150,7 @@ class SettingsMixin:
         self.test_transcription_api_button.clicked.connect(self._connection_tester.test_transcription)
 
         # Connect for live validation
-        self.api_key_input.textChanged.connect(self._update_transcription_api_group_style)
+        self.transcription_key_profile_selector.currentIndexChanged.connect(self._update_transcription_api_group_style)
         self.api_endpoint_input.textChanged.connect(self._update_transcription_api_group_style)
 
         self.model_dropdown.addItems(TRANSCRIPTION_MODEL_OPTIONS)
@@ -262,13 +267,16 @@ class SettingsMixin:
         self.generic_rephrase_enabled_checkbox.stateChanged.connect(self._update_rephrase_api_group_style)
 
         self.rephrasing_api_url_input.setText(self.config["rephrasing_api_url"])
-        self.rephrasing_api_key_input.setText(self.config["rephrasing_api_key"])
         self.rephrasing_model_input.setText(self.config["rephrasing_model"])
 
         # Connect text inputs to update the API group styling
         self.rephrasing_api_url_input.textChanged.connect(self._update_rephrase_api_group_style)
-        self.rephrasing_api_key_input.textChanged.connect(self._update_rephrase_api_group_style)
+        self.rephrasing_key_profile_selector.currentIndexChanged.connect(self._update_rephrase_api_group_style)
         self.rephrasing_model_input.textChanged.connect(self._update_rephrase_api_group_style)
+        self._refresh_key_profile_selectors()
+        self._api_keys_tab.profiles_changed.connect(self._refresh_key_profile_selectors)
+        self.api_endpoint_input.textChanged.connect(self._refresh_key_profile_selectors)
+        self.rephrasing_api_url_input.textChanged.connect(self._refresh_key_profile_selectors)
 
         self.rephrasing_temp_slider.setRange(0, 100)
         self.rephrasing_temp_slider.setValue(int(self.config["rephrasing_temperature"] * 100))
@@ -325,9 +333,6 @@ class SettingsMixin:
         self._update_post_rp_ui_state()
         if self.post_rp_list.count() > 0:
             self.post_rp_list.setCurrentRow(0)
-
-        # Connect changes in the main API key to the rephrase group style check
-        self.api_key_input.textChanged.connect(self._update_rephrase_api_group_style)
 
         self.pr_hotkey_display.setText(self.config["post_rephrase_hotkey"])
         self.set_pr_hotkey_button.clicked.connect(self.start_hotkey_capture)
@@ -409,6 +414,38 @@ class SettingsMixin:
         except (TypeError, ValueError):
             width, height = 760, WINDOW_MIN_HEIGHT
         self.resize(width, height)
+
+    def _refresh_key_profile_selectors(self) -> None:
+        """Retain stable selections when profiles are renamed; never fall back after deletion."""
+        profiles = self._api_keys_tab.profiles()
+        for task, selector, endpoint in (
+            ("transcription", self.transcription_key_profile_selector, self.api_endpoint_input),
+            ("rephrasing", self.rephrasing_key_profile_selector, self.rephrasing_api_url_input),
+        ):
+            selected_id = selector.currentData()
+            if selected_id is None:
+                selected_id = self.config[TASK_KEY_FIELDS[task][1]]
+            provider = provider_for_url(endpoint.text())
+            selector.blockSignals(True)
+            selector.clear()
+            selector.addItem(self.translator.tr("api_key_none"), "")
+            for profile in profiles:
+                if profile["provider"] == provider:
+                    selector.addItem(f"{profile['name']} ({PROVIDER_NAMES[provider]})", profile["id"])
+            selector.setCurrentIndex(max(0, selector.findData(selected_id)))
+            selector.blockSignals(False)
+        self._update_transcription_api_group_style()
+        self._update_rephrase_api_group_style()
+
+    def _ui_api_key(self, task: str) -> str:
+        """Resolve credentials from unsaved form values for highlighting and connection tests."""
+        return selected_api_key({
+            "api_key_profiles": self._api_keys_tab.profiles(),
+            "api_endpoint": self.api_endpoint_input.text(),
+            "rephrasing_api_url": self.rephrasing_api_url_input.text(),
+            "transcription_key_profile_id": self.transcription_key_profile_selector.currentData(),
+            "rephrasing_key_profile_id": self.rephrasing_key_profile_selector.currentData(),
+        }, task)
 
     def _build_ffmpeg_settings_row(self) -> None:
         """Add the FFmpeg path row (label + path field + Browse + status) to the Transcription tab.
@@ -525,7 +562,15 @@ class SettingsMixin:
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
 
-        self.config["api_key"] = self.api_key_input.text()
+        profiles = self._api_keys_tab.profiles()
+        if any(not profile["name"] for profile in profiles):
+            QMessageBox.warning(self, self.translator.tr("tab_api_keys"), self.translator.tr("api_key_name_required"))
+            self.tabs.setCurrentWidget(self._api_keys_tab)
+            return
+        self.config["api_key_profiles"] = profiles
+        self.config["transcription_key_profile_id"] = self.transcription_key_profile_selector.currentData() or ""
+        self.config["rephrasing_key_profile_id"] = self.rephrasing_key_profile_selector.currentData() or ""
+        self.config["groq_key_rotation"] = self._api_keys_tab.groq_rotation.isChecked()
         self.config["api_endpoint"] = self.api_endpoint_input.text()
         self.config["model"] = model_raw
         self.config["transcription_temperature"] = self.transcription_temp_slider.value() / 100.0
@@ -583,7 +628,6 @@ class SettingsMixin:
 
         # Shared API settings
         self.config["rephrasing_api_url"] = self.rephrasing_api_url_input.text()
-        self.config["rephrasing_api_key"] = self.rephrasing_api_key_input.text()
         self.config["rephrasing_model"] = self.rephrasing_model_input.text()
         self.config["rephrasing_temperature"] = self.rephrasing_temp_slider.value() / 100.0
         # Post Rewording entries (new)
@@ -692,7 +736,7 @@ class SettingsMixin:
         warnings: List[str] = []
         endpoint = self.api_endpoint_input.text().strip().lower()
         model_lc = model_raw.strip().lower()
-        api_key = self.api_key_input.text().strip()
+        api_key = self._ui_api_key("transcription")
         api_key_lc = api_key.lower()
         is_custom_model = self.model_dropdown.currentText() == "Custom"
 
@@ -719,7 +763,7 @@ class SettingsMixin:
 
     def _has_valid_api_settings(self) -> bool:
         """Return True if a transcription API key and endpoint are configured."""
-        return bool(self.config.get("api_key", "").strip() and self.config.get("api_endpoint", "").strip())
+        return bool(selected_api_key(self.config, "transcription") and self.config.get("api_endpoint", "").strip())
 
     def _resolve_proxies(self, proxy_url: str, use_px: bool) -> Optional[Dict[str, str]]:
         """Decide outbound proxies (delegates to services.net.resolve_proxies)."""
@@ -741,7 +785,7 @@ class SettingsMixin:
     def _update_transcription_api_group_style(self) -> None:
         """Highlights the transcription API groupbox if its settings are incomplete."""
         url_missing = not self.api_endpoint_input.text().strip()
-        key_missing = not self.api_key_input.text().strip()
+        key_missing = not self._ui_api_key("transcription")
         settings_incomplete = url_missing or key_missing
 
         if settings_incomplete:
@@ -758,9 +802,7 @@ class SettingsMixin:
         # Check if any of the required fields are empty.
         # This validation is for the UI highlight only and is intentionally strict.
         url_missing = not self.rephrasing_api_url_input.text().strip()
-        # Per user request, this check MUST NOT use the fallback key from tab 1.
-        # The rephrasing key field must be filled on its own.
-        key_missing = not self.rephrasing_api_key_input.text().strip()
+        key_missing = not self._ui_api_key("rephrasing")
         model_missing = not self.rephrasing_model_input.text().strip()
 
         settings_incomplete = url_missing or key_missing or model_missing
@@ -803,18 +845,22 @@ class SettingsMixin:
         self.tabs.setTabText(0, self.translator.tr("tab_transcription"))
         self.tabs.setTabText(1, self.translator.tr("tab_rephrase"))
         self.tabs.setTabText(2, self.translator.tr("tab_transformations"))
-        self.tabs.setTabText(3, self.translator.tr("tab_general"))
+        self.tabs.setTabText(3, self.translator.tr("tab_api_keys"))
+        self.tabs.setTabText(4, self.translator.tr("tab_general"))
         self.tabs.setTabToolTip(0, self.translator.tr("tooltip_tab_transcription"))
         self.tabs.setTabToolTip(1, self.translator.tr("tooltip_tab_rephrase"))
         self.tabs.setTabToolTip(2, self.translator.tr("tooltip_tab_transformations"))
-        self.tabs.setTabToolTip(3, self.translator.tr("tooltip_tab_general"))
+        self.tabs.setTabToolTip(3, self.translator.tr("tooltip_tab_api_keys"))
+        self.tabs.setTabToolTip(4, self.translator.tr("tooltip_tab_general"))
+        self._api_keys_tab.retranslate_ui()
+        self._refresh_key_profile_selectors()
 
         # Transcription Tab
         self.transcription_api_group.setTitle(self.translator.tr("transcription_api_group_title"))
-        self.api_key_label.setText(self.translator.tr("api_key_label"))
-        api_key_tooltip = self.translator.tr("api_key_tooltip")
+        self.api_key_label.setText(self.translator.tr("api_key_profile_label"))
+        api_key_tooltip = self.translator.tr("api_key_profile_tooltip")
         self.api_key_label.setToolTip(api_key_tooltip)
-        self.api_key_input.setToolTip(api_key_tooltip)
+        self.transcription_key_profile_selector.setToolTip(api_key_tooltip)
 
         self.api_endpoint_label.setText(self.translator.tr("api_endpoint_label"))
         api_endpoint_tooltip = self.translator.tr("api_endpoint_tooltip")
@@ -924,9 +970,9 @@ class SettingsMixin:
         self.rephrasing_api_url_label.setToolTip(api_endpoint_tooltip)
         self.rephrasing_api_url_input.setToolTip(api_endpoint_tooltip)
 
-        self.rephrasing_api_key_label.setText(self.translator.tr("rephrase_api_key_label"))
+        self.rephrasing_api_key_label.setText(self.translator.tr("api_key_profile_label"))
         self.rephrasing_api_key_label.setToolTip(api_key_tooltip)
-        self.rephrasing_api_key_input.setToolTip(api_key_tooltip)
+        self.rephrasing_key_profile_selector.setToolTip(api_key_tooltip)
 
         self.rephrasing_model_label.setText(self.translator.tr("rephrase_model_label"))
         self.rephrasing_model_label.setToolTip(model_tooltip)

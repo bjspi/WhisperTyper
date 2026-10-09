@@ -237,5 +237,19 @@
   "color_theme_light": "Light",
   "color_theme_dark": "Dark",
   "input_device_label": "Input device (microphone):",
-  "input_device_default": "System default (auto)"
+  "input_device_default": "System default (auto)",
+  "tab_api_keys": "API Keys",
+  "tooltip_tab_api_keys": "Manage named API keys for transcription and rephrasing.",
+  "api_key_profile_label": "Key profile:",
+  "api_key_profile_tooltip": "Choose a saved key for this endpoint. Manage profiles in the API Keys tab, then save settings.",
+  "api_key_none": "No key selected",
+  "api_key_profiles_description": "Store named keys here, then select a profile independently in Transcription and Rephrasing. Keys are saved locally without encryption.",
+  "api_key_name": "Name",
+  "api_key_provider": "Provider",
+  "api_key_custom_provider": "Custom",
+  "api_key_add": "Add key",
+  "api_key_remove": "Remove key",
+  "api_key_name_required": "Please give every key profile a name.",
+  "groq_key_rotation": "Rotate Groq keys for transcription",
+  "groq_key_rotation_tooltip": "Use all distinct, nonempty Groq keys in turn, starting with the selected transcription key. Rephrasing always uses its own selected profile. Changes apply after saving."
 }

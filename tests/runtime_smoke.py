@@ -39,11 +39,13 @@ class FakeAPI(BaseHTTPRequestHandler):
     """Answers transcription/chat requests; /fail paths and FAILME payloads get HTTP 500."""
 
     last_chat_body = b""
+    authorization_headers: list[str] = []
 
     def do_POST(self) -> None:  # noqa: N802 - http.server API
         """Serve one fake transcription/chat response (500 for /fail or FAILME payloads)."""
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length)
+        FakeAPI.authorization_headers.append(self.headers.get("Authorization", ""))
         if self.path.endswith("/fail") or b"FAILME" in body:
             self.send_response(500)
             self.end_headers()
@@ -123,12 +125,14 @@ def main() -> int:
     # App imports happen only now, after the environment is isolated.
     from PyQt6.QtCore import QPoint, Qt, QTimer
     from PyQt6.QtGui import QCursor
-    from PyQt6.QtWidgets import QApplication, QPushButton
+    from PyQt6.QtWidgets import QApplication, QComboBox, QLineEdit, QPushButton
 
     from app.bootstrap import configure_base_logging
     configure_base_logging()
 
     from app.application import WhisperTyperApp
+    from app.core.api_keys import selected_api_key
+    from app.core.constants import CONFIG_SCHEMA_VERSION
     from app.core.netutil import generate_test_wav_bytes
     from app.core.timing import OperationTiming, add_log_handler, flush_timing_logs
     from app.ui.floating_buttons import RecordingPromptOverlay
@@ -193,7 +197,7 @@ def main() -> int:
     def step1_startup() -> None:
         """Assert config creation/migration, tray, and hotkey registration."""
         check("startup: config created + migrated",
-              wt.config["hotkey"] == "<ctrl>+<shift>+<f12>" and wt.config["config_schema_version"] == 2)
+              wt.config["hotkey"] == "<ctrl>+<shift>+<f12>" and wt.config["config_schema_version"] == CONFIG_SCHEMA_VERSION)
         check("startup: tray icon visible", wt.tray_icon.isVisible())
         menu_actions = [a for a in wt.tray_menu.actions() if not a.isSeparator()]
         check("startup: tray menu populated", len(menu_actions) >= 9, f"{len(menu_actions)} actions")
@@ -209,12 +213,14 @@ def main() -> int:
             "startup: transformation warning hidden with complete API settings",
             wt.transformations_unavailable_label.isHidden(),
         )
-        wt.rephrasing_api_key_input.clear()
+        saved_rephrasing_id = wt.rephrasing_key_profile_selector.currentData()
+        wt.rephrasing_key_profile_selector.setCurrentIndex(0)
         check(
             "startup: transformation warning shown without API key",
             not wt.transformations_unavailable_label.isHidden(),
         )
-        wt.rephrasing_api_key_input.setText("sk-test-dummy")
+        wt.rephrasing_key_profile_selector.setCurrentIndex(wt.rephrasing_key_profile_selector.findData(saved_rephrasing_id))
+        probe_api_key_management()
         check(
             "startup: transcription status includes language",
             wt._transcription_progress_message("de") == "Transkribiere [German]...",
@@ -355,10 +361,71 @@ def main() -> int:
         compressed = [widget.objectName() for widget in general_controls if widget is not None
                       and widget.isVisible() and widget.height() < widget.minimumSizeHint().height()]
         check("resize: General controls retain usable heights", not compressed, ", ".join(compressed))
+        wt.tabs.setCurrentWidget(wt._api_keys_tab)
+        qapp.processEvents()
+        secret = wt._api_keys_tab.table.cellWidget(0, 2)
+        check("resize: API key editor remains usable at 600px", secret.height() >= secret.minimumSizeHint().height()
+              and wt._api_keys_tab.groq_rotation.mapTo(wt, QPoint(0, wt._api_keys_tab.groq_rotation.height())).y() <= wt.height())
         check("resize: save button stays in the window", wt.save_button.mapTo(wt, QPoint(0, wt.save_button.height())).y() <= wt.height())
         wt.resize(original_size)
         wt.tabs.setCurrentWidget(wt.transcription_tab)
         qapp.processEvents()
+
+    def probe_api_key_management() -> None:
+        """Edit masked profiles, verify independent selections, save, and test live form keys."""
+        tab = wt._api_keys_tab
+        table = tab.table
+        original_profiles = tab.profiles()
+        original_selection = (wt.config["transcription_key_profile_id"], wt.config["rephrasing_key_profile_id"])
+        check("keys: central tab is between Transformations and General", wt.tabs.indexOf(tab) == 3 and wt.tabs.indexOf(wt.general_tab) == 4)
+        check("keys: legacy identical keys migrated into one profile", len(original_profiles) == 1
+              and original_selection[0] == original_selection[1] and "api_key" not in wt.config and "rephrasing_api_key" not in wt.config)
+        ids = []
+        for key in ("gsk-smoke-a", "gsk-smoke-b"):
+            tab.add_button.click()
+            row = table.rowCount() - 1
+            provider, secret = table.cellWidget(row, 1), table.cellWidget(row, 2)
+            assert isinstance(provider, QComboBox) and isinstance(secret, QLineEdit)
+            provider.setCurrentIndex(provider.findData("groq"))
+            secret.setText(key)
+            ids.append(tab.profiles()[-1]["id"])
+            check("keys: secret is masked", secret.echoMode() == QLineEdit.EchoMode.Password)
+        wt.api_endpoint_input.setText("https://api.groq.com/openai/v1/audio/transcriptions")
+        wt.rephrasing_api_url_input.setText("https://api.groq.com/openai/v1/chat/completions")
+        wt.transcription_key_profile_selector.setCurrentIndex(wt.transcription_key_profile_selector.findData(ids[0]))
+        wt.rephrasing_key_profile_selector.setCurrentIndex(wt.rephrasing_key_profile_selector.findData(ids[1]))
+        check("keys: task selections are independent", wt._ui_api_key("transcription") == "gsk-smoke-a"
+              and wt._ui_api_key("rephrasing") == "gsk-smoke-b")
+        check("keys: provider filters exclude the custom profile", wt.transcription_key_profile_selector.findData(original_profiles[0]["id"]) == -1)
+        table.item(1, 0).setText("Renamed Groq key")
+        check("keys: renaming retains the selected ID", wt.transcription_key_profile_selector.currentData() == ids[0])
+        table.cellWidget(1, 2).setText("gsk-smoke-a-edited")
+        check("keys: unsaved edit does not affect runtime credentials", selected_api_key(wt.config, "transcription") == "sk-test-dummy")
+        with (patch("app.ui.connection_tester.net.run_transcription_connection_test", return_value=("ok", "")) as connection,
+              patch("app.ui.connection_tester.QMessageBox.information")):
+            wt._connection_tester.test_transcription()
+        check("keys: connection test uses the unsaved selected key", connection.call_args.args[1] == "gsk-smoke-a-edited")
+        tab.groq_rotation.setChecked(True)
+        with patch.object(wt, "_collect_validation_warnings", return_value=[]):
+            wt.save_settings()
+        with open(os.path.join(iso_home, ".WhisperTyper", "config.json"), encoding="utf-8") as saved:
+            persisted = json.load(saved)
+        check("keys: save persists profiles, independent choices and rotation", persisted["transcription_key_profile_id"] == ids[0]
+              and persisted["rephrasing_key_profile_id"] == ids[1] and persisted["groq_key_rotation"]
+              and "api_key" not in persisted and "rephrasing_api_key" not in persisted)
+        table.selectRow(1)
+        tab.remove_button.click()
+        check("keys: deleting a selected key never selects its neighbour", wt.transcription_key_profile_selector.currentData() == ""
+              and wt.rephrasing_key_profile_selector.currentData() == ids[1])
+        table.selectRow(1)
+        tab.remove_button.click()
+        wt.api_endpoint_input.setText(f"http://127.0.0.1:{port}/v1/audio/transcriptions")
+        wt.rephrasing_api_url_input.setText(f"http://127.0.0.1:{port}/v1/chat/completions")
+        wt.transcription_key_profile_selector.setCurrentIndex(wt.transcription_key_profile_selector.findData(original_selection[0]))
+        wt.rephrasing_key_profile_selector.setCurrentIndex(wt.rephrasing_key_profile_selector.findData(original_selection[1]))
+        tab.groq_rotation.setChecked(False)
+        with patch.object(wt, "_collect_validation_warnings", return_value=[]):
+            wt.save_settings()
 
     def step2_recording_stop() -> None:
         """Stop synthesized PCM via the real hotkey signal, without opening a microphone."""
@@ -451,8 +518,36 @@ def main() -> int:
              lambda: (check("PROBE batch skips failing file, joins rest",
                             clipboard() == "TRANSCRIBED_FAKE_RESULT\n\nTRANSCRIBED_FAKE_RESULT",
                             repr(clipboard())),
-                      finish()),
-             lambda: (check("PROBE batch completes despite failure", False, "timeout"), finish()))
+                      probe3_rotation()),
+             lambda: (check("PROBE batch completes despite failure", False, "timeout"), probe3_rotation()))
+
+    def probe3_rotation() -> None:
+        """Overlapping workers must retain their different credential snapshots."""
+        original_profiles = wt.config["api_key_profiles"]
+        original_selection = wt.config["transcription_key_profile_id"]
+        wt.config["api_key_profiles"] = [
+            {"id": "rotation-a", "name": "First", "provider": "groq", "key": "gsk-smoke-rotation-a"},
+            {"id": "rotation-b", "name": "Second", "provider": "groq", "key": "gsk-smoke-rotation-b"},
+        ]
+        wt.config["transcription_key_profile_id"] = "rotation-a"
+        wt.config["groq_key_rotation"] = True
+        before = len(FakeAPI.authorization_headers)
+        # Only credential classification is patched; both HTTP requests go to the local fake API.
+        with patch("app.core.api_keys.provider_for_url", return_value="groq"):
+            wt.start_transcription_worker(ok_wav, output_mode="clipboard")
+            wt.start_transcription_worker(ok_wav, output_mode="clipboard")
+        wt.config["api_key_profiles"][0]["key"] = "gsk-smoke-edited-during-request"
+
+        def rotation_done() -> None:
+            check("rotation: overlapping workers use distinct immutable key snapshots", sorted(FakeAPI.authorization_headers[before:])
+                  == ["Bearer gsk-smoke-rotation-a", "Bearer gsk-smoke-rotation-b"])
+            wt.config["api_key_profiles"] = original_profiles
+            wt.config["transcription_key_profile_id"] = original_selection
+            wt.config["groq_key_rotation"] = False
+            finish()
+
+        poll(lambda: not wt.active_threads, 10, rotation_done,
+             lambda: (check("rotation: workers finish", False, "timeout"), finish()))
 
     def finish() -> None:
         """Shut the app down through its real quit path."""
