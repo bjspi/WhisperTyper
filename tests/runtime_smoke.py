@@ -135,6 +135,7 @@ def main() -> int:
     from app.core.api_keys import selected_api_key
     from app.core.constants import CONFIG_SCHEMA_VERSION
     from app.core.netutil import generate_test_wav_bytes
+    from app.core.replacements import Replacements
     from app.core.timing import OperationTiming, add_log_handler, flush_timing_logs
     from app.ui.floating_buttons import RecordingPromptOverlay
     from app.ui.tooltip import MouseFollowerTooltip
@@ -149,6 +150,7 @@ def main() -> int:
     results: list[str] = []
     failed = False
     latency_summaries: list[str] = []
+    replacement_logs: list[str] = []
 
     class LatencyCollector(logging.Handler):
         """Collect completed operations after the background logger formats them."""
@@ -158,6 +160,8 @@ def main() -> int:
             message = record.getMessage()
             if message.startswith("latency_summary"):
                 latency_summaries.append(message)
+            elif message.startswith("replacements_check"):
+                replacement_logs.append(message)
 
     add_log_handler(LatencyCollector())
 
@@ -228,6 +232,7 @@ def main() -> int:
         probe_api_key_management()
         probe_automatic_key_selection()
         probe_provider_models()
+        probe_replacements()
         check(
             "startup: transcription status includes language",
             wt._transcription_progress_message("de") == "Transkribiere [German]...",
@@ -452,7 +457,7 @@ def main() -> int:
         original_profiles = tab.profiles()
         original_selection = (wt.config["transcription_key_profile_id"], wt.config["rephrasing_key_profile_id"])
         check("keys: table uses theme separators instead of the native grid", not table.showGrid())
-        check("keys: central tab is between Transformations and General", wt.tabs.indexOf(tab) == 3 and wt.tabs.indexOf(wt.general_tab) == 4)
+        check("keys: central tab is between Transformations and General", wt.tabs.indexOf(tab) == 3 and wt.tabs.indexOf(wt.general_tab) == 5)
         check("keys: legacy identical keys migrated into one profile", len(original_profiles) == 1
               and original_selection[0] == original_selection[1] and "api_key" not in wt.config and "rephrasing_api_key" not in wt.config)
         ids = []
@@ -710,6 +715,72 @@ def main() -> int:
             check(f"models: {model} request parameters ({language or 'auto'})", results == ["MODEL_PARAMETER_PROBE"]
                   and data["model"] == model.split(" (")[0] and parameters_ok)
 
+    def probe_replacements() -> None:
+        """Validate edits, persistence and corrections before every rephrasing route."""
+        tab = wt._replacements_tab
+        highlighted = "🤖 Croc ; Groq ; 1\nchat gpt ; ChatGPT"
+        tab.editor.setPlainText(highlighted)
+        original_theme = wt.config["color_theme"]
+        theme_colors = []
+        for mode in ("light", "dark"):
+            wt.config["color_theme"] = mode
+            wt.apply_theme()
+            formats = tab.editor.document().firstBlock().layout().formats()
+            colors = [span.format.foreground().color().name() for span in formats]
+            theme_colors.append(colors)
+            check(f"replacements: three distinct field colors in {mode} mode", len(colors) == 3 and len(set(colors)) == 3)
+            check(f"replacements: field coloring respects emoji offsets in {mode} mode",
+                  [span.start for span in formats] == [0, 9, 16])
+            check(f"replacements: highlighting preserves editable plain text in {mode} mode", tab.editor.toPlainText() == highlighted)
+        check("replacements: colors adapt to theme changes", theme_colors[0] != theme_colors[1])
+        wt.config["color_theme"] = original_theme
+        wt.apply_theme()
+        check("replacements: page and General retain their matching tooltips",
+              wt.tabs.tabToolTip(wt.tabs.indexOf(tab)) == wt.translator.tr("tab_replacements")
+              and wt.tabs.tabToolTip(wt.tabs.indexOf(wt.general_tab)) == wt.translator.tr("tooltip_tab_general"))
+        raw = "Croc, Krog, Krok ; Groq ; 1\nanweisung ; prompt ; 1"
+        tab.editor.setPlainText(raw)
+        check("replacements: unsaved rules do not affect runtime", wt._replacement_rules.term_count == 0)
+        with patch.object(wt, "_collect_validation_warnings", return_value=[]):
+            wt.save_settings()
+        loaded, _changed = wt._get_config_store().load()
+        check("replacements: rules and enabled state survive save/reload", loaded["replacements_rules"] == raw
+              and loaded["replacements_enabled"] and wt._replacement_rules.term_count == 4)
+        with patch.object(wt, "_finalize_transcription_output") as output:
+            wt.on_transcription_finished("Krog und Croc", "clipboard")
+            check("replacements: plain transcription is corrected", output.call_args.args[0] == "Groq und Groq")
+        wt.config["liveprompt_enabled"] = True
+        wt.config["liveprompt_trigger_words"] = "prompt,"
+        with patch.object(wt, "_start_post_transcription_rephrase") as rephrase:
+            wt.on_transcription_finished("Anweisung, erkläre Krog", "clipboard")
+            check("replacements: correction precedes LivePrompt trigger detection", rephrase.call_args.kwargs["user_prompt"] == "prompt, erkläre Groq")
+            wt.on_transcription_finished("Croc", "clipboard", "CUSTOM")
+            check("replacements: explicit transformation receives corrected text", rephrase.call_args.kwargs["user_prompt"] == "Groq"
+                  and rephrase.call_args.kwargs["original_text"] == "Groq")
+        wt.config["liveprompt_enabled"] = False
+        wt.config["generic_rephrase_enabled"] = True
+        with patch.object(wt, "_start_post_transcription_rephrase") as rephrase:
+            wt.on_transcription_finished("Krog", "clipboard")
+            check("replacements: generic rephrasing receives corrected text", rephrase.call_args.kwargs["user_prompt"].endswith("Text: Groq"))
+        wt.config["generic_rephrase_enabled"] = False
+        tab.enabled.setChecked(False)
+        with patch.object(wt, "_collect_validation_warnings", return_value=[]):
+            wt.save_settings()
+        with patch.object(wt, "_finalize_transcription_output") as output:
+            wt.on_transcription_finished("Krog", "clipboard")
+            check("replacements: disabled corrections leave text untouched", output.call_args.args[0] == "Krog")
+        tab.editor.setPlainText("valid ; rule\nbroken")
+        with patch("app.mixins.settings_mixin.QMessageBox.warning") as warning:
+            wt.save_settings()
+        check("replacements: invalid edits show their line and preserve saved rules", warning.call_count == 1
+              and "2" in warning.call_args.args[2] and wt.config["replacements_rules"] == raw
+              and wt._replacement_rules.term_count == 4 and wt.tabs.currentWidget() is tab)
+        tab.editor.clear()
+        tab.enabled.setChecked(True)
+        with patch.object(wt, "_collect_validation_warnings", return_value=[]):
+            wt.save_settings()
+        wt.tabs.setCurrentWidget(wt.transcription_tab)
+
     def step2_recording_stop() -> None:
         """Stop synthesized PCM via the real hotkey signal, without opening a microphone."""
         with wave.open(ok_wav, "rb") as audio:
@@ -737,15 +808,17 @@ def main() -> int:
     def step2_transcribe() -> None:
         """Drive one file transcription through the worker pipeline into the clipboard."""
         wt.last_transcription = ""
+        wt._replacement_rules = Replacements("TRANSCRIBED_FAKE_RESULT ; CORRECTED_FAKE_RESULT ; 1")
         wt.start_transcription_worker(ok_wav, output_mode="clipboard")
-        poll(lambda: wt.last_transcription == "TRANSCRIBED_FAKE_RESULT", 10,
+        poll(lambda: wt.last_transcription == "CORRECTED_FAKE_RESULT", 10,
              lambda: (check("transcribe: delivered to clipboard",
-                            clipboard() == "TRANSCRIBED_FAKE_RESULT", repr(clipboard())),
+                            clipboard() == "CORRECTED_FAKE_RESULT", repr(clipboard())),
                       step3_liveprompt()),
              lambda: (check("transcribe: worker finished", False, "timeout"), step3_liveprompt()))
 
     def step3_liveprompt() -> None:
         """Drive a LivePrompt-triggered transcription through the rephrasing worker."""
+        wt._replacement_rules = Replacements("")
         wt.config["liveprompt_enabled"] = True
         wt.config["liveprompt_trigger_words"] = "prompt,"
         wt.config["liveprompt_strip_trigger"] = True
@@ -850,6 +923,11 @@ def main() -> int:
     rc = qapp.exec()
 
     check("timings: background writer drained", flush_timing_logs(3))
+    check("replacements: asynchronous logs include matches and disabled state without transcript text",
+          any("matches=2" in line and "matched_rules=[1]" in line for line in replacement_logs)
+          and any("enabled=False" in line and "matches=0" in line for line in replacement_logs)
+          and all("CORRECTED_FAKE_RESULT" not in line and "Krog" not in line for line in replacement_logs))
+    check("timings: correction duration is included", any("replacements_ms=" in line for line in latency_summaries))
     recordings = [line for line in latency_summaries if "source=recording " in line]
     check("timings: recording has stop-to-API and stop-to-output measurements",
           len(recordings) == 1 and all(field in recordings[0] for field in (
