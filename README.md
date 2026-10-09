@@ -194,6 +194,9 @@ bundle after an update.
 
 ## 🏗 Architecture & Development
 
+For timing measurements from the stop hotkey through transcription and text
+delivery, see **[docs/LATENCY_LOGGING.md](docs/LATENCY_LOGGING.md)**.
+
 The codebase is organized in strict layers — a pure, fully unit-tested core
 (`app/core/`), self-contained worker services, thin platform adapters, and a Qt
 composition root. The layering, threading model and design decisions are documented in

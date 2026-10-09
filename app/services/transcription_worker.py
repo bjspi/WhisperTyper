@@ -12,6 +12,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from app.core import ffmpeg
 from app.core.redaction import redact_for_log
+from app.core.timing import OperationTiming
 
 
 class TranscriptionWorker(QObject):
@@ -31,7 +32,7 @@ class TranscriptionWorker(QObject):
     def __init__(self, api_key: str, api_endpoint: str, audio_path: str, prompt: str, model: str,
                  language: str, temperature: float, proxies: Optional[Dict[str, str]] = None,
                  ffmpeg_path: Optional[str] = None, max_upload_bytes: int = 24 * 1024 * 1024,
-                 min_bitrate_kbps: int = 80) -> None:
+                 min_bitrate_kbps: int = 80, timing: Optional[OperationTiming] = None) -> None:
         """
         Initializes the transcription worker.
 
@@ -50,6 +51,7 @@ class TranscriptionWorker(QObject):
             max_upload_bytes (int): Upload-size ceiling for the endpoint. Files above it are
                 compressed (mono/16 kHz, bitrate lowered as needed) to fit.
             min_bitrate_kbps (int): Floor for that compression; below this the file is rejected.
+            timing: This operation's timing state, shared with the GUI result callbacks.
         """
         super().__init__()
         self.api_key = api_key
@@ -63,6 +65,7 @@ class TranscriptionWorker(QObject):
         self.ffmpeg_path = ffmpeg_path
         self.max_upload_bytes = max_upload_bytes
         self.min_bitrate_kbps = min_bitrate_kbps
+        self.timing = timing or OperationTiming()
 
     def _is_oversized(self, path: str) -> bool:
         """True if ``path`` is larger than the upload limit (and would therefore be compressed)."""
@@ -76,6 +79,7 @@ class TranscriptionWorker(QObject):
         Executes the transcription request and emits the corresponding signal.
         """
         logging.info("TranscriptionWorker started.")
+        self.timing.mark("transcription_worker_start")
         # Path actually uploaded — may be a temp MP3 we extracted/compressed and must clean up.
         upload_path = self.audio_path
         extracted_temp: Optional[str] = None
@@ -83,6 +87,8 @@ class TranscriptionWorker(QObject):
             if not self.api_key:
                 logging.debug("No API key provided in configuration.")
                 raise ValueError("API key not found in configuration.")
+
+            self.timing.mark("upload_prepare_start")
 
             # Prepare the file for upload: videos get their audio extracted, and any file above the
             # endpoint's size limit is compressed to fit (mono/16 kHz, bitrate lowered as needed).
@@ -99,6 +105,7 @@ class TranscriptionWorker(QObject):
                 max_bytes=self.max_upload_bytes,
                 min_bitrate_kbps=self.min_bitrate_kbps,
             )
+            self.timing.mark("upload_prepare_end")
             # Any pre-processing (extraction or compression) just finished — switch the spinner to
             # the transcription phase before uploading.
             if extracted_temp is not None:
@@ -137,23 +144,30 @@ class TranscriptionWorker(QObject):
                     f"Sending POST request to API with file {files['file'][0]} "
                     f"({upload_size / (1024 * 1024):.1f} MB, send timeout {send_timeout:.0f}s)"
                 )
+                self.timing.mark("transcription_request_start")
                 response = requests.post(
                     self.api_endpoint, headers=headers, files=files, data=data,
                     proxies=self.proxies, timeout=(send_timeout, 300)
                 )
+                # requests.post returns only after reading the complete response body.
+                self.timing.mark("transcription_response_received")
 
             logging.debug(f"API response status: {response.status_code}")
             if response.status_code == 200:
                 transcription: str = response.json().get("text", "")
+                self.timing.mark("transcription_response_parsed")
                 logging.info(f"Transcription result: {redact_for_log(transcription)}")
+                self.timing.mark("transcription_worker_ready")
                 self.finished.emit(transcription)
             else:
                 error_msg = f"API Error: {response.status_code}\n{response.text}"
                 logging.error(error_msg)
+                self.timing.mark("transcription_failed")
                 self.error.emit(error_msg, self.audio_path)
         except Exception as e:
             error_msg = f"An unexpected error occurred in worker:\n{str(e)}"
             logging.error(error_msg)
+            self.timing.mark("transcription_failed")
             self.error.emit(error_msg, self.audio_path)
         finally:
             # Remove the temp MP3 we extracted from a video (the original file is untouched).

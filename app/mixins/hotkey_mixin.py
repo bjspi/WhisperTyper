@@ -13,6 +13,7 @@ on the application class (``hotkey_action_signal``, ``hotkey_capture_text_signal
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Dict, List, Optional, Set
 
 from pynput import keyboard
@@ -30,19 +31,19 @@ from app.hotkeys.windows_listener import WindowsHotkeyListener
 class HotkeyMixin:
     """Global hotkeys: listeners, press/release dispatch, and capture."""
 
-    def _handle_hotkey_action(self, action: str) -> None:
+    def _handle_hotkey_action(self, action: str, detected_ns: Optional[int] = None) -> None:
         """Dispatch hotkey actions onto the Qt main thread."""
         if action == "transcription":
             if self.config.get("push_to_talk", False):
                 if not self.is_recording:
                     self.push_to_talk_active = True
-                    self.toggle_recording()
+                    self.toggle_recording(detected_ns=detected_ns)
             else:
-                self.toggle_recording()
+                self.toggle_recording(detected_ns=detected_ns)
         elif action == "stop_transcription":
             if self.is_recording:
                 self.push_to_talk_active = False
-                self.toggle_recording()
+                self.toggle_recording(detected_ns=detected_ns)
         elif action == "post_rephrase":
             self.trigger_post_rephrase_window()
 
@@ -227,6 +228,7 @@ class HotkeyMixin:
 
     def _on_hotkey_press(self, key: Any, injected: bool = False) -> None:
         """Pynput callback (listener thread) for any key press."""
+        detected_ns = time.perf_counter_ns()
         key_tokens = self._key_to_hotkey_tokens(key)
         if injected and not self._should_process_injected_hotkey_event(key_tokens):
             return
@@ -241,14 +243,15 @@ class HotkeyMixin:
                 if binding["action"] == "transcription" and self.config.get("push_to_talk", False):
                     if not self.is_recording:
                         self.push_to_talk_active = True
-                        self.hotkey_action_signal.emit(binding["action"])
+                        self.hotkey_action_signal.emit(binding["action"], detected_ns)
                 else:
-                    self.hotkey_action_signal.emit(binding["action"])
+                    self.hotkey_action_signal.emit(binding["action"], detected_ns)
                 if binding["action"] == "transcription":
                     return
 
     def _on_hotkey_release(self, key: Any, injected: bool = False) -> None:
         """Pynput callback (listener thread) for any key release."""
+        detected_ns = time.perf_counter_ns()
         released_tokens = self._key_to_hotkey_tokens(key)
         if injected and not self._should_process_injected_hotkey_event(released_tokens):
             return
@@ -262,7 +265,7 @@ class HotkeyMixin:
         ):
             logging.info("Push-to-talk hotkey released. Stopping recording.")
             self.push_to_talk_active = False
-            self.hotkey_action_signal.emit("stop_transcription")
+            self.hotkey_action_signal.emit("stop_transcription", detected_ns)
 
         self.pressed_hotkey_tokens.difference_update(released_tokens)
 

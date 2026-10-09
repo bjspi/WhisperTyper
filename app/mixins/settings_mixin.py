@@ -49,6 +49,7 @@ from app.core.prompts import (
 )
 from app.core.redaction import LOG_REDACTION_STATE
 from app.core.textutil import estimate_tokens
+from app.core.timing import add_log_handler, log_handlers, remove_log_handler
 from app.services import net
 from app.ui.connection_tester import ConnectionTester
 
@@ -1086,14 +1087,13 @@ class SettingsMixin:
         # handler(s) to WARNING there — full detail still goes to the rotating WhisperTyper.log,
         # and crash tracebacks are written directly by the excepthook regardless.
         if os.environ.get("WHISPERTYPER_WINDOWED") == "1":
-            for handler in logger.handlers:
+            for handler in log_handlers():
                 if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
                     handler.setLevel(logging.WARNING)
         # Remove existing file handler if present
         if getattr(self, '_file_log_handler', None):
             try:
-                logger.removeHandler(self._file_log_handler)
-                self._file_log_handler.close()
+                remove_log_handler(self._file_log_handler)
             except Exception:
                 pass
             self._file_log_handler = None
@@ -1116,7 +1116,7 @@ class SettingsMixin:
                 fh.suffix = "%Y-%m-%d"
                 fh.setLevel(logging.DEBUG)  # always capture full detail in file
                 fh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
-                logger.addHandler(fh)
+                add_log_handler(fh)
                 self._file_log_handler = fh
                 logging.info(
                     f"File logging enabled (daily rotation, keeping {max(0, retention_days)} days): {LOG_FILE_PATH}"

@@ -19,6 +19,7 @@ from app.core import liveprompt
 from app.core.constants import LANGUAGES
 from app.core.ffmpeg import is_video_file, resolve_ffmpeg
 from app.core.textutil import shorten
+from app.core.timing import OperationTiming
 from app.services.rephrasing_worker import RephrasingWorker
 from app.services.transcription_worker import TranscriptionWorker
 
@@ -27,7 +28,8 @@ class TranscriptionMixin:
     """Transcription/rephrasing worker orchestration."""
 
     def start_transcription_worker(self, audio_path: str, output_mode: str = "insert",
-                                   transformation_prompt: Optional[str] = None) -> None:
+                                   transformation_prompt: Optional[str] = None,
+                                   timing: Optional[OperationTiming] = None) -> None:
         """Creates and starts a new thread for the transcription worker.
 
         Args:
@@ -35,7 +37,10 @@ class TranscriptionMixin:
             output_mode: 'insert' types the result into the focused field; 'clipboard' copies
                 it to the clipboard instead (better when no text field is focused yet).
             transformation_prompt: Optional system prompt selected for this microphone recording.
+            timing: Recording-stop timing, or a fresh operation for a file transcription.
         """
+        timing = timing or OperationTiming()
+        timing.mark("transcription_queued")
         # Resolve ffmpeg so video files get their audio extracted first; harmless for audio.
         ffmpeg_path = resolve_ffmpeg(self.config.get("ffmpeg_path", ""))
         needs_extraction = bool(ffmpeg_path) and is_video_file(audio_path)
@@ -70,6 +75,7 @@ class TranscriptionMixin:
             ffmpeg_path=ffmpeg_path,
             max_upload_bytes=int(self.config.get("max_upload_mb", 24) * 1024 * 1024),
             min_bitrate_kbps=int(self.config.get("min_audio_bitrate_kbps", 80)),
+            timing=timing,
         )
         worker.moveToThread(thread)
         self.active_workers.append(worker)
@@ -83,18 +89,19 @@ class TranscriptionMixin:
         # Bind this request's output mode into the result handlers so a concurrently started
         # request (with a different mode) cannot redirect this one's delivery.
         worker.finished.connect(
-            lambda text, mode=output_mode, selected_prompt=transformation_prompt:
-                self.on_transcription_finished(text, mode, selected_prompt)
+            lambda text, mode=output_mode, selected_prompt=transformation_prompt, operation=timing:
+                self.on_transcription_finished(text, mode, selected_prompt, operation)
         )
         worker.error.connect(
-            lambda message, path, mode=output_mode, selected_prompt=transformation_prompt:
-                self.on_transcription_error(message, path, mode, selected_prompt)
+            lambda message, path, mode=output_mode, selected_prompt=transformation_prompt, operation=timing:
+                self.on_transcription_error(message, path, mode, selected_prompt, operation)
         )
         worker.finished.connect(thread.quit)
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         thread.finished.connect(lambda t=thread, w=worker: self._cleanup_worker(t, w))
+        timing.mark("transcription_worker_queued")
         thread.start()
 
     def _on_compression_phase_started(self, filename: str) -> None:
@@ -160,11 +167,14 @@ class TranscriptionMixin:
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         thread.finished.connect(lambda t=thread, w=worker: self._cleanup_rephrasing_worker(t, w))
+        worker.timing.mark("rephrase_worker_queued")
         thread.start()
 
     def _build_rephrasing_worker(self, system_prompt: str, user_prompt: str,
-                                 context: str = "") -> RephrasingWorker:
+                                 context: str = "", timing: Optional[OperationTiming] = None) -> RephrasingWorker:
         """Snapshot the current rephrasing API settings (GUI thread) into a self-contained worker."""
+        timing = timing or OperationTiming("rephrase")
+        timing.mark("rephrase_queued")
         return RephrasingWorker(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -174,6 +184,7 @@ class TranscriptionMixin:
             temperature=self.config["rephrasing_temperature"],
             context=context,
             proxies=self._config_proxies(),
+            timing=timing,
         )
 
     # --- Batch file transcription (several picked files -> one joined clipboard result) ---
@@ -235,17 +246,22 @@ class TranscriptionMixin:
         return ""
 
     def on_transcription_finished(self, text: str, output_mode: str = "insert",
-                                  transformation_prompt: Optional[str] = None) -> None:
+                                  transformation_prompt: Optional[str] = None,
+                                  timing: Optional[OperationTiming] = None) -> None:
         """Handles a successful transcription result and routes it through rephrasing if enabled.
 
         Args:
             text: The transcribed text.
             output_mode: How this request's final text should be delivered (insert/clipboard).
             transformation_prompt: Explicit recording-palette prompt, if one was selected.
+            timing: This request's recording/HTTP timings, preserved through rephrasing.
         """
+        timing = timing or OperationTiming("transcription_result")
+        timing.mark("transcription_result_received")
         processed = text.strip('"\'“”‘’ ')
         prompt = self.config["prompt"].strip()
         if not processed or (prompt and processed.lower() == prompt.lower()):
+            timing.finish("no_speech")
             if getattr(self, "_batch_active", False):
                 logging.info("Batch file produced no usable speech; skipping it.")
                 self._advance_batch(None)
@@ -263,6 +279,7 @@ class TranscriptionMixin:
                 context="",
                 original_text=processed,
                 output_mode=output_mode,
+                timing=timing,
             )
             return
 
@@ -283,6 +300,7 @@ class TranscriptionMixin:
                     context=self.current_transcription_context if self.config["rephrase_use_selection_context"] else "",
                     original_text=processed,
                     output_mode=output_mode,
+                    timing=timing,
                 )
                 return
 
@@ -294,21 +312,26 @@ class TranscriptionMixin:
                 context="",  # Context is not used for generic rephrasing
                 original_text=processed,
                 output_mode=output_mode,
+                timing=timing,
             )
             return
 
         # 4. No rephrasing: deliver the raw transcription.
-        self._finalize_transcription_output(processed, output_mode=output_mode)
+        timing.mark("result_processed")
+        self._finalize_transcription_output(processed, output_mode=output_mode, timing=timing)
 
     def _start_post_transcription_rephrase(self, system_prompt: str, user_prompt: str,
                                            context: str, original_text: str,
-                                           output_mode: str = "insert") -> None:
+                                           output_mode: str = "insert",
+                                           timing: Optional[OperationTiming] = None) -> None:
         """Run the transcription's rephrasing/LivePrompt request in a worker thread.
 
         The persistent spinner balloon stays up for the whole request (analogous to the
         transcription spinner) and is ended by the finished/error callbacks. Running off the GUI
         thread keeps the UI responsive and lets the spinner actually animate.
         """
+        if timing:
+            timing.mark("result_processed")
         # Persistent spinner while the rephrasing request runs (timeout_ms ignored in spinner mode).
         # Preview the FINAL prompt actually sent (after trigger stripping), shortened to keep the
         # balloon compact.
@@ -320,31 +343,39 @@ class TranscriptionMixin:
             0, spinner=True,
         )
 
-        worker = self._build_rephrasing_worker(system_prompt, user_prompt, context)
+        worker = self._build_rephrasing_worker(system_prompt, user_prompt, context, timing)
         self._start_rephrasing_worker(
             worker,
-            on_finished=lambda rt, mode=output_mode: self._finalize_transcription_output(
-                rt, spinner_active=True, output_mode=mode),
-            on_error=lambda em, orig=original_text, mode=output_mode:
-                self._on_post_transcription_rephrase_error(em, orig, mode),
+            on_finished=lambda rt, mode=output_mode, operation=worker.timing: self._finalize_transcription_output(
+                rt, spinner_active=True, output_mode=mode, timing=operation),
+            on_error=lambda em, orig=original_text, mode=output_mode, operation=worker.timing:
+                self._on_post_transcription_rephrase_error(em, orig, mode, operation),
         )
 
     def _on_post_transcription_rephrase_error(self, error_message: str, original_text: str,
-                                              output_mode: str = "insert") -> None:
+                                              output_mode: str = "insert",
+                                              timing: Optional[OperationTiming] = None) -> None:
         """Rephrasing failed: fall back to the raw transcription and end the spinner."""
         logging.error(f"Post-transcription rephrasing failed: {error_message}")
         if "empty text" in error_message:
             # Empty result is not a hard failure — silently deliver the raw transcription and let
             # _finalize end the still-active spinner.
-            self._finalize_transcription_output(original_text, spinner_active=True, output_mode=output_mode)
+            self._finalize_transcription_output(
+                original_text, spinner_active=True, output_mode=output_mode,
+                timing=timing, outcome="rephrase_failed_fallback",
+            )
         else:
             # A real failure: replace the spinner with an error notice, then deliver raw text
             # without hiding that notice.
             self.show_tray_balloon(self.translator.tr("rephrasing_failed_message", error=error_message), 3000)
-            self._finalize_transcription_output(original_text, spinner_active=False, output_mode=output_mode)
+            self._finalize_transcription_output(
+                original_text, spinner_active=False, output_mode=output_mode,
+                timing=timing, outcome="rephrase_failed_fallback",
+            )
 
     def _finalize_transcription_output(self, text: str, spinner_active: bool = True,
-                                       output_mode: str = "insert") -> None:
+                                       output_mode: str = "insert", timing: Optional[OperationTiming] = None,
+                                       outcome: str = "ok") -> None:
         """Deliver the final text (insert or clipboard) and end the spinner balloon.
 
         Args:
@@ -352,32 +383,49 @@ class TranscriptionMixin:
             spinner_active: Whether the persistent spinner is still showing and must be hidden.
                 False when a caller already replaced it with a normal balloon (e.g. an error).
             output_mode: 'insert' types the text into the focused field; 'clipboard' copies it.
+            timing: The operation whose text is being delivered.
+            outcome: Distinguishes normal completion from a rephrasing fallback.
         """
         self.last_transcription = text
         # In a batch, capture this file's text and trigger the next one instead of delivering now;
         # the joined result is copied once the whole batch finishes.
         if getattr(self, "_batch_active", False):
+            if timing:
+                timing.finish("batch_buffered")
             self._advance_batch(text)
             return
-        if output_mode == "clipboard":
-            # Copy instead of type — used for tray re-transcribe / file transcription, where the
-            # user hasn't focused a text field. Confirm with a green checkmark balloon (this also
-            # replaces the persistent "transcribing…" spinner).
-            copykitten.copy(text)
-            self.show_tray_balloon(self.translator.tr("transcribed_to_clipboard_message"), 2500, check=True)
-        else:
-            # Insert mode: swap the spinner for a brief "done ✓" balloon, then type the text. If
-            # the spinner was already replaced by an error notice (spinner_active=False), leave
-            # that notice alone rather than clobbering it with a success checkmark.
-            if spinner_active:
-                self.show_tray_balloon(self.translator.tr("transcription_done_message"), 1600, check=True)
-            self.insert_transcribed_text(text)
+        if timing:
+            timing.mark("output_start")
+        try:
+            if output_mode == "clipboard":
+                # Copy instead of type — used for tray re-transcribe / file transcription, where the
+                # user hasn't focused a text field. Confirm with a green checkmark balloon (this also
+                # replaces the persistent "transcribing…" spinner).
+                copykitten.copy(text)
+                self.show_tray_balloon(self.translator.tr("transcribed_to_clipboard_message"), 2500, check=True)
+            else:
+                # Insert mode: swap the spinner for a brief "done ✓" balloon, then type the text. If
+                # the spinner was already replaced by an error notice (spinner_active=False), leave
+                # that notice alone rather than clobbering it with a success checkmark.
+                if spinner_active:
+                    self.show_tray_balloon(self.translator.tr("transcription_done_message"), 1600, check=True)
+                self.insert_transcribed_text(text)
+        except Exception:
+            if timing:
+                timing.finish("output_failed")
+            raise
+        if timing:
+            timing.mark("output_end")
+            timing.finish(outcome)
 
     def on_transcription_error(self, error_message: str, audio_file_path: str,
                                output_mode: str = "insert",
-                               transformation_prompt: Optional[str] = None) -> None:
+                               transformation_prompt: Optional[str] = None,
+                               timing: Optional[OperationTiming] = None) -> None:
         """Handles errors that occur during transcription."""
         logging.error(f"Transcription error: {error_message}")
+        if timing:
+            timing.finish("transcription_failed")
         # In a batch, don't block on a modal retry dialog — log, skip this file, and keep going.
         if getattr(self, "_batch_active", False):
             logging.warning("Batch file failed, skipping: %s", audio_file_path)
@@ -397,6 +445,7 @@ class TranscriptionMixin:
                 audio_file_path,
                 output_mode=output_mode,
                 transformation_prompt=transformation_prompt,
+                timing=OperationTiming("retry"),
             )
 
     def _drain_worker_threads(self) -> None:
