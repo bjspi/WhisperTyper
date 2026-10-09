@@ -161,6 +161,7 @@ class OperationTiming:
         "response_parse_ms": ("transcription_response_received", "transcription_response_parsed"),
         "result_queue_ms": ("transcription_worker_ready", "transcription_result_received"),
         "result_processing_ms": ("transcription_result_received", "result_processed"),
+        "replacements_ms": ("replacements_start", "replacements_end"),
         "rephrase_setup_ms": ("rephrase_queued", "rephrase_worker_queued"),
         "rephrase_queue_ms": ("rephrase_worker_queued", "rephrase_worker_start"),
         "rephrase_request_ms": ("rephrase_request_start", "rephrase_response_received"),

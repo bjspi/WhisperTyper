@@ -275,6 +275,16 @@ class TranscriptionMixin:
             logging.info("Transcription result was empty or matched the prompt, ignoring.")
             return
 
+        timing.mark("replacements_start")
+        rules = self._replacement_rules
+        enabled = self.config["replacements_enabled"]
+        matches, matched_lines = 0, []
+        if enabled:
+            processed, matches, matched_lines = rules.apply(processed)
+        timing.mark("replacements_end")
+        logging.info("replacements_check op=%s enabled=%s rules=%s terms=%s text_chars=%s matches=%s matched_rules=%s",
+                     timing.operation_id, enabled, rules.rule_count, rules.term_count, len(text), matches, matched_lines)
+
         # --- Rephrasing (runs in a worker thread so the spinner keeps animating) ---
         # 1. An explicit recording-palette choice overrides every automatic rephrasing mode.
         if transformation_prompt and transformation_prompt.strip():

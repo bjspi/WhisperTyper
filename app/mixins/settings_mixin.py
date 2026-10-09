@@ -50,11 +50,13 @@ from app.core.prompts import (
     _is_known_default_prompt,
 )
 from app.core.redaction import LOG_REDACTION_STATE
+from app.core.replacements import ReplacementError, Replacements
 from app.core.textutil import clean_model_name, estimate_tokens
 from app.core.timing import add_log_handler, log_handlers, remove_log_handler
 from app.services import net
 from app.ui.api_keys import ApiKeysTab
 from app.ui.connection_tester import ConnectionTester
+from app.ui.replacements import ReplacementsTab
 
 
 class SettingsMixin:
@@ -140,6 +142,13 @@ class SettingsMixin:
         self._api_keys_tab = ApiKeysTab(self.config["api_key_profiles"], self.translator, self)
         self._api_keys_tab.groq_rotation.setChecked(self.config["groq_key_rotation"])
         self.tabs.insertTab(self.tabs.indexOf(self.general_tab), self._api_keys_tab, "")
+        self._replacements_tab = ReplacementsTab(self.config["replacements_rules"], self.config["replacements_enabled"], self.translator, self)
+        self.tabs.insertTab(self.tabs.indexOf(self.general_tab), self._replacements_tab, "")
+        try:
+            self._replacement_rules = Replacements(self.config["replacements_rules"])
+        except ReplacementError as error:
+            self._replacement_rules = Replacements("")
+            logging.warning("replacements_config_invalid line=%s; corrections disabled until settings are fixed", error.line)
 
         # Transcription Tab Connections
         self.api_endpoint_input.setText(self.config["api_endpoint"])
@@ -592,6 +601,14 @@ class SettingsMixin:
 
     def save_settings(self) -> None:
         """Saves settings, restarts the hotkey listener."""
+        raw_rules = self._replacements_tab.editor.toPlainText()
+        try:
+            replacement_rules = Replacements(raw_rules)
+        except ReplacementError as error:
+            QMessageBox.warning(self, self.translator.tr("tab_replacements"), self.translator.tr("replacements_invalid", line=error.line))
+            self.tabs.setCurrentWidget(self._replacements_tab)
+            self._replacements_tab.editor.setFocus()
+            return
         # Clean model name: remove anything in parentheses and trailing whitespace
         model_raw = self.model_dropdown.currentText().strip()
         # Perform validation (warnings only)
@@ -614,6 +631,9 @@ class SettingsMixin:
         self.config["transcription_key_profile_id"] = self.transcription_key_profile_selector.currentData() or ""
         self.config["rephrasing_key_profile_id"] = self.rephrasing_key_profile_selector.currentData() or ""
         self.config["groq_key_rotation"] = self._api_keys_tab.groq_rotation.isChecked()
+        self.config["replacements_enabled"] = self._replacements_tab.enabled.isChecked()
+        self.config["replacements_rules"] = raw_rules
+        self._replacement_rules = replacement_rules
         self.config["api_endpoint"] = self.api_endpoint_input.text()
         self.config["model"] = model_raw
         self.config["transcription_temperature"] = self.transcription_temp_slider.value() / 100.0
@@ -889,13 +909,16 @@ class SettingsMixin:
         self.tabs.setTabText(1, self.translator.tr("tab_rephrase"))
         self.tabs.setTabText(2, self.translator.tr("tab_transformations"))
         self.tabs.setTabText(3, self.translator.tr("tab_api_keys"))
-        self.tabs.setTabText(4, self.translator.tr("tab_general"))
+        self.tabs.setTabText(4, self.translator.tr("tab_replacements"))
+        self.tabs.setTabText(5, self.translator.tr("tab_general"))
         self.tabs.setTabToolTip(0, self.translator.tr("tooltip_tab_transcription"))
         self.tabs.setTabToolTip(1, self.translator.tr("tooltip_tab_rephrase"))
         self.tabs.setTabToolTip(2, self.translator.tr("tooltip_tab_transformations"))
         self.tabs.setTabToolTip(3, self.translator.tr("tooltip_tab_api_keys"))
-        self.tabs.setTabToolTip(4, self.translator.tr("tooltip_tab_general"))
+        self.tabs.setTabToolTip(4, self.translator.tr("tab_replacements"))
+        self.tabs.setTabToolTip(5, self.translator.tr("tooltip_tab_general"))
         self._api_keys_tab.retranslate_ui()
+        self._replacements_tab.retranslate_ui()
         self._refresh_key_profile_selectors()
 
         # Transcription Tab

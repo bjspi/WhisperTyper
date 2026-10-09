@@ -137,6 +137,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "transcription_key_profile_id": "",
     "rephrasing_key_profile_id": "",
     "groq_key_rotation": False,
+    "replacements_enabled": True,
+    "replacements_rules": "",
     "api_endpoint": "https://api.openai.com/v1/audio/transcriptions",
     "model": DEFAULT_TRANSCRIPTION_MODEL,
     "transcription_temperature": 0.0,
