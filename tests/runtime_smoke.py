@@ -248,6 +248,39 @@ def main() -> int:
         probe_automatic_key_selection()
         probe_provider_models()
         probe_replacements()
+        probe_windows_text_input()
+        field = QLineEdit()
+        commit_timing = OperationTiming("text_commit_probe")
+        commit_timing.mark("stop")
+
+        def paste_into_test_field(char: str) -> bool:
+            """Deliver paste to this offscreen Qt widget without emitting OS hotkeys."""
+            assert char == "v"
+            # Offscreen Qt owns a virtual clipboard; bridge the native text for this test.
+            qapp.clipboard().setText(copykitten.paste())
+            modifier = Qt.KeyboardModifier.MetaModifier if sys.platform == "darwin" else Qt.KeyboardModifier.ControlModifier
+            QTest.keyClick(field, Qt.Key.Key_V, modifier)
+            return True
+
+        with patch.object(wt, "_simulate_key_combination", side_effect=paste_into_test_field):
+            check("text commit: real Qt field receives text", wt.insert_transcribed_text("COMMIT_PROBE", timing=commit_timing)
+                  and field.text() == "COMMIT_PROBE")
+        check("text commit: dispatch ends before settling wait", commit_timing._events["text_commit_end"]
+              < commit_timing._events["paste_settle_end"])
+        commit_timing.finish("ok")
+        wt._clipboard_restore_timer.stop()
+        wt._perform_clipboard_restore()
+        for post_rephrase in (False, True):
+            operation = OperationTiming("text_commit_pipeline_probe")
+            with patch.object(wt, "_simulate_key_combination", side_effect=paste_into_test_field):
+                if post_rephrase:
+                    wt.on_rephrasing_finished("COMMIT_PROBE", timing=operation)
+                else:
+                    wt._finalize_transcription_output("COMMIT_PROBE", timing=operation)
+            check(f"text commit: {'rephrasing' if post_rephrase else 'transcription'} passes timing to insertion",
+                  "text_commit_end" in operation._events and operation._finished)
+            wt._clipboard_restore_timer.stop()
+            wt._perform_clipboard_restore()
         check(
             "startup: transcription status includes language",
             wt._transcription_progress_message("de") == "Transkribiere [German]...",
@@ -356,6 +389,70 @@ def main() -> int:
         check("startup: hotkey bindings parsed", len(wt.hotkey_bindings) == 2,
               "; ".join(b["display"] for b in wt.hotkey_bindings))
         step2_recording_stop()
+
+    def probe_windows_text_input() -> None:
+        """Check settings persistence and direct dispatch with all OS input intercepted."""
+        windows = sys.platform.startswith("win")
+        check("insertion options: group belongs to scrollable General settings", wt.general_layout.indexOf(wt.text_insertion_group) >= 0)
+        check("insertion options: alternative library is inside the group", wt.alt_clipboard_lib_checkbox.parentWidget() is wt.text_insertion_group)
+        check("insertion options: Windows features are only shown on Windows", all(
+            checkbox.isHidden() != windows for checkbox in (
+                wt.windows_sendinput_text_checkbox, wt.windows_sendinput_fallback_checkbox)
+        ))
+        check("fast paste: available on Windows and macOS", wt.fast_paste_checkbox.isHidden() != (windows or sys.platform == "darwin"))
+        check("SendInput: default is off and fallback control is disabled",
+              not wt.windows_sendinput_text_checkbox.isChecked() and not wt.windows_sendinput_fallback_checkbox.isEnabled())
+        if not windows:
+            if sys.platform == "darwin":
+                wt.fast_paste_checkbox.setChecked(True)
+                with patch.object(wt, "_collect_validation_warnings", return_value=[]):
+                    wt.save_settings()
+                check("fast paste: macOS choice persists", wt.config["windows_fast_paste"])
+                wt.fast_paste_checkbox.setChecked(False)
+                with patch.object(wt, "_collect_validation_warnings", return_value=[]):
+                    wt.save_settings()
+            return
+        check("fast paste: default is off", not wt.fast_paste_checkbox.isChecked())
+        wt.windows_sendinput_text_checkbox.setChecked(True)
+        check("SendInput: selecting direct mode enables fallback control", wt.windows_sendinput_fallback_checkbox.isEnabled())
+        wt.windows_sendinput_fallback_checkbox.setChecked(False)
+        wt.fast_paste_checkbox.setChecked(True)
+        with patch.object(wt, "_collect_validation_warnings", return_value=[]):
+            wt.save_settings()
+        with open(os.path.join(iso_home, ".WhisperTyper", "config.json"), encoding="utf-8") as saved:
+            persisted = json.load(saved)
+        check("SendInput: both choices persist on save", persisted["windows_sendinput_text"]
+              and not persisted["windows_sendinput_fallback"])
+        check("fast paste: separate setting persists", persisted["windows_fast_paste"])
+        operation = OperationTiming("sendinput_probe")
+        operation.mark("stop")
+        with (patch("app.mixins.clipboard_mixin.send_unicode_text", return_value=(8, 8)) as send,
+              patch("app.mixins.clipboard_mixin.copykitten.copy", side_effect=AssertionError("clipboard access")),
+              patch.object(wt, "_simulate_key_combination", side_effect=AssertionError("keyboard access"))):
+            check("SendInput: composed application dispatches directly", wt.insert_transcribed_text("ä🦄文", operation))
+            check("SendInput: Unicode is passed intact", send.call_args.args == ("ä🦄文",))
+        operation.finish("ok")
+        check("SendInput: direct timings omit clipboard and paste", "text_commit_end" in operation._events
+              and "sendinput_dispatch_end" in operation._events and "paste_dispatch_start" not in operation._events
+              and "clipboard_snapshot_start" not in operation._events)
+        wt.windows_sendinput_text_checkbox.setChecked(False)
+        wt.config["windows_sendinput_text"] = False
+        field = QLineEdit()
+
+        def paste_into_probe(_char: str) -> bool:
+            """Paste only into the owned offscreen widget without OS input."""
+            field.paste()
+            return True
+
+        with (patch("app.mixins.clipboard_mixin.copykitten.copy", side_effect=qapp.clipboard().setText),
+              patch.object(wt, "_simulate_key_combination", side_effect=paste_into_probe)):
+            check("fast paste: real Qt field receives text", wt.insert_transcribed_text("FAST_PASTE_PROBE")
+                  and field.text() == "FAST_PASTE_PROBE")
+        check("fast paste: restore timer keeps 600 ms after dispatch", wt._clipboard_restore_timer.interval() == 600)
+        wt.fast_paste_checkbox.setChecked(False)
+        wt.windows_sendinput_fallback_checkbox.setChecked(True)
+        with patch.object(wt, "_collect_validation_warnings", return_value=[]):
+            wt.save_settings()
 
     def probe_dropdown_arrows() -> None:
         """Verify painted arrows on every combo, including table cells, in both themes."""
@@ -930,6 +1027,25 @@ def main() -> int:
                 check("timings: output failure preserves exception behavior", True)
             else:
                 check("timings: output failure preserves exception behavior", False)
+        for post_rephrase in (False, True):
+            operation = OperationTiming("text_commit_failed_probe")
+            with patch.object(wt, "_simulate_key_combination", return_value=False):
+                if post_rephrase:
+                    wt.on_rephrasing_finished("probe", timing=operation)
+                else:
+                    wt._finalize_transcription_output("probe", timing=operation)
+            check(f"text commit: {'rephrasing' if post_rephrase else 'transcription'} finishes failed dispatch",
+                  "text_commit_failed" in operation._events and "text_commit_end" not in operation._events and operation._finished)
+            wt._clipboard_restore_timer.stop()
+            wt._perform_clipboard_restore()
+        operation = OperationTiming("text_commit_exception_probe")
+        with patch.object(wt, "insert_transcribed_text", side_effect=RuntimeError("synthetic insertion exception")):
+            try:
+                wt.on_rephrasing_finished("probe", timing=operation)
+            except RuntimeError:
+                check("text commit: standalone insertion exception finishes timing", operation._finished)
+            else:
+                check("text commit: standalone insertion exception finishes timing", False)
         wt.quit_app()
 
     QTimer.singleShot(400, step1_startup)
@@ -943,11 +1059,18 @@ def main() -> int:
           and any("enabled=False" in line and "matches=0" in line for line in replacement_logs)
           and all("CORRECTED_FAKE_RESULT" not in line and "Krog" not in line for line in replacement_logs))
     check("timings: correction duration is included", any("replacements_ms=" in line for line in latency_summaries))
+    check("text commit: summary includes stop-to-commit, clipboard and both waits", any(
+        "source=text_commit_probe " in line and all(field in line for field in (
+            "stop_to_text_commit_ms=", "text_commit_ms=", "clipboard_write_ms=",
+            "paste_prepare_wait_ms=", "paste_dispatch_ms=", "paste_settle_wait_ms=",
+        )) for line in latency_summaries
+    ))
     recordings = [line for line in latency_summaries if "source=recording " in line]
     check("timings: recording has stop-to-API and stop-to-output measurements",
           len(recordings) == 1 and all(field in recordings[0] for field in (
               "stop_to_api_ms=", "stop_to_output_ms=", "event_queue_ms=", "file_write_ms=",
               "rephrase_request_ms=",
+              "stop_to_request_sent_ms=", "stop_to_first_byte_ms=",
           )))
     if recordings:
         queue_ms = float(recordings[0].split("event_queue_ms=")[1].split()[0])
@@ -961,7 +1084,6 @@ def main() -> int:
     ))
     ids = [line.split("op=")[1].split()[0] for line in latency_summaries]
     check("timings: operations keep separate IDs and finish once", len(ids) >= 8 and len(ids) == len(set(ids)))
-
     check("HTTP: transcription and rephrasing timings include first byte and post-upload wait", all(
         any(f"stage={stage} " in line and "ttfb_ms=" in line and "after_upload_wait_ms=" in line
             and "upload_ms=" in line for line in transport_logs) for stage in ("transcription", "rephrase")

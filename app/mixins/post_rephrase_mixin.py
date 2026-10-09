@@ -87,26 +87,37 @@ class PostRephraseMixin:
         """
         if timing:
             timing.mark("output_start")
-        # On macOS, pasting can be unreliable if the app loses focus.
-        # It's safer to copy to clipboard and notify the user.
-        if is_MACOS:
-            if self.macos_active_application:
-                # Try to reactivate the original app using osascript
-                activate_app(self.macos_active_application)
+        inserted = True
+        try:
+            # On macOS, pasting can be unreliable if the app loses focus.
+            # It's safer to copy to clipboard and notify the user.
+            if is_MACOS:
+                if self.macos_active_application:
+                    # Try to reactivate the original app using osascript
+                    activate_app(self.macos_active_application)
+                    # Swap the spinner for a brief "done ✓" balloon, then type the text.
+                    self.show_tray_balloon(self.translator.tr("rephrasing_done_message"), 1600, check=True)
+                    inserted = self.insert_transcribed_text(rephrased_text, timing=timing)
+                else: # Fallback in case the app name could not be determined using osascript beforehand
+                    if timing:
+                        timing.mark("clipboard_write_start")
+                    copykitten.copy(rephrased_text)
+                    if timing:
+                        timing.mark("clipboard_write_end")
+                    self.show_tray_balloon(self.translator.tr("rephrasing_finished_macos_message"), 3500, check=True)
+            else:
                 # Swap the spinner for a brief "done ✓" balloon, then type the text.
                 self.show_tray_balloon(self.translator.tr("rephrasing_done_message"), 1600, check=True)
-                self.insert_transcribed_text(rephrased_text)
-            else: # Fallback in case the app name could not be determined using osascript beforehand
-                copykitten.copy(rephrased_text)
-                self.show_tray_balloon(self.translator.tr("rephrasing_finished_macos_message"), 3500, check=True)
-        else:
-            # Swap the spinner for a brief "done ✓" balloon, then type the text.
-            self.show_tray_balloon(self.translator.tr("rephrasing_done_message"), 1600, check=True)
-            self.insert_transcribed_text(rephrased_text)
-            logging.info("Successfully inserted rephrased text.")
+                inserted = self.insert_transcribed_text(rephrased_text, timing=timing)
+                if inserted:
+                    logging.info("Successfully dispatched rephrased text for insertion.")
+        except Exception:
+            if timing:
+                timing.finish("output_failed")
+            raise
         if timing:
             timing.mark("output_end")
-            timing.finish("ok")
+            timing.finish("ok" if inserted else "output_failed")
 
     def on_rephrasing_error(self, error_message: str, timing: Optional[OperationTiming] = None) -> None:
         """

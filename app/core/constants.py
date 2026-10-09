@@ -180,6 +180,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "recording_prompt_overlay_system_position": True,
     "quit_without_confirmation": False,
     "alt_clipboard_lib": is_MACOS,
+    "windows_sendinput_text": False,
+    "windows_sendinput_fallback": True,
+    "windows_fast_paste": False,
 
     # Rephrasing / LivePrompt
     "liveprompt_enabled": True,

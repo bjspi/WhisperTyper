@@ -56,7 +56,8 @@ QScrollArea { border: none; }
 
 QToolTip {
     background-color: %(panel)s; color: %(text)s;
-    border: 1px solid %(border)s; padding: 5px 8px; border-radius: 6px;
+    border: 1px solid %(group_border)s; padding: 10px 14px; border-radius: 8px;
+    font-size: 13px; font-weight: normal;
 }
 
 QMenuBar { background: transparent; border: none; padding: 2px 4px; }

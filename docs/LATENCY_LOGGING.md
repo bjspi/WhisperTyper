@@ -18,6 +18,13 @@ For a recording, the most useful measurements are:
 | `stop_to_request_sent_ms` | Stop detection → request headers/body handed to the socket |
 | `stop_to_first_byte_ms` | Stop detection → first HTTP response byte observed |
 | `stop_to_output_ms` | Stop detection → final text delivery routine completed |
+| `stop_to_text_commit_ms` | Stop detection → input dispatch completed (paste or direct Unicode input) |
+| `text_commit_ms` | Start insertion routine → input dispatch completed |
+| `sendinput_dispatch_ms` | Direct Unicode input attempt, including event preparation and native dispatch |
+| `clipboard_snapshot_ms` / `clipboard_write_ms` | Preserve original clipboard / write the result to it |
+| `paste_prepare_wait_ms` | Clipboard write completed → paste dispatch starts (100 ms wait unless fast paste is enabled) |
+| `paste_dispatch_ms` | Ctrl/Cmd+V dispatch, including macOS System Events/fallback if used |
+| `paste_settle_wait_ms` | Paste dispatch completed → settling phase ends (100 ms wait unless fast paste is enabled) |
 | `event_queue_ms` | Hotkey listener detection → stop handler on the GUI thread |
 | `recording_stop_ms` | Stop handler → recorder stopped / capture thread joined (includes stop UI work) |
 | `recording_tail_wait_ms` | Windows keep-mic-hot: wait for an already active read and buffered samples to be retained |
@@ -48,7 +55,15 @@ when their handler runs. File uploads and retries have no stop event and therefo
 no `stop_to_*` values. A missing phase produces no invented duration. A batch file
 ends with `batch_buffered`; the combined clipboard write is outside that per-file
 operation. Text delivery completion means the app dispatched the paste or copied
-the text, not that another application acknowledged it.
+the text, not that another application acknowledged it. `text_commit_end` is
+captured immediately after successful input dispatch, before any existing settling
+wait, clipboard-restore scheduling and final UI bookkeeping. It does **not** prove
+when a foreign application's field changed or was rendered. No UI polling or extra
+wait was added for measurement. Clipboard-only output has `clipboard_write_ms`
+but no invented paste/text-commit milestones. A failed clipboard write or paste
+dispatch records `text_commit_failed`, omits `text_commit_end`, and finishes with
+`outcome=output_failed`. Delayed clipboard restoration remains outside text-commit
+timing: 500 ms after the normal routine, or 600 ms after dispatch in fast-paste mode.
 
 ## Recording boundary on Windows
 
@@ -129,6 +144,47 @@ when required. There is no guarantee of reuse during overlapping requests.
 HTTP/HTTPS proxies receive full socket measurements. Optional SOCKS proxy support
 keeps requests' own connection implementation and reports overall/body timing,
 without inventing DNS/TCP/TLS/TTFB measurements for that implementation.
+
+## Optional Windows text input
+
+General → Insertion options offers an experimental Windows-only direct Unicode `SendInput`
+mode, disabled by default. It uses ctypes and one batch of UTF-16 key-down/key-up
+events, including surrogate pairs for emoji, without accessing the clipboard,
+sleeping or scheduling a clipboard restore. Both transcription and rephrasing
+insertion use it; deliberate clipboard-only output is unchanged. Newlines become
+Unicode CR characters; no physical Return/Tab shortcuts are synthesized. Target
+applications may ignore Unicode packets, line breaks or tabs, so this mode needs
+testing in the user's actual editors. Held modifier keys reject the direct attempt.
+
+`text_input` records correlate by `op` and identify `mode=sendinput` or `clipboard`,
+accepted/total event counts and automatic fallback, without text contents.
+`sendinput_dispatch_ms` measures the direct attempt; `text_commit_ms` and
+`stop_to_text_commit_ms` still end at dispatch completion, not target acknowledgement.
+Successful direct input has no clipboard or paste timings. Fallback operations show
+both the direct attempt and the existing clipboard timings.
+
+The separate fallback checkbox defaults on and retries via the existing paste path
+only when no events were accepted (or input was rejected before injection). Partial
+acceptance and unknown failures stop with a notification rather than risking duplicate
+text. A target ignoring fully accepted events cannot be detected automatically; the
+user must disable direct input for that application. UIPI still prevents injection into
+applications running with higher privileges.
+
+The independent **Fast Copy/Paste** checkbox is available on Windows and macOS,
+and disabled by default. On macOS, Cmd+V still uses `osascript` first; this option
+does not eliminate subprocess/System Events latency. Real Mac testing is pending.
+It skips the 100 ms waits before and after paste and disables PyAutoGUI's additional
+post-paste pause for this call only (its failsafe and copy-selection waits remain).
+The existing restore timer runs 600 ms after dispatch, preserving the previous
+approximate restore interval without blocking the GUI thread. If clipboard restoration
+is disabled, no restore timer is started. The option also applies to SendInput's paste
+fallback; successful direct input is unaffected. Logs show `mode=clipboard fast_paste=True`
+and the existing phase timings. Disable this experimental option if focus/hotkey
+timing makes insertion unreliable in a target application. The alternative clipboard
+library checkbox lives in the same group and remains available on every platform;
+SendInput and its fallback checkbox are individually hidden on macOS and Linux;
+fast paste is hidden only on Linux. Its existing configuration key
+`windows_fast_paste` is retained so saved Windows choices remain valid without migration.
 
 ## Logging does not wait for the disk
 
