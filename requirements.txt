@@ -4,7 +4,8 @@ PyQt6
 pyaudio
 pynput
 pyautogui # Alternative to pynput for copy/paste on macOS
-requests
+requests>=2.32
+urllib3>=2.2,<3
 copykitten
 ftfy # robust mojibake repair (fixes UTF-8 mis-decoded as cp1252/latin-1, e.g. "Ãœ" -> "Ü")
 audioop-lts; python_version >= "3.13" # backport of stdlib audioop (removed in Py 3.13)

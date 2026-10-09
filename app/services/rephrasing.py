@@ -14,6 +14,7 @@ import requests
 
 from app.core.redaction import redact_for_log
 from app.core.timing import OperationTiming
+from app.services.http_transport import request
 
 #: Read timeout for chat completions; generous enough for long generations.
 REQUEST_TIMEOUT_S = 30.0
@@ -122,7 +123,7 @@ def rephrase_text(
     try:
         if timing:
             timing.mark("rephrase_request_start")
-        response = requests.post(api_url, headers=headers, json=data, timeout=timeout, proxies=proxies)
+        response = request("POST", api_url, timing=timing, stage="rephrase", headers=headers, json=data, timeout=timeout, proxies=proxies)
         if timing:
             timing.mark("rephrase_response_received")
     except requests.RequestException as e:

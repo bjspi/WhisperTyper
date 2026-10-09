@@ -134,6 +134,8 @@ def produce():
         operation.mark("stop_handled")
         logging.info("ordinary queued log %s", "sensitive-content")
     operation.finish("ok")
+    timing.queue_http_timing({"op": operation.operation_id, "stage": "transcription"},
+                            {"start": 1, "headers_sent": 2, "first_byte": 3, "end": 4})
     timing.remove_log_handler(sink)
     timing.add_log_handler(BrokenSink())
     timing.add_log_handler(sink)
@@ -153,6 +155,7 @@ assert timing.flush_timing_logs(3)
 assert "after reconfiguration" in records  # A broken sink must not kill the writer.
 summaries = [line for line in records if line.startswith("latency_summary")]
 assert len(summaries) == 1
+assert any(line.startswith("http_transport") for line in records)
 assert "sensitive-content" not in summaries[0]
 assert sum("phase=stop_handled " in line for line in records) == 1
 '''

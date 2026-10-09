@@ -15,6 +15,8 @@ For a recording, the most useful measurements are:
 | Field | Interval |
 | --- | --- |
 | `stop_to_api_ms` | Stop detection → complete transcription HTTP response body |
+| `stop_to_request_sent_ms` | Stop detection → request headers/body handed to the socket |
+| `stop_to_first_byte_ms` | Stop detection → first HTTP response byte observed |
 | `stop_to_output_ms` | Stop detection → final text delivery routine completed |
 | `event_queue_ms` | Hotkey listener detection → stop handler on the GUI thread |
 | `recording_stop_ms` | Stop handler → recorder stopped / capture thread joined (includes stop UI work) |
@@ -47,9 +49,65 @@ ends with `batch_buffered`; the combined clipboard write is outside that per-fil
 operation. Text delivery completion means the app dispatched the paste or copied
 the text, not that another application acknowledged it.
 
-Currently the HTTP request duration combines multipart preparation, connection,
-upload, server processing and response download. It is **not TTFB**. DNS, TCP,
-TLS, connection reuse, upload completion and TTFB are separate transport work.
+The existing `transcription_request_ms` includes the entire request and is **not
+TTFB**. Each wire exchange now also writes an `http_transport` summary, correlated
+by `op`, with `stage=transcription`, `rephrase`, `connection_test` or `prewarm`.
+Redirects have separate numbered `exchange` records. HTTP errors and network
+failures retain the milestones actually reached, without invented durations.
+
+| Transport field | Interval / meaning |
+| --- | --- |
+| `prepare_ms` | API call start → adapter, including multipart/JSON assembly and environment settings |
+| `dns_ms` | Resolve the target or proxy hostname |
+| `tcp_ms` | TCP setup, including fallback between resolved addresses |
+| `proxy_tls_ms` / `proxy_tunnel_ms` | TLS to an HTTPS proxy / CONNECT tunnel setup |
+| `tls_setup_ms` | Origin TLS setup: context/CA preparation, handshake and certificate verification |
+| `connect_ms` | Entire connection setup including DNS/TCP/TLS and any proxy tunnel |
+| `upload_ms` | First body send → complete request sent; multipart framing is included |
+| `ttfb_ms` | Request headers sent → first response byte, including upload time |
+| `request_to_first_byte_ms` | API call start → first response byte, including preparation and connection setup |
+| `after_upload_wait_ms` | Complete request sent → first response byte |
+| `response_headers_ms` | First byte → complete final response headers |
+| `response_body_ms` | Complete headers → complete consumed/decompressed response body |
+| `total_ms` | API call start → complete response or failure |
+| `connection` / `reused` | Socket identity / whether this exchange reused an existing socket |
+| `error` / `last_phase` | Exception class (without private exception text) / last milestone reached before completion or failure |
+| `upload_bytes` / `response_body_bytes` | Sent body bytes / consumed response bytes after decompression |
+
+Transport milestones also appear as `latency_event` phases such as
+`transcription_http_request_sent` and `transcription_http_first_byte` for operations
+with timing state. Use their captured `at_ms` to determine when the POST finished
+sending, rather than the log writer's line date. New connections have DNS/TCP/TLS
+fields; reused ones omit them. `tls_setup_ms` intentionally includes certificate
+verification, rather than pretending to isolate only the cryptographic handshake.
+TTFB observes the first socket read before status/header parsing (an informational
+HTTP response, if present, counts as the first byte). Sending completion means the
+OS accepted the bytes, not that the server acknowledged reading all of them.
+`after_upload_wait_ms` combines transit and provider processing; the client cannot
+split the provider's queue from inference without server-side timing data.
+
+## Persistent connections and background warming
+
+All transcription, rephrasing and API connection-test calls share bounded urllib3
+HTTP/1.1 pools, even when each call uses a new Qt worker thread or a different
+Groq key. Headers and cookies remain isolated per logical request. TLS verification,
+environment CA bundles and existing explicit/system/px proxy routing remain active.
+TCP_NODELAY and OS TCP keepalive are enabled; failed paid POSTs are not retried.
+Busy pools create another socket instead of waiting for a warm-up request.
+
+A daemon performs auth-free HEAD requests at startup, after saving settings and
+when recording begins. While recording or for five minutes after recent activity,
+a timer refreshes each configured origin at most every 20 seconds. Groq/OpenAI
+use their `/models` path; custom endpoints use the origin root. URL credentials,
+queries, API keys, netrc origin credentials and audio are excluded. Redirects are
+disabled. A 401/404/405 still proves that the connection reached the server.
+Warm-up has short timeouts and never delays capture, upload or shutdown waiting
+for completion. The server can still close idle connections; urllib3 reconnects
+when required. There is no guarantee of reuse during overlapping requests.
+
+HTTP/HTTPS proxies receive full socket measurements. Optional SOCKS proxy support
+keeps requests' own connection implementation and reports overall/body timing,
+without inventing DNS/TCP/TLS/TTFB measurements for that implementation.
 
 ## Logging does not wait for the disk
 

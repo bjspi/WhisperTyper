@@ -19,6 +19,7 @@ from app.core.netutil import (
     is_px_running,
     tcp_check,
 )
+from app.services.http_transport import request
 
 
 def resolve_proxies(proxy_url: str, use_px: bool) -> Optional[Dict[str, str]]:
@@ -53,8 +54,8 @@ def run_transcription_connection_test(api_url: str, api_key: str, model: str,
     files = {"file": ("whispertyper_test.wav", generate_test_wav_bytes(), "audio/wav")}
 
     try:
-        response = requests.post(
-            api_url, headers=headers, files=files, data=data, proxies=proxies, timeout=15
+        response = request(
+            "POST", api_url, headers=headers, files=files, data=data, proxies=proxies, timeout=15
         )
     except requests.exceptions.ProxyError as e:
         return ("proxy", str(e))

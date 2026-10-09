@@ -107,6 +107,30 @@ def _write_timings() -> None:
                 logging.info(
                     "latency_event op=%s source=%s phase=%s at_ms=%.3f elapsed_ms=%.3f", *values,
                 )
+            elif kind == "http":
+                metadata, events = values
+                pairs = {
+                    "prepare_ms": ("start", "adapter_start"),
+                    "dns_ms": ("dns_start", "dns_end"),
+                    "tcp_ms": ("tcp_start", "tcp_end"),
+                    "proxy_tls_ms": ("proxy_tls_start", "proxy_tls_end"),
+                    "proxy_tunnel_ms": ("proxy_tunnel_start", "proxy_tunnel_end"),
+                    "tls_setup_ms": ("tls_start", "tls_end"),
+                    "connect_ms": ("connect_start", "connect_end"),
+                    "upload_ms": ("upload_start", "request_sent"),
+                    "ttfb_ms": ("headers_sent", "first_byte"),
+                    "request_to_first_byte_ms": ("start", "first_byte"),
+                    "after_upload_wait_ms": ("request_sent", "first_byte"),
+                    "response_headers_ms": ("first_byte", "headers_received"),
+                    "response_body_ms": ("headers_received", "body_end"),
+                    "total_ms": ("start", "end"),
+                }
+                details = " ".join(f"{key}={value}" for key, value in metadata.items())
+                durations = " ".join(
+                    f"{label}={(events[end] - events[start]) / 1_000_000:.3f}"
+                    for label, (start, end) in pairs.items() if start in events and end in events
+                )
+                logging.info("http_transport %s %s", details, durations)
             else:
                 operation_id, source, outcome, at_ms, events = values
                 durations = " ".join(
@@ -141,6 +165,11 @@ def flush_timing_logs(timeout: float = 1.0) -> bool:
     return completed.wait(timeout)
 
 
+def queue_http_timing(metadata: dict[str, Any], events: dict[str, int]) -> None:
+    """Enqueue transport metadata; formatting and sink locks belong to the writer."""
+    _RECORDS.put(("http", (metadata, events)))
+
+
 class OperationTiming:
     """Carry timestamps through sequential capture/worker/Qt handoffs without producer locks."""
 
@@ -158,6 +187,8 @@ class OperationTiming:
         "upload_prepare_ms": ("upload_prepare_start", "upload_prepare_end"),
         "request_setup_ms": ("upload_prepare_end", "transcription_request_start"),
         "transcription_request_ms": ("transcription_request_start", "transcription_response_received"),
+        "stop_to_request_sent_ms": ("stop", "transcription_http_request_sent"),
+        "stop_to_first_byte_ms": ("stop", "transcription_http_first_byte"),
         "response_parse_ms": ("transcription_response_received", "transcription_response_parsed"),
         "result_queue_ms": ("transcription_worker_ready", "transcription_result_received"),
         "result_processing_ms": ("transcription_result_received", "result_processed"),

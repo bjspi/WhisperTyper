@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: pip install mypy PyQt6 types-requests ftfy requests
+      - run: pip install mypy PyQt6 types-requests ftfy "requests>=2.32" "urllib3>=2.2,<3"
       # The Qt-free layers are kept strictly mypy-clean. The mixin layer is duck-typed
       # by design (see the [[tool.mypy.overrides]] note in pyproject.toml) and is covered
       # by ruff + the test suite instead.
@@ -57,7 +57,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       # Keep the broad OS/Python matrix lightweight. The Qt-backed clipboard regression
       # suite runs once in the dedicated Windows job below.
-      - run: pip install pytest ftfy requests "audioop-lts; python_version >= '3.13'"
+      - run: pip install pytest ftfy "requests>=2.32" "urllib3>=2.2,<3" "audioop-lts; python_version >= '3.13'"
       - run: pytest --ignore=tests/test_clipboard.py
 
   clipboard-test:

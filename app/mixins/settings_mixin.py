@@ -726,6 +726,7 @@ class SettingsMixin:
         self._update_brand_header()  # refresh the hotkey badge
         # Apply logging changes (level + file handler)
         self.apply_logging_configuration()
+        self._schedule_http_warmup(activate=True)
         # Update menu item states
         self.update_logfile_menu_action()
         self.update_play_last_recording_action()
