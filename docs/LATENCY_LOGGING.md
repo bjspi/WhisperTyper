@@ -69,12 +69,12 @@ timing: 500 ms after the normal routine, or 600 ms after dispatch in fast-paste 
 
 ## Recording boundary on Windows
 
-With **Keep mic hot**, stopping a recording now attaches the active input read to
+With **Keep mic hot**, stopping a recording attaches the active input read to
 that recording before disabling capture. The capture thread retains the in-flight
 block and reads a snapshot of already available driver-buffered samples before the
 WAV is written. There is no fixed post-recording sleep and no wait if a read is not
-active. At 16 kHz, the normal 1,024-sample block spans 64 ms; previously a stop during
-that read could discard the entire last block. Finishing that read can naturally
+active. At 16 kHz, the normal 1,024-sample block spans 64 ms, so dropping the in-flight
+read would lose up to that much speech at the end. Finishing that read can naturally
 take the remaining fraction of a block and include a little audio after the keypress.
 
 `recording_tail` logs the operation ID, whether the tail was retained, sample counts

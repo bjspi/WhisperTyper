@@ -21,6 +21,8 @@ DEFAULT_REPHRASING_MODEL = "gpt-6-luna"
 
 # GPT-5.6/GPT-6 reasoning chat models accept only their default temperature.
 _FIXED_TEMPERATURE_REPHRASING_FAMILIES = ("gpt-5.6", "gpt-6")
+# Approximate maximum token length of the Whisper initial prompt.
+WHISPER_PROMPT_TOKEN_LIMIT = 230
 _GPT_TRANSCRIBE = "gpt-transcribe"
 _DIARIZE = "gpt-4o-transcribe-diarize"
 
@@ -38,6 +40,11 @@ def transcription_supports_temperature(model: str) -> bool:
 def transcription_supports_prompt(model: str) -> bool:
     """False for the diarization model, which takes no prompt."""
     return clean_model_name(model) != _DIARIZE
+
+
+def prompt_token_limit(model: str) -> int | None:
+    """Prompt token budget of a transcription model, or None when it has no known limit."""
+    return WHISPER_PROMPT_TOKEN_LIMIT if "whisper" in clean_model_name(model).lower() else None
 
 
 def transcription_form_fields(model: str, prompt: str, temperature: float, language: str) -> Dict[str, Any]:

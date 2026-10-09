@@ -35,7 +35,7 @@ jobs:
       # The Qt-free layers are kept strictly mypy-clean. The mixin layer is duck-typed
       # by design (see the [[tool.mypy.overrides]] note in pyproject.toml) and is covered
       # by ruff + the test suite instead.
-      - run: mypy app/core app/services app/audio app/hotkeys app/ui
+      - run: mypy app/core app/services app/audio app/hotkeys app/ui app/platform
 
   test:
     name: Tests (${{ matrix.os }}, py${{ matrix.python-version }})
@@ -61,14 +61,14 @@ jobs:
       - run: pytest --ignore=tests/test_clipboard.py
 
   clipboard-test:
-    name: Clipboard and audio tests (Windows, py3.12)
+    name: Full suite with Qt and input backends (Windows, py3.12)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      # ClipboardMixin imports the application's input backends as well as Qt. Install
-      # exactly that dependency slice instead of the full audio/application stack.
+      # Qt-backed tests (clipboard, settings bindings, editors, workers) skip themselves in the
+      # lightweight matrix above; this job installs Qt plus the input backends and runs everything.
       - run: pip install pytest PyQt6 copykitten pynput pyautogui pyaudio ftfy "httpx>=0.28" "av>=14"
-      - run: pytest tests/test_clipboard.py tests/test_audio_capture.py tests/test_transcription_worker.py
+      - run: pytest

@@ -9,12 +9,8 @@ stderr redirect, venv re-exec, base logging) live in ``run.py`` / ``app/bootstra
 from __future__ import annotations
 
 import logging
-import threading
-import time
-from collections import deque
 from typing import Any, Dict, List, Optional, Set
 
-import pyaudio
 from pynput import keyboard
 from PyQt6.QtCore import QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QCloseEvent, QIcon
@@ -22,13 +18,12 @@ from PyQt6.QtWidgets import QApplication, QLineEdit, QMessageBox, QPushButton, Q
 
 from app.audio.sound import SoundPlayer
 from app.audio.store import RecordingStore
-from app.core.api_keys import GroqKeyRotation
+from app.core.api_keys import GroqKeyRotation, transcription_configured
 from app.core.env import is_MACOS, is_WINDOWS
 from app.core.i18n import TranslationManager
 from app.core.paths import resource_path
-from app.core.timing import OperationTiming
 from app.hotkeys.windows_listener import WindowsHotkeyListener
-from app.mixins.audio_mixin import RECORDING_BALLOON_TIMEOUT_MS, AudioMixin
+from app.mixins.audio_mixin import AudioMixin
 from app.mixins.clipboard_mixin import ClipboardMixin
 from app.mixins.hotkey_mixin import HotkeyMixin
 from app.mixins.mac_mixin import MacMixin
@@ -38,10 +33,12 @@ from app.mixins.theme_mixin import ThemeMixin
 from app.mixins.transcription_mixin import TranscriptionMixin
 from app.mixins.tray_mixin import TrayMixin
 from app.mixins.widget_attrs import WidgetAttrs
+from app.services.clipboard import ClipboardSnapshot
 from app.services.http_transport import close_transport
 from app.services.http_warmup import WARM_INTERVAL_S, HttpWarmup
 from app.services.rephrasing_worker import RephrasingWorker
 from app.services.transcription_worker import TranscriptionWorker
+from app.ui.durations import BALLOON_PERSISTENT_MS
 from app.ui.floating_buttons import FloatingButtonWindow, RecordingPromptOverlay
 from app.ui.tooltip import MouseFollowerTooltip
 
@@ -74,12 +71,7 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
     def __init__(self) -> None:
         """Initializes the application."""
         super().__init__()
-        self.keyboard_controller = keyboard.Controller()
-        self.is_recording: bool = False
-        self.recorded_frames: List[bytes] = []
-        self.samplerate: int = 16000
-        self.chunk_size: int = 1024
-        self.input_pyaudio_instance: Optional[pyaudio.PyAudio] = None
+        self._init_audio_capture()
 
         self.config: Dict[str, Any] = {}
         self.load_config()  # Load config first to get UI language
@@ -95,7 +87,6 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         self.capturing_button: Optional[QPushButton] = None
         self.captured_keys: Set[Any] = set()
 
-        self.recording_thread: Optional[threading.Thread] = None
         self.hotkey_capture_listener: Optional[keyboard.Listener] = None
         self.manual_listener: Optional[keyboard.Listener] = None
         self.windows_hotkey_listener: Optional[WindowsHotkeyListener] = None
@@ -112,20 +103,6 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         self.pressed_hotkey_tokens: Set[str] = set()
         self.active_hotkey_actions: Set[str] = set()
         self.push_to_talk_active = False
-        self.audio_state_lock = threading.Lock()
-        self._background_read_pending = False
-        self._background_stop: Optional[tuple[threading.Event, List[bytes], OperationTiming]] = None
-        self.audio_capture_running = False
-        self.audio_capture_thread: Optional[threading.Thread] = None
-        self.input_stream = None
-        self.current_input_samplerate: int = self.samplerate
-        self.current_input_device_index: Optional[int] = None
-        self.current_input_device_name: str = ""
-        self.macos_audio_recorder = None
-        self.macos_recording_path: Optional[str] = None
-        self.pre_record_buffer = deque(maxlen=max(1, int(self.samplerate * 0.75 / self.chunk_size)))
-        self.last_transcription_activity_ts = time.monotonic()
-        self.latest_audio_level: float = 0.0
         self._idle_tray_icon: Optional[QIcon] = None
         self._recording_icon_cache: Dict[tuple, QIcon] = {}
         self._recording_tray_timer = QTimer(self)
@@ -133,7 +110,7 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         self._clipboard_restore_timer = QTimer(self)
         self._clipboard_restore_timer.setSingleShot(True)
         self._clipboard_restore_timer.timeout.connect(self._perform_clipboard_restore)
-        self._pending_clipboard_restore_state: Optional[Dict[str, Any]] = None
+        self._pending_clipboard_restore_state: Optional[ClipboardSnapshot] = None
         self._macos_startup_permissions_requested = False
         self._macos_hotkey_permissions_checked = False
         self._groq_key_rotation = GroqKeyRotation()
@@ -180,8 +157,6 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         # Initial state update for menu actions
         self.update_logfile_menu_action()
         self.update_play_last_recording_action()
-        self._update_rephrase_api_group_style()  # Set initial style
-        self._update_transcription_api_group_style()  # Set initial style
 
         QTimer.singleShot(0, self._start_aac_bitrate_probe)
 
@@ -190,7 +165,7 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
 
         # On a fresh install no API key is configured yet. Recording is impossible
         # in that state, so open the settings window right away to guide the user.
-        if not self._has_valid_api_settings():
+        if not transcription_configured(self.config):
             logging.info("No valid API key configured on startup; opening settings window.")
             QTimer.singleShot(600, self.show_settings_window)
 
@@ -259,7 +234,7 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         if use_system_position and (is_WINDOWS or is_MACOS):
             self.show_tray_balloon(
                 self.translator.tr("recording_running_message"),
-                RECORDING_BALLOON_TIMEOUT_MS,
+                BALLOON_PERSISTENT_MS,
             )
             self._recording_prompt_mouse_status = MouseFollowerTooltip._instance
 
@@ -326,11 +301,9 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         self._http_warmup.close()
         self._abandon_recording_prompt_selection()
         self._stop_hotkey_listeners()
-        self._stop_background_audio_capture()
+        self._shutdown_audio_capture()
         self._drain_worker_threads()
         close_transport()
-        if is_MACOS and self.macos_audio_recorder:
-            self._stop_macos_native_recording(discard=True)
         if self._clipboard_restore_timer.isActive():
             self._clipboard_restore_timer.stop()
             self._perform_clipboard_restore()
@@ -338,8 +311,6 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
             # Close sound playback streams + PyAudio (owned by SoundPlayer)
             if getattr(self, 'sound_player', None) is not None:
                 self.sound_player.close()
-            if self.input_pyaudio_instance:
-                self.input_pyaudio_instance.terminate()
         except Exception as e:
             logging.debug(f"Audio teardown raised during quit: {e}")
         try:

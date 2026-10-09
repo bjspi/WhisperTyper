@@ -13,8 +13,8 @@ import subprocess
 import sys
 from typing import Optional
 
-from app.core.env import no_window_kwargs
 from app.core.paths import resource_path
+from app.platform.system import no_window_kwargs
 
 
 def project_root() -> str:

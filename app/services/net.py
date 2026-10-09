@@ -7,19 +7,19 @@ Pure logic (no Qt, no widgets) — the UI passes in the model/url/key and render
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple
 from urllib.parse import urlparse
 
 import httpx
 
-from app.core.netutil import (
+from app.services.http_transport import is_tls_failure, request
+from app.services.netutil import (
     PX_PROXY_URL,
     build_proxies,
     generate_test_wav_bytes,
     is_px_running,
     tcp_check,
 )
-from app.services.http_transport import is_tls_failure, request
 
 
 def resolve_proxies(proxy_url: str, use_px: bool) -> Optional[Dict[str, str]]:
@@ -31,6 +31,11 @@ def resolve_proxies(proxy_url: str, use_px: bool) -> Optional[Dict[str, str]]:
         logging.info("Routing requests through local px proxy at %s", PX_PROXY_URL)
         return build_proxies(PX_PROXY_URL)
     return None
+
+
+def proxies_for(config: Mapping[str, Any]) -> Optional[Dict[str, str]]:
+    """Proxies for a config snapshot (saved config, or the current settings form)."""
+    return resolve_proxies(str(config.get("proxy_url", "")), bool(config.get("use_local_px_proxy", False)))
 
 
 def diagnose_connectivity(api_url: str, proxies: Optional[Dict[str, str]]) -> str:

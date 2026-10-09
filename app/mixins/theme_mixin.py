@@ -83,12 +83,9 @@ class ThemeMixin:
         replacements_tab = getattr(self, "_replacements_tab", None)
         if replacements_tab is not None:
             replacements_tab.highlighter.set_theme(dark)
-        # Re-apply the per-group-box highlight so it matches the new palette.
-        for name in ("_update_transcription_api_group_style", "_update_rephrase_api_group_style",
-                     "_update_prompt_token_counter", "_update_brand_header"):
-            fn = getattr(self, name, None)
-            if callable(fn):
-                fn()
+        # State colours (incomplete sections, token counter, FFmpeg status) are QSS property
+        # selectors and follow the new palette by themselves; only the header is drawn by hand.
+        self._update_brand_header()
         self._connect_theme_watch()
 
     def _connect_theme_watch(self) -> None:

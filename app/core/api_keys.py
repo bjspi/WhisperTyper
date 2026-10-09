@@ -13,6 +13,8 @@ TASK_KEY_FIELDS = {
 PROVIDER_NAMES = {"openai": "OpenAI", "groq": "Groq", "custom": "Custom"}
 _PROVIDER_API_BASES = {"openai": "https://api.openai.com/v1/", "groq": "https://api.groq.com/openai/v1/"}
 _TASK_API_PATHS = {"transcription": "audio/transcriptions", "rephrasing": "chat/completions"}
+# Official key prefixes; a mismatch is only a hint (keys are never rejected).
+_KEY_PREFIXES = {"openai": "sk-", "groq": "gsk"}
 
 
 def masked_api_key(key: str) -> str:
@@ -36,9 +38,29 @@ def provider_endpoint(provider: str, task: str) -> str:
     return base + _TASK_API_PATHS[task] if base else ""
 
 
+def key_format_warning(provider: str, key: str) -> str | None:
+    """Translation key of a hint when ``key`` lacks the provider's usual prefix, else None."""
+    prefix = _KEY_PREFIXES.get(provider)
+    if prefix is None or key.strip().lower().startswith(prefix):
+        return None
+    return f"validation_{provider}_key_prefix"
+
+
 def usable_profile_ids(profiles: list[dict[str, str]], provider: str) -> list[str]:
     """IDs of the profiles that hold a sendable key for ``provider``."""
     return [profile["id"] for profile in profiles if profile["provider"] == provider and _clean_key(profile["key"])]
+
+
+def transcription_configured(config: Mapping[str, Any]) -> bool:
+    """A transcription request can be sent: endpoint plus a matching selected key."""
+    return bool(str(config.get("api_endpoint", "")).strip() and selected_api_key(config, "transcription"))
+
+
+def rephrasing_configured(config: Mapping[str, Any]) -> bool:
+    """A rephrasing request can be sent: endpoint, model and a matching selected key."""
+    return bool(str(config.get("rephrasing_api_url", "")).strip()
+                and str(config.get("rephrasing_model", "")).strip()
+                and selected_api_key(config, "rephrasing"))
 
 
 def selected_api_key(config: Mapping[str, Any], task: str) -> str:

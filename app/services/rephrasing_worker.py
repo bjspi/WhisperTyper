@@ -19,7 +19,10 @@ class RephrasingWorker(QObject):
     """Runs the rephrasing API request in a separate thread to avoid blocking the GUI."""
 
     finished = pyqtSignal(str)
+    #: The request failed; carries the error description (shown inside a translated message).
     error = pyqtSignal(str)
+    #: The model answered with nothing; callers keep the original text instead.
+    empty = pyqtSignal()
 
     def __init__(
         self,
@@ -59,7 +62,7 @@ class RephrasingWorker(QObject):
         self.timing = timing or OperationTiming("rephrase")
 
     def run(self) -> None:
-        """Execute the rephrasing request and emit ``finished`` or ``error``."""
+        """Execute the rephrasing request and emit ``finished``, ``empty`` or ``error``."""
         logging.info("RephrasingWorker started.")
         self.timing.mark("rephrase_worker_start")
         try:
@@ -75,15 +78,15 @@ class RephrasingWorker(QObject):
                 timing=self.timing,
             )
         except Exception as e:
-            error_msg = f"An unexpected error occurred in RephrasingWorker:\n{e}"
-            logging.error(error_msg)
+            logging.error("Rephrasing request failed: %s", e)
             self.timing.mark("rephrase_failed")
-            self.error.emit(error_msg)
+            self.error.emit(str(e))
             return
 
         if rephrased_text:
             self.timing.mark("rephrase_worker_ready")
             self.finished.emit(rephrased_text)
         else:
+            logging.warning("Rephrasing returned an empty result.")
             self.timing.mark("rephrase_failed")
-            self.error.emit("Rephrasing resulted in empty text.")
+            self.empty.emit()

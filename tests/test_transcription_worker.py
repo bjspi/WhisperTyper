@@ -10,7 +10,17 @@ pytest.importorskip("PyQt6.QtCore")
 
 from app.core import dsp
 from app.core.timing import OperationTiming
-from app.services import transcription_worker as service
+from app.services import transcription as service
+from app.services.transcription import TranscriptionRequest
+from app.services.transcription_worker import TranscriptionWorker
+
+
+def make_worker(source, *, timing=None, tr=None, **request):
+    """A worker for ``source`` with fixed credentials/model and per-test request options."""
+    return TranscriptionWorker(
+        TranscriptionRequest("test-key", "https://example.invalid/transcribe", str(source), "", "whisper", "en", 0, **request),
+        timing=timing, tr=tr,
+    )
 
 
 @pytest.mark.parametrize("recording_format", ["wav", "aac"])
@@ -18,8 +28,7 @@ def test_recording_upload_uses_selected_format_and_cleans_temp(monkeypatch, tmp_
     source = tmp_path / "recording.wav"
     dsp.write_wav(str(source), b"\x01\x00" * 16000, 16000)
     original = source.read_bytes()
-    worker = service.TranscriptionWorker("test-key", "https://example.invalid/transcribe", str(source), "", "whisper", "en", 0,
-                                         timing=OperationTiming("recording"), recording_format=recording_format)
+    worker = make_worker(source, timing=OperationTiming("recording"), recording_format=recording_format)
     prepared = []
 
     def encode(source_path, destination, bitrate):
@@ -77,8 +86,7 @@ def test_recording_failures_retain_wav_and_clean_partial_aac(monkeypatch, tmp_pa
     monkeypatch.setattr(service.ffmpeg, "prepare_upload", prepare)
     # An oversized recording without an installed FFmpeg is rejected with a translated hint.
     monkeypatch.setattr(service.ffmpeg, "resolve_ffmpeg", lambda _setting: None)
-    worker = service.TranscriptionWorker("test-key", "https://example.invalid/transcribe", str(source), "", "whisper", "en", 0,
-                                         recording_format="aac", max_upload_bytes=1 if failure == "size" else 1024 * 1024)
+    worker = make_worker(source, recording_format="aac", max_upload_bytes=1 if failure == "size" else 1024 * 1024)
     errors = []
     worker.error.connect(lambda *args: errors.append(args))
     worker.run()
@@ -119,8 +127,7 @@ def test_oversized_recording_falls_back_to_ffmpeg_from_retained_wav(monkeypatch,
     monkeypatch.setattr(service.ffmpeg, "resolve_ffmpeg", lambda setting: "ffmpeg-bin" if setting == "configured" else None)
     monkeypatch.setattr(service.ffmpeg, "prepare_upload", prepare)
     monkeypatch.setattr(service, "request", request)
-    worker = service.TranscriptionWorker("test-key", "https://example.invalid/transcribe", str(source), "", "whisper", "en", 0,
-                                         recording_format=recording_format, max_upload_bytes=5, ffmpeg_setting="configured")
+    worker = make_worker(source, recording_format=recording_format, max_upload_bytes=5, ffmpeg_setting="configured")
     finished, compressing = [], []
     worker.finished.connect(finished.append)
     worker.compressing.connect(compressing.append)
@@ -136,8 +143,7 @@ def test_worker_errors_are_translated(monkeypatch, tmp_path):
     source = tmp_path / "recording.wav"
     dsp.write_wav(str(source), b"\x01\x00" * 16000, 16000)
     monkeypatch.setattr(service, "request", Mock(return_value=Mock(status_code=401, text="denied")))
-    worker = service.TranscriptionWorker("test-key", "https://example.invalid/transcribe", str(source), "", "whisper", "en", 0,
-                                         recording_format="wav", tr=lambda key, **kwargs: f"<{key}:{sorted(kwargs.items())}>")
+    worker = make_worker(source, recording_format="wav", tr=lambda key, **kwargs: f"<{key}:{sorted(kwargs.items())}>")
     errors = []
     worker.error.connect(lambda *args: errors.append(args))
     worker.run()
@@ -157,8 +163,7 @@ def test_aac_choice_without_pyav_uploads_wav_instead_of_failing(monkeypatch, tmp
     monkeypatch.setattr(service, "available_aac_bitrates", lambda: ())
     monkeypatch.setattr(service, "encode_wav_to_aac", Mock(side_effect=AssertionError("PyAV is not installed")))
     monkeypatch.setattr(service, "request", request)
-    worker = service.TranscriptionWorker("test-key", "https://example.invalid/transcribe", str(source), "", "whisper", "en", 0,
-                                         recording_format="aac")
+    worker = make_worker(source, recording_format="aac")
     finished = []
     worker.finished.connect(finished.append)
     worker.run()

@@ -27,24 +27,25 @@ flowchart TB
         MIX["audio · hotkey · settings · tray · transcription<br/>clipboard · post-rephrase · theme · mac · widget-attrs"]
     end
 
-    subgraph services ["Services (app/services/) — Qt workers + HTTP clients"]
-        TW["transcription_worker"]
-        RW["rephrasing_worker"]
-        RP["rephrasing<br/><i>pure client</i>"]
-        NET["net<br/><i>diagnostics</i>"]
+    subgraph services ["Services (app/services/) — I/O, workers, external tools"]
+        TW["transcription · transcription_worker"]
+        RW["rephrasing · rephrasing_worker"]
+        NET["http_transport · http_warmup · net · netutil"]
+        TOOLS["ffmpeg · gitutil · updater · macos_permissions"]
     end
 
     subgraph ui ["UI widgets (app/ui/)"]
-        UIW["theme · tooltip · floating_buttons · connection_tester"]
+        UIW["theme · tooltip · floating_buttons · connection_tester · api_keys<br/>replacements · transformations_tab · tray_menu · tray_icons · macos_icons · durations"]
     end
 
     subgraph platform ["Platform adapters"]
-        AUD["app/audio/<br/><i>devices, playback, recording store</i>"]
+        AUD["app/audio/<br/><i>devices, playback, recording store, AAC encoder</i>"]
         HK["app/hotkeys/<br/><i>Win32 RegisterHotKey thread</i>"]
+        OS["app/platform/<br/><i>macOS bindings, system queries, processes</i>"]
     end
 
     subgraph core ["Core (app/core/) — pure logic, no Qt, fully unit-tested"]
-        CORE["hotkeys · liveprompt · config_store · dsp · ffmpeg · textutil<br/>redaction · netutil · i18n · prompts · gitutil · paths · env · frameworks"]
+        CORE["hotkeys · liveprompt · rephrase_routing · models · api_keys · config_store<br/>dsp · textutil · redaction · replacements · i18n · prompts · timing · paths · env · win32"]
     end
 
     RUN --> BOOT
@@ -61,9 +62,9 @@ flowchart TB
 | Layer | Rules |
 |---|---|
 | `app/core/` | **Pure logic.** No Qt, no app state, no I/O side effects beyond what the function name says. Everything here is unit-testable headless — this is what the CI test suite covers. |
-| `app/audio/`, `app/hotkeys/` | Platform adapters around PyAudio / Win32. Qt-free. |
-| `app/services/` | One `QObject` worker per network round-trip, moved to its own `QThread`. Workers are **self-contained**: the caller snapshots all config values on the GUI thread and passes plain values in, so no worker ever reads shared mutable state from its own thread. |
-| `app/ui/` | Small standalone widgets (tooltip, floating palette, QSS theme) with no knowledge of the application object. |
+| `app/audio/`, `app/hotkeys/`, `app/platform/` | Platform adapters around PyAudio / Win32 / macOS frameworks and OS processes. |
+| `app/services/` | Network, external tools (FFmpeg, git) and permission APIs. Each network round-trip is a plain function (`transcribe`, `rephrase_text`) wrapped by one `QObject` worker on its own `QThread`. Workers are **self-contained**: the caller snapshots all config values on the GUI thread and passes plain values in, so no worker ever reads shared mutable state from its own thread. |
+| `app/ui/` | Standalone widgets and painters (tooltip, floating palette, tray menu/icons, settings tabs, QSS theme) with no knowledge of the application object. |
 | `app/mixins/` | The application's behaviour, split by domain. Each mixin is a cohesive slice (recording lifecycle, hotkey listeners, settings window, tray menu, …) of the one `WhisperTyperApp` instance. |
 | `app/application.py` | The composition root: declares the shared state in `__init__`, declares every cross-thread signal, and wires signals to slots. |
 
@@ -79,8 +80,8 @@ The trade-offs are managed explicitly:
 - **All shared state is declared in one place** — `WhisperTyperApp.__init__`. Mixins never
   invent new cross-domain attributes silently.
 - **Pure logic does not live in mixins.** Anything that can be expressed as a function of
-  its inputs (hotkey grammar, LivePrompt triggers, config migrations, DSP, ffmpeg
-  decisions) sits in `app/core/` where it is tested.
+  its inputs (hotkey grammar, LivePrompt triggers, rephrase routing, model capabilities,
+  config migrations, DSP) sits in `app/core/` where it is tested.
 - mypy checks the Qt-free layers strictly; for `app.mixins.*` the duck-typed `self.*`
   member checks are disabled (see `pyproject.toml`) because the composed class is the
   real unit — it is exercised at runtime and via the listed contracts.

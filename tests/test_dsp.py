@@ -19,7 +19,6 @@ def make_tone(samplerate: int = 16000, duration_s: float = 0.1, amplitude: int =
 
 
 class TestPeak:
-
     def test_silence(self):
         assert dsp.peak(b"\x00" * 320) == 0
 
@@ -38,7 +37,6 @@ class TestDurationSeconds:
 
 
 class TestApplyGain:
-
     def test_positive_gain_raises_peak(self):
         pcm = make_tone(amplitude=1000)
         louder = dsp.apply_gain(pcm, 6.0)  # +6 dB ≈ ×2
@@ -53,7 +51,6 @@ class TestApplyGain:
 
 
 class TestResample:
-
     def test_downsampling_halves_length(self):
         pcm = make_tone(samplerate=44100, duration_s=0.5)
         out = dsp.resample(pcm, 44100, 16000)
@@ -71,3 +68,17 @@ class TestWriteWav:
             assert wf.getsampwidth() == 2
             assert wf.getframerate() == 16000
             assert wf.readframes(wf.getnframes()) == pcm
+
+
+class TestPrepareForUpload:
+    def test_resamples_to_target_rate_and_applies_gain(self):
+        pcm = make_tone(samplerate=44100, duration_s=0.5, amplitude=1000)
+        out, rate = dsp.prepare_for_upload(pcm, 44100, 16000, 6.0)
+        assert rate == 16000
+        assert abs(dsp.duration_seconds(out, rate) - 0.5) < 0.01
+        assert dsp.peak(out) > 1800
+
+    def test_keeps_source_rate_when_resampling_fails(self, monkeypatch):
+        monkeypatch.setattr(dsp, "resample", lambda *_args: (_ for _ in ()).throw(ValueError("unsupported")))
+        pcm = make_tone(samplerate=44100)
+        assert dsp.prepare_for_upload(pcm, 44100, 16000, 0.0) == (pcm, 44100)

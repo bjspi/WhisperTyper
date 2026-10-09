@@ -102,3 +102,22 @@ def test_non_json_api_error_uses_bounded_response_text() -> None:
     detail = str(exc_info.value)
     assert "HTTP 502" in detail
     assert "Gateway unavailable" in detail
+
+
+@pytest.mark.parametrize(("reply", "expected"), [("Done", "finished"), ("", "empty"), (RephrasingError("boom"), "error")])
+def test_worker_reports_each_outcome_on_its_own_signal(reply, expected):
+    pytest.importorskip("PyQt6.QtCore")
+    from app.services.rephrasing_worker import RephrasingWorker
+
+    worker = RephrasingWorker(system_prompt="", user_prompt="Text", api_url="https://example.invalid", api_key="k",
+                              model="m", temperature=0.0)
+    outcomes = []
+    worker.finished.connect(lambda text: outcomes.append(("finished", text)))
+    worker.empty.connect(lambda: outcomes.append(("empty", None)))
+    worker.error.connect(lambda message: outcomes.append(("error", message)))
+    with patch("app.services.rephrasing_worker.rephrase_text",
+               side_effect=reply if isinstance(reply, Exception) else None, return_value=reply):
+        worker.run()
+    assert [kind for kind, _ in outcomes] == [expected]
+    if expected == "error":
+        assert outcomes[0][1] == "boom"  # The caller wraps it in a translated message.

@@ -7,7 +7,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 
 from app.core.env import is_WINDOWS
-from app.core.frameworks import MOD_NOREPEAT, WM_HOTKEY, WM_QUIT
+from app.core.win32 import MOD_NOREPEAT, WM_HOTKEY, WM_QUIT
 
 if is_WINDOWS:
     import ctypes

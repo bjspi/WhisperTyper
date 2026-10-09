@@ -1,9 +1,8 @@
 """HotkeyMixin — global hotkey listeners, dispatch and capture.
 
 Pure token/binding logic (normalization, parsing, VK maps, matching) lives in
-``app.core.hotkeys``; this mixin owns everything that touches real input events:
-the pynput/Win32 listener lifecycle, press/release dispatch, and the "Set hotkey"
-capture flow.
+``app.core.hotkeys`` and key-event conversion in ``app.hotkeys.key_tokens``; this mixin owns
+the pynput/Win32 listener lifecycle, press/release dispatch, and the "Set hotkey" capture flow.
 
 Threading contract: pynput callbacks run on the listener's own thread. They must never
 touch Qt widgets directly — GUI updates are marshalled through the queued signals defined
@@ -18,14 +17,13 @@ from typing import Any, Dict, List, Optional, Set
 
 from pynput import keyboard
 from PyQt6.QtCore import QEvent, QObject, Qt
-from PyQt6.QtGui import QKeyEvent, QWheelEvent
+from PyQt6.QtGui import QKeyEvent
 
 from app.core import hotkeys
 from app.core.env import is_MACOS, is_WINDOWS
-
-if is_WINDOWS:
-    import ctypes
+from app.hotkeys.key_tokens import injected_event_counts, pynput_key_tokens, qt_key_tokens
 from app.hotkeys.windows_listener import WindowsHotkeyListener
+from app.ui.durations import BALLOON_WARNING_MS
 
 
 class HotkeyMixin:
@@ -49,15 +47,11 @@ class HotkeyMixin:
 
     def eventFilter(self, watched: QObject, event: Any) -> bool:
         """Capture hotkeys in the macOS settings UI without relying on pynput capture."""
-        if is_MACOS and event.type() == QEvent.Type.Wheel and isinstance(event, QWheelEvent):
-            if watched in {self.transcription_temp_slider, self.rephrasing_temp_slider}:
-                return self._scroll_macos_area_from_slider_wheel(watched, event)
-
         if is_MACOS and watched == self.capturing_for_widget:
             if event.type() == QEvent.Type.ShortcutOverride:
                 return True
             if event.type() == QEvent.Type.KeyPress and isinstance(event, QKeyEvent):
-                tokens = self._qt_key_to_hotkey_tokens(event)
+                tokens = qt_key_tokens(event.key(), event.modifiers(), event.text())
                 if tokens:
                     self.capturing_for_widget.setText(hotkeys.format_hotkey_tokens(tokens))
                     self.capturing_for_widget.selectAll()
@@ -133,31 +127,6 @@ class HotkeyMixin:
             self.windows_hotkey_listener.join(timeout=1.0)
         self.windows_hotkey_listener = None
 
-    def _is_console_like_foreground_window(self) -> bool:
-        """Return whether the current Windows foreground window is a console/terminal host."""
-        if not is_WINDOWS:
-            return False
-
-        try:
-            hwnd = ctypes.windll.user32.GetForegroundWindow()
-            if not hwnd:
-                return False
-
-            class_name_buffer = ctypes.create_unicode_buffer(256)
-            ctypes.windll.user32.GetClassNameW(hwnd, class_name_buffer, len(class_name_buffer))
-            class_name = class_name_buffer.value
-
-            console_classes = {
-                "ConsoleWindowClass",
-                "CASCADIA_HOSTING_WINDOW_CLASS",
-                "VirtualConsoleClass",
-                "mintty",
-            }
-            return class_name in console_classes
-        except Exception as e:
-            logging.debug(f"Failed to inspect foreground window class: {e}")
-            return False
-
     def init_manual_hotkey_listener(self) -> None:
         """Initializes the manual, low-level keyboard listener."""
         self._stop_hotkey_listeners()
@@ -229,8 +198,8 @@ class HotkeyMixin:
     def _on_hotkey_press(self, key: Any, injected: bool = False) -> None:
         """Pynput callback (listener thread) for any key press."""
         detected_ns = time.perf_counter_ns()
-        key_tokens = self._key_to_hotkey_tokens(key)
-        if injected and not self._should_process_injected_hotkey_event(key_tokens):
+        key_tokens = pynput_key_tokens(key)
+        if injected and not injected_event_counts(key_tokens):
             return
         self.pressed_hotkey_tokens.update(key_tokens)
 
@@ -252,8 +221,8 @@ class HotkeyMixin:
     def _on_hotkey_release(self, key: Any, injected: bool = False) -> None:
         """Pynput callback (listener thread) for any key release."""
         detected_ns = time.perf_counter_ns()
-        released_tokens = self._key_to_hotkey_tokens(key)
-        if injected and not self._should_process_injected_hotkey_event(released_tokens):
+        released_tokens = pynput_key_tokens(key)
+        if injected and not injected_event_counts(released_tokens):
             return
         transcription_binding = self._get_binding_for_action("transcription")
         if (
@@ -321,7 +290,7 @@ class HotkeyMixin:
         """
         if not self.capturing_for_widget:
             return
-        self.captured_keys.update(self._key_to_hotkey_tokens(key))
+        self.captured_keys.update(pynput_key_tokens(key))
         self.hotkey_capture_text_signal.emit(hotkeys.format_hotkey_tokens(self.captured_keys))
 
     def on_release_capture(self, key: Any) -> None:
@@ -387,168 +356,9 @@ class HotkeyMixin:
         """
         logging.warning(f"Windows hotkey {display} could not be registered; it will not fire.")
         try:
-            self.show_tray_balloon(self.translator.tr("hotkey_register_failed_message", hotkey=display), 4000)
+            self.show_tray_balloon(self.translator.tr("hotkey_register_failed_message", hotkey=display), BALLOON_WARNING_MS)
         except Exception:
             pass
-
-    def _update_windows_keep_mic_hot_ui_state(self) -> None:
-        """Enable or disable Windows prewarm idle controls based on the checkbox state."""
-        enabled = is_WINDOWS and self.windows_keep_mic_hot_checkbox.isChecked()
-        self.windows_keep_mic_hot_idle_label.setEnabled(enabled)
-        self.windows_keep_mic_hot_idle_input.setEnabled(enabled)
-
-    # --- Event -> canonical-token conversion (needs Qt / pynput objects) -----------------
-    def _qt_key_to_hotkey_tokens(self, event: QKeyEvent) -> Set[str]:
-        """Convert a Qt key event to canonical hotkey tokens for macOS capture."""
-        tokens: Set[str] = set()
-        modifiers = event.modifiers()
-
-        if modifiers & Qt.KeyboardModifier.ControlModifier:
-            tokens.add("<ctrl>")
-        if modifiers & Qt.KeyboardModifier.ShiftModifier:
-            tokens.add("<shift>")
-        if modifiers & Qt.KeyboardModifier.AltModifier:
-            tokens.add("<alt>")
-        if modifiers & Qt.KeyboardModifier.MetaModifier:
-            tokens.add("<cmd>" if is_MACOS else "<win>")
-
-        key = event.key()
-        modifier_keys = {
-            Qt.Key.Key_Control,
-            Qt.Key.Key_Shift,
-            Qt.Key.Key_Alt,
-            Qt.Key.Key_Meta,
-        }
-        if key in modifier_keys:
-            return tokens
-
-        qt_special_keys = {
-            Qt.Key.Key_Escape: "<esc>",
-            Qt.Key.Key_Tab: "<tab>",
-            Qt.Key.Key_Backtab: "<tab>",
-            Qt.Key.Key_Backspace: "<backspace>",
-            Qt.Key.Key_Return: "<enter>",
-            Qt.Key.Key_Enter: "<enter>",
-            Qt.Key.Key_Insert: "<insert>",
-            Qt.Key.Key_Delete: "<delete>",
-            Qt.Key.Key_Home: "<home>",
-            Qt.Key.Key_End: "<end>",
-            Qt.Key.Key_Left: "<left>",
-            Qt.Key.Key_Up: "<up>",
-            Qt.Key.Key_Right: "<right>",
-            Qt.Key.Key_Down: "<down>",
-            Qt.Key.Key_PageUp: "<page_up>",
-            Qt.Key.Key_PageDown: "<page_down>",
-            Qt.Key.Key_CapsLock: "<caps_lock>",
-            Qt.Key.Key_Space: "<space>",
-        }
-
-        if Qt.Key.Key_F1 <= key <= Qt.Key.Key_F35:
-            tokens.add(f"<f{int(key) - int(Qt.Key.Key_F1) + 1}>")
-            return tokens
-
-        if is_MACOS:
-            macos_function_aliases = {
-                getattr(Qt.Key, 'Key_MediaPrevious', None): "<f7>",
-                getattr(Qt.Key, 'Key_MediaTogglePlayPause', None): "<f8>",
-                getattr(Qt.Key, 'Key_MediaPlay', None): "<f8>",
-                getattr(Qt.Key, 'Key_MediaNext', None): "<f9>",
-                getattr(Qt.Key, 'Key_VolumeMute', None): "<f10>",
-                getattr(Qt.Key, 'Key_VolumeDown', None): "<f11>",
-                getattr(Qt.Key, 'Key_VolumeUp', None): "<f12>",
-            }
-            mapped_key = macos_function_aliases.get(key)
-            if mapped_key:
-                tokens.add(mapped_key)
-                return tokens
-
-        mapped_special_key = qt_special_keys.get(key)
-        if mapped_special_key:
-            tokens.add(mapped_special_key)
-            return tokens
-
-        text = event.text().lower()
-        if len(text) == 1 and text.isprintable() and not text.isspace():
-            tokens.add(text)
-            return tokens
-
-        if Qt.Key.Key_A <= key <= Qt.Key.Key_Z:
-            tokens.add(chr(ord("a") + int(key) - int(Qt.Key.Key_A)))
-            return tokens
-
-        if Qt.Key.Key_0 <= key <= Qt.Key.Key_9:
-            tokens.add(chr(ord("0") + int(key) - int(Qt.Key.Key_0)))
-            return tokens
-
-        fallback_key_map = {
-            Qt.Key.Key_Minus: "-",
-            Qt.Key.Key_Equal: "=",
-            Qt.Key.Key_BracketLeft: "[",
-            Qt.Key.Key_BracketRight: "]",
-            Qt.Key.Key_Backslash: "\\",
-            Qt.Key.Key_Semicolon: ";",
-            Qt.Key.Key_Apostrophe: "'",
-            Qt.Key.Key_Comma: ",",
-            Qt.Key.Key_Period: ".",
-            Qt.Key.Key_Slash: "/",
-            Qt.Key.Key_QuoteLeft: "`",
-        }
-        fallback_char = fallback_key_map.get(key)
-        if fallback_char:
-            tokens.add(fallback_char)
-
-        return tokens
-
-    def _should_process_injected_hotkey_event(self, key_tokens: Set[str]) -> bool:
-        """Allow macOS remappers to trigger hotkeys when they inject special keys like function keys."""
-        return is_MACOS and any(hotkeys.is_non_modifier_special_token(token) for token in key_tokens)
-
-    def _key_to_hotkey_tokens(self, key: Any) -> Set[str]:
-        """Convert a pynput key event to canonical hotkey tokens."""
-        tokens: Set[str] = set()
-        key_name = getattr(key, "name", None)
-
-        special_name_map = {
-            "ctrl": "<ctrl>", "ctrl_l": "<ctrl>", "ctrl_r": "<ctrl>",
-            "alt": "<alt>", "alt_l": "<alt>", "alt_r": "<alt>", "alt_gr": "<alt_gr>",
-            "shift": "<shift>", "shift_l": "<shift>", "shift_r": "<shift>",
-            "cmd": "<cmd>", "cmd_l": "<cmd>", "cmd_r": "<cmd>",
-            "caps_lock": "<caps_lock>", "esc": "<esc>", "space": "<space>",
-            "enter": "<enter>", "tab": "<tab>", "backspace": "<backspace>",
-            "delete": "<delete>", "insert": "<insert>", "home": "<home>", "end": "<end>",
-            "page_up": "<page_up>", "page_down": "<page_down>",
-            "left": "<left>", "right": "<right>", "up": "<up>", "down": "<down>",
-            # macOS surfaces F7-F12 as media keys when the Fn toggle is set to media mode.
-            "media_previous": "<f7>", "media_play_pause": "<f8>", "media_next": "<f9>",
-            "media_volume_mute": "<f10>", "media_volume_down": "<f11>", "media_volume_up": "<f12>",
-        }
-
-        if key_name in special_name_map:
-            tokens.add(special_name_map[key_name])
-
-        function_key_token = hotkeys.normalize_hotkey_part(key_name or "")
-        if function_key_token.startswith("<f") and function_key_token.endswith(">"):
-            tokens.add(function_key_token)
-
-        # On Windows, AltGr is often surfaced as the right Alt key plus an implicit Ctrl.
-        if is_WINDOWS and key_name == "alt_r":
-            tokens.add("<alt_gr>")
-            tokens.add("<alt>")
-            tokens.add("<ctrl>")
-
-        char = getattr(key, "char", None)
-        if char:
-            tokens.add(char.lower())
-
-        vk_token = hotkeys.vk_to_key_token(getattr(key, "vk", None))
-        if vk_token:
-            tokens.add(vk_token)
-
-        if "<alt_gr>" in tokens:
-            tokens.add("<ctrl>")
-            tokens.add("<alt>")
-
-        return {hotkeys.normalize_hotkey_part(token) for token in tokens}
 
     def _get_binding_for_action(self, action: str) -> Optional[Dict[str, Any]]:
         """Return the configured binding for a given action, if any."""
@@ -556,29 +366,3 @@ class HotkeyMixin:
             if binding["action"] == action:
                 return binding
         return None
-
-    def _scroll_macos_area_from_slider_wheel(self, watched: QObject, event: QWheelEvent) -> bool:
-        """Route wheel gestures from sliders to the surrounding scroll area on macOS."""
-        scroll_area = None
-        if watched == self.transcription_temp_slider:
-            scroll_area = self.transcription_scroll_area
-        elif watched == self.rephrasing_temp_slider:
-            scroll_area = self.rephrasing_scroll_area
-
-        if scroll_area is None:
-            return False
-
-        scrollbar = scroll_area.verticalScrollBar()
-        pixel_delta = event.pixelDelta().y()
-        angle_delta = event.angleDelta().y()
-
-        if pixel_delta:
-            delta = -pixel_delta
-        elif angle_delta:
-            steps = angle_delta / 120.0
-            delta = int(-steps * max(scrollbar.singleStep(), 18) * 3)
-        else:
-            return True
-
-        scrollbar.setValue(scrollbar.value() + delta)
-        return True

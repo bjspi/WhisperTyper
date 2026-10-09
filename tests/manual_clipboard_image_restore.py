@@ -21,15 +21,13 @@ from PyQt6.QtWidgets import QApplication
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.mixins.clipboard_mixin import ClipboardMixin  # noqa: E402
+from app.services.clipboard import ClipboardSnapshot  # noqa: E402
 
 
 def main() -> int:
     app = QApplication.instance() or QApplication([])
     clipboard = QApplication.clipboard()
-    mixin = ClipboardMixin()
-    mixin._pending_clipboard_restore_state = None
-    original_state = mixin._capture_clipboard_state()
+    original = ClipboardSnapshot.capture()
 
     try:
         # First reproduce the real Windows path with a native image written and read
@@ -37,16 +35,11 @@ def main() -> int:
         native_rgba = bytes((23, 117, 211, 149)) * (7 * 5)
         copykitten.copy_image(native_rgba, 7, 5)
         app.processEvents()
-        native_image_state = mixin._capture_clipboard_state()
-        native_snapshot = native_image_state["mime_snapshot"]
-        original_native_formats = {
-            entry["format"]: entry["data"]
-            for entry in native_snapshot["formats"]
-            if entry["data"]
-        }
+        native_snapshot = ClipboardSnapshot.capture()
+        original_native_formats = {mime_format: data for mime_format, data in native_snapshot.formats or () if data}
         copykitten.copy("temporary transcription")
         app.processEvents()
-        mixin._restore_clipboard_state(native_image_state)
+        native_snapshot.restore()
 
         restored_native_mime = clipboard.mimeData()
         restored_native_image: Any = restored_native_mime.imageData()
@@ -75,12 +68,12 @@ def main() -> int:
         clipboard.setMimeData(generated_mime)
         app.processEvents()
 
-        generated_state = mixin._capture_clipboard_state()
+        generated_snapshot = ClipboardSnapshot.capture()
         # Use the same text-writing library as the real insertion path.
         copykitten.copy("temporary transcription")
         app.processEvents()
 
-        mixin._restore_clipboard_state(generated_state)
+        generated_snapshot.restore()
         restored_mime = clipboard.mimeData()
         restored_image: Any = restored_mime.imageData()
 
@@ -93,7 +86,7 @@ def main() -> int:
         print("PASS: native image pixels and binary clipboard payload were restored exactly.")
         return 0
     finally:
-        mixin._restore_clipboard_state(original_state)
+        original.restore()
         app.processEvents()
 
 

@@ -68,3 +68,23 @@ def write_wav(path: str, pcm: bytes, samplerate: int, channels: int = 1, sampwid
         wf.setsampwidth(sampwidth)
         wf.setframerate(samplerate)
         wf.writeframes(pcm)
+
+
+def meter_level(pcm: bytes) -> float:
+    """Tray-meter level 0..1 from a 16-bit PCM block; boosted so normal speech fills the meter."""
+    return min(1.0, peak(pcm) / 32767.0 * 1.8)
+
+
+def prepare_for_upload(pcm: bytes, source_rate: int, target_rate: int, gain_db: float) -> tuple[bytes, int]:
+    """Resample to ``target_rate`` (keeping the source rate if that fails) and apply gain."""
+    rate = int(source_rate or target_rate)
+    if rate != target_rate:
+        try:
+            pcm = resample(pcm, rate, target_rate)
+            logging.info(f"Resampled recording from {rate} Hz to {target_rate} Hz before upload.")
+            rate = target_rate
+        except Exception as e:
+            logging.warning(f"Could not resample recording from {rate} Hz to {target_rate} Hz: {e}")
+    if gain_db > 0:
+        logging.info(f"Applied +{gain_db} dB gain to recording.")
+    return apply_gain(pcm, gain_db), rate

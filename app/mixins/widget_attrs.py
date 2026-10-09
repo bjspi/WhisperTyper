@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMenuBar,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSpinBox,
     QSplitter,
@@ -40,6 +41,8 @@ class WidgetAttrs:
     help_menu: "QMenu"
     open_config_action: "QAction"
     exit_action: "QAction"
+    open_log_file_action: "QAction"
+    play_last_recording_action: "QAction"
     about_action: "QAction"
     github_action: "QAction"
     tabs: "QTabWidget"
@@ -54,6 +57,8 @@ class WidgetAttrs:
     test_transcription_api_button: "QPushButton"
     model_label: "QLabel"
     model_dropdown: "QComboBox"
+    transcription_scroll_area: "QScrollArea"
+    rephrasing_scroll_area: "QScrollArea"
     transcription_temp_label_title: "QLabel"
     transcription_temp_slider: "QSlider"
     transcription_temp_label: "QLabel"

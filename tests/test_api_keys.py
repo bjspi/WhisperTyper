@@ -5,7 +5,7 @@ from copy import deepcopy
 
 import pytest
 
-from app.core.api_keys import GroqKeyRotation, masked_api_key, migrate_api_keys, provider_for_url, selected_api_key
+from app.core.api_keys import GroqKeyRotation, key_format_warning, masked_api_key, migrate_api_keys, provider_for_url, selected_api_key
 from app.core.constants import DEFAULT_CONFIG
 
 
@@ -148,3 +148,11 @@ def test_single_key_and_surrounding_whitespace_are_safe():
     config["api_key_profiles"][0]["key"] = " \ngsk-test-b\n "
     rotation = GroqKeyRotation()
     assert rotation.next_key(config) == rotation.next_key(config) == "gsk-test-b"
+
+
+@pytest.mark.parametrize("provider, key, warning", [
+    ("openai", "sk-proj-abc", None), ("openai", "gsk-abc", "validation_openai_key_prefix"),
+    ("groq", " GSK_abc", None), ("groq", "sk-abc", "validation_groq_key_prefix"), ("custom", "anything", None),
+])
+def test_key_format_warning_is_a_hint_per_provider(provider, key, warning):
+    assert key_format_warning(provider, key) == warning

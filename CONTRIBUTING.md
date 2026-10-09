@@ -22,7 +22,7 @@ Run the same checks CI runs:
 
 ```bash
 ruff check app tests run.py                      # lint
-mypy app/core app/services app/audio app/hotkeys app/ui   # types (Qt-free layers are strict)
+mypy app/core app/services app/audio app/hotkeys app/ui app/platform   # types (Qt-free layers are strict)
 pytest                                           # 100+ headless tests
 ```
 
