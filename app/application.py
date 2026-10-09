@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import QApplication, QLineEdit, QMessageBox, QPushButton, Q
 
 from app.audio.sound import SoundPlayer
 from app.audio.store import RecordingStore
+from app.core.api_keys import GroqKeyRotation
 from app.core.env import is_MACOS, is_WINDOWS
 from app.core.i18n import TranslationManager
 from app.core.paths import resource_path
@@ -128,6 +129,7 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         self._pending_clipboard_restore_state: Optional[Dict[str, Any]] = None
         self._macos_startup_permissions_requested = False
         self._macos_hotkey_permissions_checked = False
+        self._groq_key_rotation = GroqKeyRotation()
 
         # Single source of truth for on-disk recordings (see app/audio/store.py).
         self.recordings = RecordingStore()

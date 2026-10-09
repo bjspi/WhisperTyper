@@ -9,6 +9,7 @@ import copykitten
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QListWidgetItem, QWidget
 
+from app.core.api_keys import selected_api_key
 from app.core.constants import activate_app, get_active_app_name
 from app.core.env import is_MACOS
 from app.core.timing import OperationTiming
@@ -20,7 +21,7 @@ class PostRephraseMixin:
     def trigger_post_rephrase_window(self) -> None:
         """Checks for selected text and shows the floating button window if text is present."""
         # Check for API settings before proceeding
-        if not self.config.get("rephrasing_api_url") or not self.config.get("rephrasing_api_key") or not self.config.get("rephrasing_model"):
+        if not self.config.get("rephrasing_api_url") or not selected_api_key(self.config, "rephrasing") or not self.config.get("rephrasing_model"):
             logging.warning("Post-rephrase hotkey pressed, but API settings are missing.")
             self.show_tray_balloon(self.translator.tr("rephrase_api_settings_missing"), 3000)
             return

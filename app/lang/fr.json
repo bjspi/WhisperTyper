@@ -237,5 +237,19 @@
   "color_theme_light": "Clair",
   "color_theme_dark": "Sombre",
   "input_device_label": "Périphérique d'entrée (microphone) :",
-  "input_device_default": "Par défaut du système (auto)"
+  "input_device_default": "Par défaut du système (auto)",
+  "tab_api_keys": "Clés API",
+  "tooltip_tab_api_keys": "Gérer les clés API nommées pour la transcription et la reformulation.",
+  "api_key_profile_label": "Profil de clé :",
+  "api_key_profile_tooltip": "Choisissez une clé enregistrée pour ce point de terminaison. Gérez les profils dans Clés API, puis enregistrez les paramètres.",
+  "api_key_none": "Aucune clé sélectionnée",
+  "api_key_profiles_description": "Enregistrez les clés nommées, puis choisissez un profil indépendant pour la transcription et la reformulation. Les clés sont enregistrées localement sans chiffrement.",
+  "api_key_name": "Nom",
+  "api_key_provider": "Fournisseur",
+  "api_key_custom_provider": "Personnalisé",
+  "api_key_add": "Ajouter une clé",
+  "api_key_remove": "Supprimer la clé",
+  "api_key_name_required": "Donnez un nom à chaque profil de clé.",
+  "groq_key_rotation": "Alterner les clés Groq pour la transcription",
+  "groq_key_rotation_tooltip": "Utilise à tour de rôle toutes les clés Groq distinctes et non vides, en commençant par la clé de transcription sélectionnée. La reformulation utilise toujours son propre profil. Les changements prennent effet après enregistrement."
 }

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from app.core.api_keys import selected_api_key
 from app.core.config_store import ConfigStore
 from app.core.constants import (
     CONFIG_SCHEMA_VERSION,
@@ -44,7 +45,8 @@ class TestLoad:
     def test_existing_values_are_preserved(self, store: ConfigStore):
         write_config(store, {"api_key": "sk-test", "config_schema_version": CONFIG_SCHEMA_VERSION})
         config, _ = store.load()
-        assert config["api_key"] == "sk-test"
+        assert selected_api_key(config, "transcription") == "sk-test"
+        assert "api_key" not in config
 
     def test_recording_prompt_overlay_mouse_position_preference_is_preserved(self, store: ConfigStore):
         write_config(store, {

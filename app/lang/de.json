@@ -237,5 +237,19 @@
   "color_theme_light": "Hell",
   "color_theme_dark": "Dunkel",
   "input_device_label": "Eingabegerät (Mikrofon):",
-  "input_device_default": "Systemstandard (automatisch)"
+  "input_device_default": "Systemstandard (automatisch)",
+  "tab_api_keys": "API-Keys",
+  "tooltip_tab_api_keys": "Benannte API-Keys für Transkription und Umformulieren verwalten.",
+  "api_key_profile_label": "Schlüsselprofil:",
+  "api_key_profile_tooltip": "Wähle einen hinterlegten Key für diesen Endpunkt. Profile im Tab API-Keys verwalten und anschließend die Einstellungen speichern.",
+  "api_key_none": "Kein Key ausgewählt",
+  "api_key_profiles_description": "Hier benannte Keys hinterlegen und in Transkription und Umformulieren unabhängig ein Profil wählen. Keys werden lokal unverschlüsselt gespeichert.",
+  "api_key_name": "Name",
+  "api_key_provider": "Anbieter",
+  "api_key_custom_provider": "Benutzerdefiniert",
+  "api_key_add": "Key hinzufügen",
+  "api_key_remove": "Key entfernen",
+  "api_key_name_required": "Bitte gib jedem Schlüsselprofil einen Namen.",
+  "groq_key_rotation": "Groq-Keys für Transkription rotieren",
+  "groq_key_rotation_tooltip": "Verwendet alle unterschiedlichen, ausgefüllten Groq-Keys reihum, beginnend mit dem gewählten Transkriptions-Key. Umformulieren verwendet immer sein eigenes gewähltes Profil. Änderungen gelten nach dem Speichern."
 }

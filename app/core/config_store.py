@@ -10,6 +10,7 @@ import json
 import logging
 from typing import Any, Callable, Dict, Tuple
 
+from app.core.api_keys import migrate_api_keys
 from app.core.constants import (
     CONFIG_SCHEMA_VERSION,
     DEFAULT_CONFIG,
@@ -128,6 +129,8 @@ class ConfigStore:
             if key not in cfg:
                 cfg[key] = default_value
                 changed = True
+
+        changed = migrate_api_keys(cfg) or changed
 
         # Self-heal hotkeys polluted by a captured control char. If "Set hotkey" was active while
         # the key's own global action fired, its simulated Ctrl+C (\x03) got captured too, saving

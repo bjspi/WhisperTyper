@@ -16,6 +16,7 @@ from PyQt6.QtCore import QThread
 from PyQt6.QtWidgets import QMessageBox
 
 from app.core import liveprompt
+from app.core.api_keys import provider_for_url, selected_api_key
 from app.core.constants import LANGUAGES
 from app.core.ffmpeg import is_video_file, resolve_ffmpeg
 from app.core.textutil import shorten
@@ -66,8 +67,12 @@ class TranscriptionMixin:
 
         thread = QThread()
 
+        api_key = self._groq_key_rotation.next_key(self.config)
+        logging.info("transcription_credential op=%s provider=%s profile_id=%s rotation=%s",
+                     timing.operation_id, provider_for_url(self.config["api_endpoint"]), self._groq_key_rotation.last_profile_id,
+                     bool(self.config["groq_key_rotation"] and provider_for_url(self.config["api_endpoint"]) == "groq"))
         worker = TranscriptionWorker(
-            api_key=self.config["api_key"], api_endpoint=self.config["api_endpoint"],
+            api_key=api_key, api_endpoint=self.config["api_endpoint"],
             audio_path=audio_path, prompt=self.config["prompt"],
             model=self.config["model"], language=lang_code,
             temperature=self.config["transcription_temperature"],
@@ -179,7 +184,7 @@ class TranscriptionMixin:
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             api_url=self.config["rephrasing_api_url"],
-            api_key=self.config["rephrasing_api_key"],
+            api_key=selected_api_key(self.config, "rephrasing"),
             model=self.config["rephrasing_model"],
             temperature=self.config["rephrasing_temperature"],
             context=context,

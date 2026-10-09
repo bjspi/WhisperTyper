@@ -44,7 +44,7 @@ class ConnectionTester:
         """Tests the transcription API connection (incl. proxy) and reports a differentiated result."""
         w = self._w
         api_url = w.api_endpoint_input.text().strip()
-        api_key = w.api_key_input.text().strip()
+        api_key = w._ui_api_key("transcription")
 
         if not api_url or not api_key:
             QMessageBox.warning(
@@ -134,7 +134,7 @@ class ConnectionTester:
         """Tests the rephrasing API settings by sending a simple request."""
         w = self._w
         api_url = w.rephrasing_api_url_input.text().strip()
-        api_key = w.rephrasing_api_key_input.text().strip() or w.api_key_input.text().strip()
+        api_key = w._ui_api_key("rephrasing")
         model = w.rephrasing_model_input.text().strip()
 
         if not all([api_url, api_key, model]):

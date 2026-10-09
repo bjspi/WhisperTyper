@@ -116,6 +116,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 -   **Global Voice Typing**: Transcribe your voice into any application with a single hotkey.
 -   **Recording-Time Transformations**: Mark selected transformation presets for a compact, non-activating palette during recording, choose `Standard` or a preset before stopping, and have the result transformed before it is inserted. The palette can sit by the Windows system tray / macOS menu bar or near the pointer; in system-area mode, a small recording indicator continues to follow the pointer.
 -   **AI-Powered**: Supports OpenAI (Whisper, GPT models), Groq and any other Whisper-API with identical API-design for fast and accurate transcription and rephrasing.
+-   **Central API Keys**: Named provider profiles, independent selections for transcription and rephrasing, and optional Groq transcription-key rotation. See [API key settings](docs/API_KEYS.md).
 -   **LivePrompting**: A revolutionary feature! Use trigger words to turn your speech directly into a prompt for an AI, which then types out the result.
     -   *Example*: Speak `"prompt, write a short poem about rain"` and the AI will type the poem for you (based on your rephrasing prompt)
 -   **Context-Aware Rephrasing**: Automatically use text you've highlighted on your screen as context for your voice prompts.
