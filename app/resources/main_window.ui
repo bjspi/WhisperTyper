@@ -458,21 +458,6 @@
        </item>
        <item>
         <widget class="QGroupBox" name="liveprompt_group">
-         <property name="styleSheet">
-          <string>
-            QGroupBox {
-                border: 1px solid #444;
-                border-radius: 5px;
-                margin-top: 1ex;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 0 3px;
-                border-radius: 3px;
-            }
-        </string>
-         </property>
          <property name="title">
           <string>LivePrompting (via Trigger Words)</string>
          </property>
@@ -571,21 +556,6 @@
        </item>
        <item>
         <widget class="QGroupBox" name="generic_rephrase_group">
-         <property name="styleSheet">
-          <string>
-            QGroupBox {
-                border: 1px solid #444;
-                border-radius: 5px;
-                margin-top: 1ex;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 0 3px;
-                border-radius: 3px;
-            }
-        </string>
-         </property>
          <property name="title">
           <string>Generic Rephrasing</string>
          </property>
@@ -699,6 +669,21 @@
          <widget class="QListWidget" name="post_rp_list_placeholder"/>
          <widget class="QWidget" name="post_rp_editor_container" native="true">
           <layout class="QVBoxLayout" name="editor_layout">
+           <property name="leftMargin">
+            <number>16</number>
+           </property>
+           <property name="topMargin">
+            <number>4</number>
+           </property>
+           <property name="rightMargin">
+            <number>4</number>
+           </property>
+           <property name="bottomMargin">
+            <number>4</number>
+           </property>
+           <property name="spacing">
+            <number>8</number>
+           </property>
            <item>
             <widget class="QLabel" name="caption_label">
              <property name="text">
