@@ -71,6 +71,25 @@ def test_interleaved_jobs_have_independent_milestones(caplog):
     assert "rephrase_request_ms=" not in second_summary
 
 
+def test_queue_handler_applies_filters_without_using_base_handler_lock(monkeypatch):
+    handler = timing._QueuedLogHandler()
+    records = []
+    monkeypatch.setattr(handler, "emit", records.append)
+    record = logging.makeLogRecord({"msg": "original"})
+    handler.addFilter(lambda _record: False)
+    assert not handler.handle(record)
+    assert records == []
+    handler.filters.clear()
+    assert handler.lock is None
+    assert handler.handle(record)
+    assert records == [record]
+    if sys.version_info >= (3, 12):
+        replacement = logging.makeLogRecord({"msg": "filtered"})
+        handler.addFilter(lambda _record: replacement)
+        assert handler.handle(record)
+        assert records[-1] is replacement
+
+
 @pytest.mark.parametrize("stall", ["handler_lock", "slow_emit"])
 def test_blocked_sink_does_not_block_producers_or_handler_reconfiguration(stall):
     # A separate process keeps the application-wide logging setup away from pytest's handlers.
