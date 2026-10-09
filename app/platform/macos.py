@@ -1,10 +1,11 @@
-"""Platform framework bindings: macOS Accessibility/Quartz/AVFoundation + Windows hotkey constants.
+"""macOS integration: optional Accessibility/Quartz/AVFoundation bindings and app activation.
 
-Single responsibility: import the optional native symbols once, exposing None where unavailable.
+The native symbols are imported once and exposed as None where unavailable.
 """
 
 from __future__ import annotations
 
+import subprocess
 from typing import Any, Dict
 
 from app.core.env import is_MACOS
@@ -50,11 +51,14 @@ else:
     NSURL = None
     AVAudioRecorder = None
 
-# Windows hotkey constants (defined unconditionally; only used under is_WINDOWS at runtime).
-WM_HOTKEY = 0x0312
-WM_QUIT = 0x0012
-MOD_ALT = 0x0001
-MOD_CONTROL = 0x0002
-MOD_SHIFT = 0x0004
-MOD_WIN = 0x0008
-MOD_NOREPEAT = 0x4000
+
+def frontmost_app_name() -> str:
+    """Return the name of the frontmost macOS application."""
+    script = 'tell application "System Events" to get name of first application process whose frontmost is true'
+    return subprocess.check_output(['osascript', '-e', script]).decode().strip()
+
+
+def activate_app(app_name: str) -> None:
+    """Bring the named macOS application back to the foreground."""
+    script = f'tell application "{app_name}" to activate'
+    subprocess.call(['osascript', '-e', script])

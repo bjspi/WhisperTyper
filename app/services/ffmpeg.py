@@ -20,7 +20,8 @@ import subprocess
 import tempfile
 from typing import List, Optional, Tuple
 
-from app.core.env import is_WINDOWS, no_window_kwargs
+from app.core.env import is_WINDOWS
+from app.platform.system import no_window_kwargs
 
 # Containers we treat as "video" — picking one requires ffmpeg to extract the audio track first.
 # Kept lowercase; compared against the file's lowercased extension.

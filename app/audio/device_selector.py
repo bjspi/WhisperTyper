@@ -2,16 +2,15 @@
 
 Single responsibility: turn the platform's PyAudio device list into (a) the names shown in the
 settings dropdown and (b) an ordered list of open-stream candidates for the capture code to try.
-Pulled out of AudioMixin to keep recording lifecycle and device discovery separate.
 
-The owning app supplies the shared PyAudio instance, the config dict and the app sample rate;
+Callers supply the config accessor, the app sample rate and the shared PyAudio instance;
 this class holds no audio state of its own.
 """
 from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Mapping
 
 import pyaudio
 
@@ -22,21 +21,21 @@ from app.core.textutil import demojibake
 class InputDeviceSelector:
     """Enumerates input devices and builds prioritized open-stream candidates."""
 
-    def __init__(self, owner: Any) -> None:
+    def __init__(self, config: Callable[[], Mapping[str, Any]], samplerate: int,
+                 audio: Callable[[], pyaudio.PyAudio]) -> None:
         """
         Args:
-            owner: The app; provides ``config``, ``samplerate`` and
-                ``_get_input_pyaudio_instance()``.
+            config: Returns the current app config (read for ``input_device_name``).
+            samplerate: The app's target capture rate.
+            audio: Returns the shared capture PyAudio instance.
         """
-        self._owner = owner
+        self._get_config = config
+        self._samplerate = samplerate
+        self._audio = audio
 
     @property
-    def _config(self) -> Dict[str, Any]:
-        return self._owner.config
-
-    @property
-    def _samplerate(self) -> int:
-        return self._owner.samplerate
+    def _config(self) -> Mapping[str, Any]:
+        return self._get_config()
 
     def selectable_input_devices(self) -> List[Dict[str, Any]]:
         """Input devices on the platform's default host API, for the settings dropdown."""
@@ -45,7 +44,7 @@ class InputDeviceSelector:
         # start), which blocks the settings window from showing. Log where the time goes.
         t0 = time.perf_counter()
         try:
-            audio = self._owner._get_input_pyaudio_instance()
+            audio = self._audio()
             t_instance = time.perf_counter()
             default_host = int(audio.get_default_host_api_info().get("index", 0))
             device_count = audio.get_device_count()

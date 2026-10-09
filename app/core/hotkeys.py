@@ -14,7 +14,7 @@ import re
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 from app.core.env import is_WINDOWS
-from app.core.frameworks import MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN
+from app.core.win32 import MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN
 
 #: Tokens that behave like modifiers when matching combos.
 MODIFIER_TOKENS = frozenset({

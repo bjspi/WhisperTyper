@@ -1,11 +1,10 @@
-"""Tests for proxy resolution and the connectivity helpers in app/core/netutil.py + services/net.py."""
+"""Tests for proxy resolution and the connectivity helpers in app/services/netutil.py + services/net.py."""
 from __future__ import annotations
 
 import io
 import wave
 
-from app.core import netutil
-from app.services import net
+from app.services import net, netutil
 
 
 class TestBuildProxies:
@@ -26,6 +25,12 @@ class TestResolveProxies:
 
     def test_no_proxy_and_no_px_returns_none(self):
         assert net.resolve_proxies("", use_px=False) is None
+
+    def test_config_snapshot_uses_its_proxy_fields(self, monkeypatch):
+        monkeypatch.setattr(net, "is_px_running", lambda: True)
+        assert net.proxies_for({"proxy_url": " http://corp:3128 ", "use_local_px_proxy": True})["https"] == "http://corp:3128"
+        assert net.proxies_for({"proxy_url": "", "use_local_px_proxy": True})["https"] == net.build_proxies(net.PX_PROXY_URL)["https"]
+        assert net.proxies_for({}) is None
 
 
 class TestGenerateTestWav:

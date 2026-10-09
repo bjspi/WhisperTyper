@@ -6,7 +6,7 @@ detect the OS colour scheme. No app state.
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Any, Dict
 
 LIGHT: Dict[str, str] = {
     "bg": "#f5f8fa", "panel": "#ffffff", "panel2": "#eef3f6", "text": "#16212b",
@@ -21,6 +21,16 @@ DARK: Dict[str, str] = {
     "accent": "#35c0dd", "accent_hover": "#4fcbe4", "accent_press": "#2aa6c1",
     "on_accent": "#08222b", "warn": "#e08b4a", "hover": "#1e2b37",
 }
+
+
+def set_style_state(widget: Any, name: str, value: Any) -> None:
+    """Set a dynamic property matched by a QSS selector and re-polish so it applies at once."""
+    if widget.property(name) == value:
+        return
+    widget.setProperty(name, value)
+    style = widget.style()
+    style.unpolish(widget)
+    style.polish(widget)
 
 
 def palette(dark: bool) -> Dict[str, str]:
@@ -160,6 +170,19 @@ QHeaderView::section {
     border: none; border-bottom: 1px solid %(border)s; font-weight: 600;
 }
 QLabel#apiKeyPreview { color: %(muted)s; }
+QGroupBox[incomplete="true"] { border: 2px solid %(warn)s; }
+QLabel#transformations_unavailable_label {
+    color: %(text)s; background: %(panel)s; border: 1px solid %(warn)s;
+    border-radius: 8px; padding: 8px 10px;
+}
+QLabel#prompt_token_label {
+    background: %(panel2)s; border: 1px solid %(border)s; border-radius: 10px;
+    padding: 2px 10px; color: %(muted)s;
+}
+QLabel#prompt_token_label[level="near"] { color: %(accent)s; }
+QLabel#prompt_token_label[level="over"] { color: %(warn)s; }
+QLabel#ffmpeg_status_label[found="true"] { color: %(accent)s; }
+QLabel#ffmpeg_status_label[found="false"] { color: %(warn)s; }
 QSplitter::handle { background: %(border)s; }
 
 QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }

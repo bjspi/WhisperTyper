@@ -1,7 +1,7 @@
-"""Application constants, config defaults, and system-language detection.
+"""Application constants and config defaults.
 
-Single responsibility: hold static configuration data and the small pure helpers that
-compute launch-time defaults. No Qt, no app state.
+Static configuration data; the launch-time system language comes from app.platform.
+No Qt, no app state.
 """
 
 from __future__ import annotations
@@ -9,7 +9,6 @@ from __future__ import annotations
 import glob
 import logging
 import os
-import subprocess
 from typing import Any, Dict
 
 from app.core.env import is_MACOS, is_WINDOWS
@@ -20,61 +19,11 @@ from app.core.prompts import (
     DEFAULT_TRANSCRIPTION_PROMPTS,
     _default_prompt_for,
 )
+from app.platform.system import system_language_2char
 
-
-def get_system_language_2char() -> str:
-    """Return a 2-character language code (e.g. 'en', 'de'); English variants map to 'en'."""
-    lang = None
-    if is_WINDOWS:
-        try:
-            import ctypes
-            windll = ctypes.windll.kernel32
-            lang_id = windll.GetUserDefaultUILanguage()
-            import locale
-            lang = locale.windows_locale.get(lang_id, 'en')
-        except Exception:
-            lang = os.environ.get('LANG', 'en')
-    elif is_MACOS:
-        try:
-            output = subprocess.check_output(
-                ["defaults", "read", "-g", "AppleLanguages"],
-                universal_newlines=True
-            )
-            import re
-            match = re.search(r'"([a-zA-Z\-]+)"', output)
-            if match:
-                lang = match.group(1)
-        except Exception:
-            lang = os.environ.get('LANG', 'en')
-    else:
-        lang = os.environ.get('LANG', 'en')
-
-    if not lang:
-        return 'en'
-    lang = lang.replace('_', '-').lower()
-    if lang.startswith('en'):
-        return 'en'
-    return lang.split('-')[0]
-
-
-# On macOS, showing a floating window steals focus; these re-activate the previous app.
-def get_active_app_name() -> str:
-    """Return the name of the frontmost macOS application."""
-    script = 'tell application "System Events" to get name of first application process whose frontmost is true'
-    return subprocess.check_output(['osascript', '-e', script]).decode().strip()
-
-
-def activate_app(app_name: str) -> None:
-    """Bring the named macOS application back to the foreground."""
-    script = f'tell application "{app_name}" to activate'
-    subprocess.call(['osascript', '-e', script])
-
-
-SYS_LANG = get_system_language_2char()
+SYS_LANG = system_language_2char()
 logging.info(f"Detected system language: {SYS_LANG}")
 
-# Approximate max token length for the Whisper initial prompt.
-WHISPER_PROMPT_TOKEN_LIMIT = 230
 
 # Map display names to ISO 639-1 codes
 LANGUAGES = {

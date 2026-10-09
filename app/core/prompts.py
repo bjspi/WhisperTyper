@@ -59,3 +59,31 @@ def recording_prompt_entries(entries: Any) -> List[Dict[str, str]]:
         if caption and prompt_text:
             result.append({"caption": caption, "text": prompt_text})
     return result
+
+
+#: Maximum number of transformation templates (hotkey palette / recording palette).
+MAX_TRANSFORMATIONS = 10
+
+
+def transformation_entry(entry: Any) -> Dict[str, Any]:
+    """Canonical stored form of one transformation template."""
+    source = entry if isinstance(entry, dict) else {}
+    return {
+        "caption": str(source.get("caption", "")),
+        "text": str(source.get("text", "")),
+        "show_during_recording": source.get("show_during_recording") is True,
+    }
+
+
+def load_transformations(entries: Any) -> List[Dict[str, Any]]:
+    """Return the stored templates in canonical form, capped to ``MAX_TRANSFORMATIONS``."""
+    if not isinstance(entries, list):
+        return []
+    return [transformation_entry(entry) for entry in entries if isinstance(entry, dict)][:MAX_TRANSFORMATIONS]
+
+
+def captioned_transformations(entries: Any) -> List[Dict[str, Any]]:
+    """Return the templates that can appear as buttons (they need a caption)."""
+    if not isinstance(entries, list):
+        return []
+    return [entry for entry in entries if isinstance(entry, dict) and str(entry.get("caption", "")).strip()]

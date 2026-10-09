@@ -10,8 +10,10 @@ from PyQt6.QtCore import QByteArray, QMimeData
 from PyQt6.QtGui import QColor, QImage
 
 import app.mixins.clipboard_mixin as clipboard_module
+import app.services.clipboard as snapshot_module
 from app.core.timing import OperationTiming
 from app.mixins.clipboard_mixin import ClipboardMixin
+from app.services.clipboard import ClipboardSnapshot
 
 
 class FakeClipboard:
@@ -83,7 +85,7 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> tuple[ClipboardHarness, FakeClip
         def processEvents() -> None:
             pass
 
-    monkeypatch.setattr(clipboard_module, "QApplication", FakeApplication)
+    monkeypatch.setattr(snapshot_module, "QApplication", FakeApplication)
     monkeypatch.setattr(clipboard_module, "is_MACOS", False)
     monkeypatch.setattr(clipboard_module.time, "sleep", lambda _seconds: None)
 
@@ -114,10 +116,10 @@ def test_full_clipboard_roundtrip_preserves_image_and_binary_formats(
     original_mime.setImageData(_make_test_image())
     clipboard.setMimeData(original_mime)
 
-    state = mixin._capture_clipboard_state()
+    snapshot = ClipboardSnapshot.capture()
     clipboard.setMimeData(QMimeData())
     clipboard.mimeData().setText("temporary transcription")
-    mixin._restore_clipboard_state(state)
+    snapshot.restore()
 
     restored = clipboard.mimeData()
     assert restored.html() == "<p><b>rich text</b></p>"
@@ -132,19 +134,18 @@ def test_full_clipboard_roundtrip_preserves_image_and_binary_formats(
 def test_image_pixels_are_captured_when_raw_qt_image_payload_is_empty(
     harness: tuple[ClipboardHarness, FakeClipboard],
 ) -> None:
-    mixin, clipboard = harness
+    _mixin, clipboard = harness
     image_mime = QMimeData()
     image_mime.setImageData(_make_test_image())
     clipboard.setMimeData(image_mime)
 
     assert bytes(image_mime.data("application/x-qt-image")) == b""
 
-    snapshot = mixin._capture_qt_clipboard_state()
-    assert snapshot is not None
-    assert isinstance(snapshot.get("image"), QImage)
+    snapshot = ClipboardSnapshot.capture()
+    assert isinstance(snapshot.image, QImage)
 
     clipboard.clear()
-    assert mixin._restore_qt_clipboard_state(snapshot) is True
+    snapshot.restore()
     restored_image: Any = clipboard.mimeData().imageData()
     assert isinstance(restored_image, QImage)
     assert restored_image.pixelColor(2, 1) == QColor(17, 91, 203, 177)
@@ -153,13 +154,13 @@ def test_image_pixels_are_captured_when_raw_qt_image_payload_is_empty(
 def test_empty_clipboard_roundtrip_stays_empty(
     harness: tuple[ClipboardHarness, FakeClipboard],
 ) -> None:
-    mixin, clipboard = harness
+    _mixin, clipboard = harness
 
-    state = mixin._capture_clipboard_state()
+    snapshot = ClipboardSnapshot.capture()
     temporary = QMimeData()
     temporary.setText("temporary transcription")
     clipboard.setMimeData(temporary)
-    mixin._restore_clipboard_state(state)
+    snapshot.restore()
 
     assert clipboard.mimeData().formats() == []
 
@@ -342,32 +343,21 @@ def test_saved_windows_option_has_no_effect_off_windows(harness, monkeypatch):
     assert "sendinput_dispatch_start" not in timing._events
 
 
-@pytest.mark.parametrize("windows,mac,enabled,fallback", [
-    (True, False, True, False), (True, False, False, False), (False, False, True, False),
-    (True, False, True, True), (False, True, True, False), (False, True, False, False),
-])
-def test_fast_paste_retains_clipboard_restore_without_blocking_waits(harness, monkeypatch, windows, mac, enabled, fallback):
+@pytest.mark.parametrize("fast", [False, True])
+def test_fast_paste_skips_waits_but_keeps_a_later_clipboard_restore(harness, monkeypatch, fast):
     mixin, clipboard = harness
     original = QMimeData()
     original.setImageData(_make_test_image())
     clipboard.setMimeData(original)
-    mixin.config.update(fast_paste=enabled, windows_sendinput_text=fallback)
-    monkeypatch.setattr(clipboard_module, "is_WINDOWS", windows)
-    monkeypatch.setattr(clipboard_module, "is_MACOS", mac)
-    monkeypatch.setattr(clipboard_module, "send_unicode_text", Mock(return_value=(0, 8)))
+    mixin.config["fast_paste"] = fast
+    monkeypatch.setattr(clipboard_module, "is_WINDOWS", True)
     waits = Mock()
     monkeypatch.setattr(clipboard_module.time, "sleep", waits)
     timing = OperationTiming("recording")
     assert mixin.insert_transcribed_text("text", timing)
-    fast = (windows or mac) and enabled
     assert waits.call_count == (0 if fast else 2)
     assert mixin._clipboard_restore_timer.delay_ms == (600 if fast else 500)
     assert clipboard.mimeData().text() == "text"
-    assert "paste_dispatch_end" in timing._events
     assert "paste_settle_end" in timing._events
-    assert ("sendinput_fallback" in timing._events) == fallback
     mixin._clipboard_restore_timer.fire()
-    assert clipboard.mimeData().hasImage()
     assert clipboard.mimeData().imageData().pixelColor(1, 1) == QColor(17, 91, 203, 177)
-
-

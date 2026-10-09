@@ -8,6 +8,9 @@ from typing import Any, Dict
 
 from app.core.paths import resource_path
 
+#: Selectable UI languages: code -> native display name.
+UI_LANGUAGES = {"en": "English", "de": "Deutsch", "es": "Español", "fr": "Français"}
+
 
 class TranslationManager:
     """Manages loading and retrieving translated strings from JSON files."""

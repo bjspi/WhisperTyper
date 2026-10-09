@@ -1,11 +1,11 @@
-"""Tests for the ffmpeg-independent decision logic in app/core/ffmpeg.py."""
+"""Tests for the ffmpeg-independent decision logic in app/services/ffmpeg.py."""
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
 
-from app.core import ffmpeg
+from app.services import ffmpeg
 
 
 class TestResolveFfmpeg:

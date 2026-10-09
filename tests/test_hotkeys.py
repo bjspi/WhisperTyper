@@ -6,8 +6,6 @@ from app.core.env import is_WINDOWS
 
 
 class TestNormalizeHotkeyPart:
-
-
     def test_function_key_gets_brackets(self):
         assert hotkeys.normalize_hotkey_part("F9") == "<f9>"
         assert hotkeys.normalize_hotkey_part("f12") == "<f12>"
@@ -53,8 +51,6 @@ class TestFormatHotkeyTokens:
 
 
 class TestPrettyHotkey:
-
-
     def test_empty_hotkey_renders_dash(self):
         assert hotkeys.pretty_hotkey("") == "—"
 
