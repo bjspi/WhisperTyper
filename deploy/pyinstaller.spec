@@ -20,7 +20,11 @@ if not is_MACOS:
     )
 
 CODESIGN_IDENTITY = os.environ.get("WHISPERTYPER_CODESIGN_IDENTITY", "").strip() or None
-DEFAULT_ENTITLEMENTS_FILE = os.path.join(os.path.dirname(SPECPATH), 'macos-entitlements.plist')
+# Granted macOS permissions belong to the bundle ID; an existing install can keep its former ID.
+BUNDLE_ID = os.environ.get("WHISPERTYPER_BUNDLE_ID", "").strip() or 'gh.bjspi.whispertyper'
+with open(os.path.join(SPECPATH, '..', 'app', '__init__.py'), encoding='utf-8') as _init:
+    APP_VERSION = next(line.split('"')[1] for line in _init if line.startswith('__version__'))
+DEFAULT_ENTITLEMENTS_FILE = os.path.join(SPECPATH, 'macos-entitlements.plist')
 ENTITLEMENTS_FILE = os.environ.get("WHISPERTYPER_ENTITLEMENTS_FILE", "").strip() or None
 if not ENTITLEMENTS_FILE and os.path.exists(DEFAULT_ENTITLEMENTS_FILE):
     ENTITLEMENTS_FILE = DEFAULT_ENTITLEMENTS_FILE
@@ -37,8 +41,8 @@ def find_icon_file(root_path, icon_name):
             return os.path.join(root, icon_name)
     return None
 
-# SPECPATH is a global variable from PyInstaller. Project root is one level up from the 'deploy' dir.
-project_root = os.path.abspath(os.path.join(os.path.dirname(SPECPATH), '..'))
+# SPECPATH is a global variable from PyInstaller: the 'deploy' dir. Project root is one level up.
+project_root = os.path.abspath(os.path.join(SPECPATH, '..'))
 APP_ICON = find_icon_file(project_root, 'app_icon.icns')
 if not APP_ICON:
     print("WARNING: Icon file 'app_icon.icns' not found in the project directory. "
@@ -149,10 +153,10 @@ app = BUNDLE(
     coll,
     name='WhisperTyper.app',
     icon=APP_ICON,
-    bundle_identifier='gh.bjspi.whispertyper',
+    bundle_identifier=BUNDLE_ID,
     info_plist={
         'NSHighResolutionCapable': 'True',
-        'CFBundleShortVersionString': '0.5.0',
+        'CFBundleShortVersionString': APP_VERSION,
         'NSMicrophoneUsageDescription': 'This app requires microphone access to record audio for transcription.',
         'NSAccessibilityUsageDescription': 'This app needs permission for global hotkeys and clipboard management (e.g., to start transcription and copy results).',
         'NSInputMonitoringUsageDescription': 'This app requires permission to monitor keyboard input to detect global hotkeys for starting and stopping transcription.',
