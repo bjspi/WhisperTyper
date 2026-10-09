@@ -33,13 +33,15 @@ _ALIAS_MAP = {
     "escape": "esc", "return": "enter", "capslock": "caps_lock",
     "pageup": "page_up", "pgup": "page_up",
     "pagedown": "page_down", "pgdown": "page_down",
+    # '+' separates tokens in stored hotkeys, so the plus key itself is spelled <plus>.
+    "+": "plus",
 }
 
 #: Non-character keys that get the angle-bracket form.
 _SPECIAL_TOKENS = frozenset({
     "ctrl", "alt", "shift", "cmd", "win", "alt_gr", "caps_lock",
     "backspace", "tab", "enter", "esc", "space", "delete", "insert",
-    "home", "end", "page_up", "page_down", "left", "right", "up", "down",
+    "home", "end", "page_up", "page_down", "left", "right", "up", "down", "plus",
 })
 
 #: Windows virtual-key code -> canonical token. Single source of truth; the reverse
@@ -52,7 +54,7 @@ VK_TO_TOKEN: Dict[int, str] = {
     0x70: "<f1>", 0x71: "<f2>", 0x72: "<f3>", 0x73: "<f4>", 0x74: "<f5>",
     0x75: "<f6>", 0x76: "<f7>", 0x77: "<f8>", 0x78: "<f9>", 0x79: "<f10>",
     0x7A: "<f11>", 0x7B: "<f12>",
-    0xBA: ";", 0xBB: "+", 0xBC: ",", 0xBD: "-", 0xBE: ".", 0xBF: "/",
+    0xBA: ";", 0xBB: "<plus>", 0xBC: ",", 0xBD: "-", 0xBE: ".", 0xBF: "/",
     # Modifier VKs (generic + left/right variants) all collapse to the generic token.
     0x11: "<ctrl>", 0xA2: "<ctrl>", 0xA3: "<ctrl>",
     0x12: "<alt>", 0xA4: "<alt>",

@@ -40,6 +40,10 @@ class TestNormalizeHotkeyString:
     def test_left_right_variants_collapse(self):
         assert hotkeys.normalize_hotkey_string("<caps_lock>+<ctrl_l>") == "<caps_lock>+<ctrl>"
 
+    def test_plus_key_survives_the_separator(self):
+        assert hotkeys.normalize_hotkey_string("Ctrl+Plus") == "<ctrl>+<plus>"
+        assert hotkeys.normalize_hotkey_string("<ctrl>+<plus>") == "<ctrl>+<plus>"
+
 
 class TestFormatHotkeyTokens:
     def test_modifiers_come_first_in_stable_order(self):

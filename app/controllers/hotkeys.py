@@ -26,6 +26,9 @@ from app.hotkeys.key_tokens import injected_event_counts, pynput_key_tokens, qt_
 from app.hotkeys.windows_listener import WindowsHotkeyListener
 from app.ui.durations import BALLOON_WARNING_MS
 
+#: macOS: an armed post-rephrase whose keys are released later than this is dropped.
+_RELEASE_ACTION_TIMEOUT_S = 3.0
+
 
 class RecordingState(Protocol):
     """What the listeners need to know about the recording (read and written from listener threads)."""
@@ -53,6 +56,10 @@ class HotkeyController(QObject):
         self._manual_bindings: List[Dict[str, Any]] = []
         self._pressed: Set[str] = set()
         self._active_actions: Set[str] = set()
+        #: macOS: actions armed on press (with arm time) that fire once their keys are released.
+        self._release_actions: Dict[str, float] = {}
+        #: macOS: global callbacks stay muted until this time after a capture (monotonic seconds).
+        self._muted_until = 0.0
         self._manual_listener: Optional[keyboard.Listener] = None
         self._windows_listener: Optional[WindowsHotkeyListener] = None
         self._capture_listener: Optional[keyboard.Listener] = None
@@ -81,6 +88,7 @@ class HotkeyController(QObject):
         # by a listener thread that is just shutting down; fresh objects make the swap atomic.
         self._pressed = set()
         self._active_actions = set()
+        self._release_actions = {}
         self._recording.push_to_talk_active = False
 
         if is_MACOS:
@@ -201,6 +209,8 @@ class HotkeyController(QObject):
         key_tokens = pynput_key_tokens(key)
         if injected and not injected_event_counts(key_tokens):
             return
+        if is_MACOS and (self.capturing or time.monotonic() < self._muted_until):
+            return  # macOS keeps the listener running during capture (see start_capture)
         self._pressed.update(key_tokens)
 
         # Snapshot the binding list: the main thread swaps in a new list on re-init.
@@ -209,7 +219,11 @@ class HotkeyController(QObject):
                     and binding["action"] not in self._active_actions):
                 self._active_actions.add(binding["action"])
                 logging.info(f"Manual hotkey combo detected: {binding['display']}")
-                if binding["action"] == "transcription" and self._config.get("push_to_talk", False):
+                if is_MACOS and binding["action"] == "post_rephrase":
+                    # Copying the selection while e.g. Ctrl is still held would send Ctrl+Cmd+C,
+                    # which apps ignore, so this action waits for the release of its keys.
+                    self._release_actions[binding["action"]] = time.monotonic()
+                elif binding["action"] == "transcription" and self._config.get("push_to_talk", False):
                     if not self._recording.is_recording:
                         self._recording.push_to_talk_active = True
                         self.action_triggered.emit(binding["action"], detected_ns)
@@ -224,12 +238,22 @@ class HotkeyController(QObject):
         released_tokens = pynput_key_tokens(key)
         if injected and not injected_event_counts(released_tokens):
             return
+        if is_MACOS and (self.capturing or time.monotonic() < self._muted_until):
+            return
         if self._is_push_to_talk_release(released_tokens):
             logging.info("Push-to-talk hotkey released. Stopping recording.")
             self._recording.push_to_talk_active = False
             self.action_triggered.emit("stop_transcription", detected_ns)
 
         self._pressed.difference_update(released_tokens)
+
+        for binding in list(self._manual_bindings):
+            armed_at = self._release_actions.get(binding["action"])
+            if armed_at is not None and not binding["tokens"] & self._pressed:
+                del self._release_actions[binding["action"]]
+                # A release that only arrives much later (e.g. a lost key-up) must not act on a new selection.
+                if time.monotonic() - armed_at < _RELEASE_ACTION_TIMEOUT_S:
+                    self.action_triggered.emit(binding["action"], detected_ns)
 
         still_active = {
             binding["action"]
@@ -261,18 +285,20 @@ class HotkeyController(QObject):
         button.setEnabled(False)
         self._captured_keys = set()
 
-        # Suspend the GLOBAL hotkeys while capturing. Otherwise pressing e.g. F9 both records the
-        # key AND fires its global action (post-rephrase), whose simulated Ctrl+C then gets caught
-        # by the capture listener too — producing garbage like "<ctrl>++<f9>+c".
-        self.stop()
-
         if is_MACOS:
+            # Stopping the CoreGraphics listener from this Qt callback aborts the process on recent
+            # macOS (SIGTRAP in Text Input Services). It keeps running; its callbacks ignore keys
+            # while ``capturing`` is set.
             target.clear()
             target.installEventFilter(self)
             target.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
             target.grabKeyboard()
             return
 
+        # Suspend the GLOBAL hotkeys while capturing. Otherwise pressing e.g. F9 both records the
+        # key AND fires its global action (post-rephrase), whose simulated Ctrl+C then gets caught
+        # by the capture listener too — producing garbage like "<ctrl>++<f9>+c".
+        self.stop()
         self._capture_listener = keyboard.Listener(on_press=self._on_capture_press,
                                                    on_release=self._on_capture_release)
         self._capture_listener.start()
@@ -328,9 +354,17 @@ class HotkeyController(QObject):
             self._capture_button.setText(self._ctx.tr("set_hotkey_button"))
             self._capture_button.setEnabled(True)
 
+        if is_MACOS:
+            # The listener never stopped; skip the keys of the capture that are still in flight.
+            # A new hotkey applies after an app restart (see the settings window).
+            self._muted_until = time.monotonic() + 0.25
+            self._pressed = set()
+            self._active_actions = set()
+            self._release_actions = {}
         self._capture_widget = None
         self._capture_button = None
-        self.restart()
+        if not is_MACOS:
+            self.restart()
 
     def cancel_capture(self) -> None:
         """Abort an in-progress capture and restore the global listeners.
