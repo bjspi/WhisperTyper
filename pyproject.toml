@@ -30,7 +30,8 @@ dependencies = [
   "pyaudio",
   "pynput",
   "pyautogui",
-  "requests",
+  "requests>=2.32",
+  "urllib3>=2.2,<3",
   "copykitten",
   # Robust mojibake repair (fixes UTF-8 mis-decoded as cp1252/latin-1, e.g. "Ãœ" -> "Ü").
   "ftfy",

@@ -37,6 +37,8 @@ from app.mixins.theme_mixin import ThemeMixin
 from app.mixins.transcription_mixin import TranscriptionMixin
 from app.mixins.tray_mixin import TrayMixin
 from app.mixins.widget_attrs import WidgetAttrs
+from app.services.http_transport import close_transport
+from app.services.http_warmup import HttpWarmup
 from app.services.rephrasing_worker import RephrasingWorker
 from app.services.transcription_worker import TranscriptionWorker
 from app.ui.floating_buttons import FloatingButtonWindow, RecordingPromptOverlay
@@ -137,6 +139,13 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
 
         # After loading config ensure logging handlers reflect settings
         self.apply_logging_configuration()
+        self._http_warmup = HttpWarmup()
+        self._http_warm_until = time.monotonic() + 300
+        self._http_warm_timer = QTimer(self)
+        self._http_warm_timer.setInterval(20_000)
+        self._http_warm_timer.timeout.connect(self._schedule_http_warmup)
+        self._http_warm_timer.start()
+        QTimer.singleShot(0, self._schedule_http_warmup)
         self.init_ui()
         self.init_tray_icon()
 
@@ -177,6 +186,15 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
         if not self._has_valid_api_settings():
             logging.info("No valid API key configured on startup; opening settings window.")
             QTimer.singleShot(600, self.show_settings_window)
+
+    def _schedule_http_warmup(self, *, activate: bool = False) -> None:
+        """Snapshot endpoints only; keep active origins warm for five minutes after use."""
+        if activate or self.is_recording:
+            self._http_warm_until = time.monotonic() + 300
+        if time.monotonic() > self._http_warm_until:
+            return
+        endpoints = (self.config.get("api_endpoint", ""), self.config.get("rephrasing_api_url", ""))
+        self._http_warmup.schedule(endpoints, self.config.get("proxy_url", ""), self.config.get("use_local_px_proxy", False))
 
     def _show_tooltip_slot(self, message: str, timeout_ms: int, spinner: bool, check: bool) -> None:
         """
@@ -293,10 +311,13 @@ class WhisperTyperApp(WidgetAttrs, ThemeMixin, MacMixin, TrayMixin, AudioMixin, 
                 return
 
         logging.info("Quitting application.")
+        self._http_warm_timer.stop()
+        self._http_warmup.close()
         self._abandon_recording_prompt_selection()
         self._stop_hotkey_listeners()
         self._stop_background_audio_capture()
         self._drain_worker_threads()
+        close_transport()
         if is_MACOS and self.macos_audio_recorder:
             self._stop_macos_native_recording(discard=True)
         if self._clipboard_restore_timer.isActive():

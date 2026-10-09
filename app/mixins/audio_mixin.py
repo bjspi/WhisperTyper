@@ -147,6 +147,7 @@ class AudioMixin:
 
             self._check_and_warn_macos_permissions('microphone')
 
+            self._schedule_http_warmup(activate=True)
             self.is_recording = True
             self.cancel_action.setEnabled(True)  # Enable cancel while recording
             with self.audio_state_lock:

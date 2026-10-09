@@ -7,12 +7,12 @@ import os
 import re
 from typing import Any, Dict, Optional
 
-import requests
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from app.core import ffmpeg
 from app.core.redaction import redact_for_log
 from app.core.timing import OperationTiming
+from app.services.http_transport import request
 
 
 class TranscriptionWorker(QObject):
@@ -151,11 +151,11 @@ class TranscriptionWorker(QObject):
                     f"({upload_size / (1024 * 1024):.1f} MB, send timeout {send_timeout:.0f}s)"
                 )
                 self.timing.mark("transcription_request_start")
-                response = requests.post(
-                    self.api_endpoint, headers=headers, files=files, data=data,
+                response = request(
+                    "POST", self.api_endpoint, timing=self.timing, stage="transcription", headers=headers, files=files, data=data,
                     proxies=self.proxies, timeout=(send_timeout, 300)
                 )
-                # requests.post returns only after reading the complete response body.
+                # The transport returns only after reading the complete response body.
                 self.timing.mark("transcription_response_received")
 
             logging.debug(f"API response status: {response.status_code}")

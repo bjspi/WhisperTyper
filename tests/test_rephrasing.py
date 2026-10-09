@@ -14,7 +14,7 @@ def test_reasoning_models_omit_unsupported_temperature(model: str) -> None:
     response = Mock()
     response.json.return_value = {"choices": [{"message": {"content": "Success"}}]}
 
-    with patch("app.services.rephrasing.requests.post", return_value=response) as post:
+    with patch("app.services.rephrasing.request", return_value=response) as post:
         result = rephrase_text(
             system_prompt="Test",
             user_prompt="Reply",
@@ -32,7 +32,7 @@ def test_other_models_keep_configured_temperature() -> None:
     response = Mock()
     response.json.return_value = {"choices": [{"message": {"content": "Success"}}]}
 
-    with patch("app.services.rephrasing.requests.post", return_value=response) as post:
+    with patch("app.services.rephrasing.request", return_value=response) as post:
         rephrase_text(
             system_prompt="Test",
             user_prompt="Reply",
@@ -59,7 +59,7 @@ def test_api_error_exposes_structured_diagnostics() -> None:
         }
     }
 
-    with patch("app.services.rephrasing.requests.post", return_value=response):
+    with patch("app.services.rephrasing.request", return_value=response):
         with pytest.raises(RephrasingError) as exc_info:
             rephrase_text(
                 system_prompt="Test",
@@ -88,7 +88,7 @@ def test_non_json_api_error_uses_bounded_response_text() -> None:
     response.reason = "Bad Gateway"
     response.json.side_effect = ValueError("not JSON")
 
-    with patch("app.services.rephrasing.requests.post", return_value=response):
+    with patch("app.services.rephrasing.request", return_value=response):
         with pytest.raises(RephrasingError) as exc_info:
             rephrase_text(
                 system_prompt="Test",

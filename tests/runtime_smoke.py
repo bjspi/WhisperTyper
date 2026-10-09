@@ -40,6 +40,13 @@ class FakeAPI(BaseHTTPRequestHandler):
 
     last_chat_body = b""
     authorization_headers: list[str] = []
+    protocol_version = "HTTP/1.1"
+
+    def do_HEAD(self) -> None:  # noqa: N802 - http.server API
+        """Warm the local transport without including HEAD requests in key-rotation checks."""
+        self.send_response(401)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_POST(self) -> None:  # noqa: N802 - http.server API
         """Serve one fake transcription/chat response (500 for /fail or FAILME payloads)."""
@@ -48,6 +55,7 @@ class FakeAPI(BaseHTTPRequestHandler):
         FakeAPI.authorization_headers.append(self.headers.get("Authorization", ""))
         if self.path.endswith("/fail") or b"FAILME" in body:
             self.send_response(500)
+            self.send_header("Content-Length", str(len(b'{"error": "simulated failure"}')))
             self.end_headers()
             self.wfile.write(b'{"error": "simulated failure"}')
             return
@@ -151,6 +159,7 @@ def main() -> int:
     failed = False
     latency_summaries: list[str] = []
     replacement_logs: list[str] = []
+    transport_logs: list[str] = []
 
     class LatencyCollector(logging.Handler):
         """Collect completed operations after the background logger formats them."""
@@ -162,6 +171,8 @@ def main() -> int:
                 latency_summaries.append(message)
             elif message.startswith("replacements_check"):
                 replacement_logs.append(message)
+            elif message.startswith("http_transport"):
+                transport_logs.append(message)
 
     add_log_handler(LatencyCollector())
 
@@ -179,6 +190,10 @@ def main() -> int:
 
     with patch("app.audio.sound.SoundPlayer.preload"):
         wt = WhisperTyperApp()
+    # Settings tests select official providers; warming must stay on the fake local API.
+    original_schedule = wt._http_warmup.schedule
+    wt._http_warmup.schedule = lambda _endpoints, proxy, px: original_schedule(
+        (f"http://127.0.0.1:{port}/",), proxy, px)
     wt.play_sound = lambda _filename: None
     assert os.path.commonpath([wt.recordings.directory, iso_tmp]) == iso_tmp
 
@@ -702,7 +717,7 @@ def main() -> int:
             worker = TranscriptionWorker("test-key", "https://api.openai.com/v1/audio/transcriptions", ok_wav,
                                          "Context", model, language, 0.0)
             worker.finished.connect(results.append)
-            with patch("app.services.transcription_worker.requests.post", return_value=response) as post:
+            with patch("app.services.transcription_worker.request", return_value=response) as post:
                 worker.run()
             worker.timing.finish("model_probe")
             data = post.call_args.kwargs["data"]
@@ -946,6 +961,12 @@ def main() -> int:
     ))
     ids = [line.split("op=")[1].split()[0] for line in latency_summaries]
     check("timings: operations keep separate IDs and finish once", len(ids) >= 8 and len(ids) == len(set(ids)))
+
+    check("HTTP: transcription and rephrasing timings include first byte and post-upload wait", all(
+        any(f"stage={stage} " in line and "ttfb_ms=" in line and "after_upload_wait_ms=" in line
+            and "upload_ms=" in line for line in transport_logs) for stage in ("transcription", "rephrase")
+    ))
+    check("HTTP: API calls reuse the warm connection", any("reused=True" in line for line in transport_logs))
 
     try:
         if clipboard_before is not None:

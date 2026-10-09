@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import Optional
 
 import copykitten
@@ -42,6 +43,7 @@ class TranscriptionMixin:
         """
         timing = timing or OperationTiming()
         timing.mark("transcription_queued")
+        self._http_warm_until = time.monotonic() + 300
         # Resolve ffmpeg so video files get their audio extracted first; harmless for audio.
         ffmpeg_path = resolve_ffmpeg(self.config.get("ffmpeg_path", ""))
         needs_extraction = bool(ffmpeg_path) and is_video_file(audio_path)
@@ -180,6 +182,7 @@ class TranscriptionMixin:
         """Snapshot the current rephrasing API settings (GUI thread) into a self-contained worker."""
         timing = timing or OperationTiming("rephrase")
         timing.mark("rephrase_queued")
+        self._http_warm_until = time.monotonic() + 300
         return RephrasingWorker(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
