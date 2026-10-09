@@ -57,27 +57,18 @@ from app.services import net
 from app.ui.api_keys import ApiKeysTab
 from app.ui.connection_tester import ConnectionTester
 from app.ui.replacements import ReplacementsTab
+from app.ui.theme import palette
 
 
 class SettingsMixin:
     """Settings window: build, bind, validate, retranslate, API/connection tests, config & logging."""
 
     def _group_style(self, group_name: str, highlighted: bool = False) -> str:
-        """Return a theme-aware group box style (accent/warn border on the card)."""
-        pal = getattr(self, "_theme_palette", None)
-        if pal:
-            border = pal["warn"] if highlighted else pal["border"]
-            width = 2 if highlighted else 1
-            return (
-                f"QGroupBox#{group_name} {{ background: {pal['panel']}; "
-                f"border: {width}px solid {border}; border-radius: 12px; margin-top: 14px; "
-                f"padding: 14px 12px 10px 12px; font-weight: 600; }} "
-                f"QGroupBox#{group_name}::title {{ subcontrol-origin: margin; "
-                f"subcontrol-position: top left; left: 12px; padding: 0 6px; "
-                f"color: {pal['accent']}; background: {pal['bg']}; }}"
-            )
-        template = self.HIGHLIGHT_GROUP_STYLE if highlighted else self.NORMAL_GROUP_STYLE
-        return template.format(group_name=group_name)
+        """Override only incomplete-settings borders; all sections share the theme geometry."""
+        if not highlighted:
+            return ""
+        pal = getattr(self, "_theme_palette", None) or palette(False)
+        return f"QGroupBox#{group_name} {{ border: 2px solid {pal['warn']}; }}"
 
     def init_ui(self) -> None:
         """Initializes the settings window by loading it from main_window.ui."""

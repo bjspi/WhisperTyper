@@ -1,4 +1,4 @@
-"""WidgetAttrs — group-box style templates + uic-loaded widget type hints.
+"""WidgetAttrs — uic-loaded widget type hints.
 
 These are static class attributes / annotations that document the widgets injected by
 uic.loadUi. Kept on a base class so IDEs still resolve them, out of the main file.
@@ -31,36 +31,7 @@ from PyQt6.QtWidgets import (
 
 
 class WidgetAttrs:
-    """uic-injected widget type hints and group-box style templates."""
-
-    # --- Stylesheets for dynamic group box border ---
-    NORMAL_GROUP_STYLE = """
-        QGroupBox#{group_name} {{
-            border: 1px solid #444;
-            border-radius: 5px;
-            margin-top: 1ex;
-        }}
-        QGroupBox#{group_name}::title {{
-            subcontrol-origin: margin;
-            subcontrol-position: top left;
-            padding: 0 3px;
-            border-radius: 3px;
-        }}
-    """
-
-    HIGHLIGHT_GROUP_STYLE = """
-        QGroupBox#{group_name} {{
-            border: 2px solid red;
-            border-radius: 5px;
-            margin-top: 1ex;
-        }}
-        QGroupBox#{group_name}::title {{
-            subcontrol-origin: margin;
-            subcontrol-position: top left;
-            padding: 0 3px;
-            border-radius: 3px;
-        }}
-    """
+    """uic-injected widget type hints."""
 
     # --- UI Element Type Hints (widgets injected by uic.loadUi) ---
     main_layout: "QVBoxLayout"

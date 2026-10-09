@@ -10,14 +10,14 @@ from typing import Dict
 
 LIGHT: Dict[str, str] = {
     "bg": "#f5f8fa", "panel": "#ffffff", "panel2": "#eef3f6", "text": "#16212b",
-    "muted": "#5a6b78", "border": "#d6dfe5", "field": "#ffffff", "field_border": "#cfd9e0",
+    "muted": "#5a6b78", "border": "#d6dfe5", "group_border": "#9aa9b4", "field": "#ffffff", "field_border": "#cfd9e0",
     "accent": "#0e8aa8", "accent_hover": "#0b7690", "accent_press": "#095c74",
     "on_accent": "#ffffff", "warn": "#cf6a3f", "hover": "#eef3f6",
 }
 
 DARK: Dict[str, str] = {
     "bg": "#0e1620", "panel": "#16212c", "panel2": "#1b2733", "text": "#dce6ee",
-    "muted": "#8598a5", "border": "#273744", "field": "#121c26", "field_border": "#2c3d4a",
+    "muted": "#8598a5", "border": "#273744", "group_border": "#627382", "field": "#121c26", "field_border": "#2c3d4a",
     "accent": "#35c0dd", "accent_hover": "#4fcbe4", "accent_press": "#2aa6c1",
     "on_accent": "#08222b", "warn": "#e08b4a", "hover": "#1e2b37",
 }
@@ -77,8 +77,8 @@ QTabBar::tab:hover { color: %(text)s; }
 QTabBar::tab:selected { color: %(accent)s; border-bottom: 2px solid %(accent)s; }
 
 QGroupBox {
-    background: %(panel)s; border: 1px solid %(border)s; border-radius: 12px;
-    margin-top: 14px; padding: 14px 12px 10px 12px; font-weight: 600;
+    background: %(panel)s; border: 1px solid %(group_border)s; border-radius: 8px;
+    margin-top: 8px; padding: 14px 12px 10px 12px; font-weight: 600;
 }
 QGroupBox::title {
     subcontrol-origin: margin; subcontrol-position: top left;
