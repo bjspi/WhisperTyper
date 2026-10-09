@@ -89,16 +89,55 @@ class AudioMixin:
                     break
             try:
                 stream = self._ensure_input_stream()
+                with self.audio_state_lock:
+                    self._background_read_pending = True
                 data = stream.read(self.chunk_size, exception_on_overflow=False)
                 self._update_latest_audio_level(data)
                 with self.audio_state_lock:
                     self.pre_record_buffer.append(data)
-                    if self.is_recording:
+                    stop = self._background_stop
+                    if stop is None and self.is_recording:
                         self.recorded_frames.append(data)
+                if stop is not None:
+                    _, frames, timing = stop
+                    timing.mark("recording_tail_read_end")
+                    # Read only samples already buffered; never add a fixed post-recording sleep.
+                    buffered = b""
+                    try:
+                        available = stream.get_read_available()
+                        if available > 0:
+                            buffered = stream.read(available, exception_on_overflow=False)
+                    except Exception:
+                        timing.mark("recording_tail_drain_failed")
+                    with self.audio_state_lock:
+                        saved = False
+                        if self._background_stop is stop:
+                            frames.append(data)
+                            if buffered:
+                                frames.append(buffered)
+                                self.pre_record_buffer.append(buffered)
+                            timing.mark("recording_tail_saved")
+                            saved = True
+                    logging.info("recording_tail op=%s retained=%s pending_frames=%s buffered_frames=%s samplerate=%s",
+                                 timing.operation_id, saved, len(data) // 2, len(buffered) // 2, self.current_input_samplerate)
             except Exception as e:
                 logging.warning(f"Background audio capture error: {e}")
+                with self.audio_state_lock:
+                    stop = self._background_stop
+                    self._background_stop = None
+                    self._background_read_pending = False
+                if stop:
+                    stop[2].mark("recording_tail_read_failed")
+                    stop[0].set()
                 self._close_input_stream()
                 time.sleep(0.2)
+            finally:
+                with self.audio_state_lock:
+                    self._background_read_pending = False
+                    stop = self._background_stop
+                    self._background_stop = None
+                if stop:
+                    stop[0].set()
         self._close_input_stream()
         self.audio_capture_thread = None
         logging.info("Background audio capture thread finished.")
@@ -113,7 +152,7 @@ class AudioMixin:
             timing = OperationTiming("recording", detected_ns)
             timing.mark("stop_handled")
             self._touch_transcription_activity()
-            self.is_recording = False
+            pending_stop = self._begin_recording_stop(timing)
             recording_prompt = self.current_recording_prompt
             self.current_recording_prompt = None
             self._close_recording_prompt_overlay()
@@ -126,6 +165,8 @@ class AudioMixin:
                 recorded_file_path = self._stop_macos_native_recording()
             elif (not self._use_windows_keep_mic_hot()) and self.recording_thread and self.recording_thread.is_alive():
                 self.recording_thread.join()
+            if pending_stop:
+                self._wait_for_recording_tail(pending_stop, timing)
             timing.mark("recording_stopped")
             logging.info("Recording stopped. Processing audio.")
             self.play_sound('sound_end.wav')
@@ -148,10 +189,10 @@ class AudioMixin:
             self._check_and_warn_macos_permissions('microphone')
 
             self._schedule_http_warmup(activate=True)
-            self.is_recording = True
             self.cancel_action.setEnabled(True)  # Enable cancel while recording
             with self.audio_state_lock:
                 self.recorded_frames = list(self.pre_record_buffer) if self._use_windows_keep_mic_hot() else []
+                self.is_recording = True
             self._set_recording_tray_icon_active()
 
             if self._use_windows_keep_mic_hot():
@@ -184,6 +225,31 @@ class AudioMixin:
             self.play_sound('sound_start.wav')
             self._show_recording_feedback()
             logging.info("Recording started.")
+
+    def _begin_recording_stop(self, timing: OperationTiming) -> Optional[threading.Event]:
+        """Attach the in-flight read to this recording before disabling capture."""
+        with self.audio_state_lock:
+            self.is_recording = False
+            if self._use_windows_keep_mic_hot() and self._background_read_pending:
+                done = threading.Event()
+                self._background_stop = (done, self.recorded_frames, timing)
+                return done
+        return None
+
+    def _wait_for_recording_tail(self, done: threading.Event, timing: OperationTiming) -> None:
+        """Wait for the existing read, with a ceiling for a broken audio driver."""
+        timing.mark("recording_tail_wait_start")
+        completed = done.wait(0.25)
+        if not completed:
+            abandoned = False
+            with self.audio_state_lock:
+                if self._background_stop and self._background_stop[0] is done:
+                    self._background_stop = None
+                    abandoned = True
+            if abandoned:
+                timing.mark("recording_tail_timeout")
+                logging.warning("recording_tail op=%s status=timeout; pending audio could not be retained", timing.operation_id)
+        timing.mark("recording_tail_wait_end")
 
     def _show_recording_feedback(self) -> None:
         """Show either the ordinary recording balloon or the optional prompt palette."""

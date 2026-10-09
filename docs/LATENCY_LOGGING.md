@@ -20,6 +20,7 @@ For a recording, the most useful measurements are:
 | `stop_to_output_ms` | Stop detection → final text delivery routine completed |
 | `event_queue_ms` | Hotkey listener detection → stop handler on the GUI thread |
 | `recording_stop_ms` | Stop handler → recorder stopped / capture thread joined (includes stop UI work) |
+| `recording_tail_wait_ms` | Windows keep-mic-hot: wait for an already active read and buffered samples to be retained |
 | `stop_feedback_ms` | Recorder stopped → audio processing started (includes stop sound dispatch) |
 | `audio_prepare_ms` | Read/collect PCM, validate, resample and apply gain |
 | `file_write_ms` | Write the recording file |
@@ -48,6 +49,26 @@ no `stop_to_*` values. A missing phase produces no invented duration. A batch fi
 ends with `batch_buffered`; the combined clipboard write is outside that per-file
 operation. Text delivery completion means the app dispatched the paste or copied
 the text, not that another application acknowledged it.
+
+## Recording boundary on Windows
+
+With **Keep mic hot**, stopping a recording now attaches the active input read to
+that recording before disabling capture. The capture thread retains the in-flight
+block and reads a snapshot of already available driver-buffered samples before the
+WAV is written. There is no fixed post-recording sleep and no wait if a read is not
+active. At 16 kHz, the normal 1,024-sample block spans 64 ms; previously a stop during
+that read could discard the entire last block. Finishing that read can naturally
+take the remaining fraction of a block and include a little audio after the keypress.
+
+`recording_tail` logs the operation ID, whether the tail was retained, sample counts
+for the pending/buffered data and the sample rate, without audio contents. Timing
+events distinguish the read completing, tail being saved, drain/read failures and
+the actual wait. A stalled driver has a 250 ms wait ceiling: `recording_tail_timeout`
+is explicit, and late data cannot change a WAV already submitted for transcription.
+Cancellation continues to discard pending audio. The per-recording PyAudio reader
+already retains its active read and is joined on stop; the native macOS recorder
+continues to use AVAudioRecorder's own stop/finalization. This Windows race fix does
+not guarantee that every provider will transcribe every word in intact audio.
 
 The existing `transcription_request_ms` includes the entire request and is **not
 TTFB**. Each wire exchange now also writes an `http_transport` summary, correlated
