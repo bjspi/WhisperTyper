@@ -1,34 +1,37 @@
-"""ThemeMixin — apply the light/dark teal stylesheet and follow OS colour-scheme changes."""
-
+"""Light/dark stylesheet of the settings window, its branding header and OS colour-scheme tracking."""
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+import os
+from typing import Any, Dict
 
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
+from app.core.constants import APP_DATA_DIR
 from app.core.hotkeys import pretty_hotkey
 from app.ui import theme
+from app.ui.settings.base import SettingsWindowBase
+from app.ui.tray_icons import app_icon
 
 
-class ThemeMixin:
+class ThemePage(SettingsWindowBase):
     """Apply the cross-platform light/dark stylesheet and the branding header."""
 
-    _theme_palette: Optional[Dict[str, str]]
-    _theme_is_dark: bool
-    _theme_watch_connected: bool
+    _brand_sub_label: QLabel
+    _brand_hotkey_badge: QLabel
+    _theme_watch_connected: bool = False
 
     def _install_brand_header(self) -> None:
         """Add a branding header (icon + name + current hotkey badge) above the tabs."""
-        header = QWidget(self)  # type: ignore[arg-type]
+        header = QWidget(self)
         header.setObjectName("brandHeader")
         row = QHBoxLayout(header)
         row.setContentsMargins(14, 10, 14, 10)
         row.setSpacing(10)
 
         icon_label = QLabel(header)
-        app_icon = self._get_app_icon()  # type: ignore[attr-defined]
-        if not app_icon.isNull():
-            icon_label.setPixmap(app_icon.pixmap(26, 26))
+        icon = app_icon()
+        if not icon.isNull():
+            icon_label.setPixmap(icon.pixmap(26, 26))
         row.addWidget(icon_label)
 
         title_box = QVBoxLayout()
@@ -47,54 +50,47 @@ class ThemeMixin:
         row.addWidget(self._brand_hotkey_badge)
 
         # Below the File/Help menu bar, above the tabs.
-        self.main_layout.insertWidget(1, header)  # type: ignore[attr-defined]
-        self._update_brand_header()
+        self.main_layout.insertWidget(1, header)
+        self.update_brand_header()
 
-    def _update_brand_header(self) -> None:
-        """Refresh the header's hotkey badge and tagline (safe if the header is absent)."""
-        badge = getattr(self, "_brand_hotkey_badge", None)
-        if badge is not None:
-            badge.setText("⌨  " + pretty_hotkey(getattr(self, "hotkey_str", "")))
-        sub = getattr(self, "_brand_sub_label", None)
-        if sub is not None:
-            sub.setText(self.translator.tr("brand_tagline"))  # type: ignore[attr-defined]
+    def update_brand_header(self) -> None:
+        """Refresh the header's hotkey badge and tagline."""
+        self._brand_hotkey_badge.setText("⌨  " + pretty_hotkey(self.config.get("hotkey", "")))
+        self._brand_sub_label.setText(self.translator.tr("brand_tagline"))
+
+    def theme_palette(self) -> Dict[str, str]:
+        """Colours of the active theme (light until the first theme is applied)."""
+        return self._theme_palette or theme.palette(False)
 
     def apply_theme(self) -> None:
         """Apply the light/dark teal stylesheet (config 'color_theme': system/light/dark)."""
-        app = QApplication.instance()
-        mode = self.config.get("color_theme", "system")  # type: ignore[attr-defined]
+        mode = self.config.get("color_theme", "system")
         if mode == "light":
             dark = False
         elif mode == "dark":
             dark = True
         else:
-            dark = theme.is_dark_mode(app)
-        self._theme_is_dark = dark
+            dark = theme.is_dark_mode(QApplication.instance())
         self._theme_palette = theme.palette(dark)
         qss = theme.build_stylesheet(dark)
         try:
-            import os
-
-            from app.core.constants import APP_DATA_DIR
             qss += theme.write_icon_qss(dark, os.path.join(APP_DATA_DIR, "theme_icons"))
         except Exception:
             pass  # icons are cosmetic; never let a write failure break theming
-        self.setStyleSheet(qss)  # type: ignore[attr-defined]
-        replacements_tab = getattr(self, "_replacements_tab", None)
-        if replacements_tab is not None:
-            replacements_tab.highlighter.set_theme(dark)
+        self.setStyleSheet(qss)
+        self._replacements_tab.highlighter.set_theme(dark)
         # State colours (incomplete sections, token counter, FFmpeg status) are QSS property
         # selectors and follow the new palette by themselves; only the header is drawn by hand.
-        self._update_brand_header()
+        self.update_brand_header()
         self._connect_theme_watch()
 
     def _connect_theme_watch(self) -> None:
         """Subscribe once to OS colour-scheme changes to re-theme live."""
-        if getattr(self, "_theme_watch_connected", False):
+        if self._theme_watch_connected:
             return
         try:
             app = QApplication.instance()
-            app.styleHints().colorSchemeChanged.connect(self._on_color_scheme_changed)  # type: ignore[attr-defined]
+            app.styleHints().colorSchemeChanged.connect(self._on_color_scheme_changed)  # type: ignore[union-attr]
             self._theme_watch_connected = True
         except Exception:
             self._theme_watch_connected = False

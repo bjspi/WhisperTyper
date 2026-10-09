@@ -1,41 +1,64 @@
-"""SettingsMixin — the settings window: composes the pages, loads/saves the form, retranslates."""
+"""The settings window: composes the pages, loads/saves the form and announces changes."""
 from __future__ import annotations
 
 import logging
+import time
+from typing import Callable
 
 from PyQt6 import uic
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import QHBoxLayout, QMenuBar, QMessageBox, QSizePolicy, QStyle
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QAction, QCloseEvent
+from PyQt6.QtWidgets import QApplication, QHBoxLayout, QMenuBar, QMessageBox, QSizePolicy, QStyle
 
-from app.core.config_store import ConfigStore
-from app.core.constants import CONFIG_FILE, WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH
+from app.context import AppContext
+from app.controllers.file_actions import FileActions
+from app.controllers.hotkeys import HotkeyController
+from app.controllers.recording import RecordingController
+from app.core.constants import WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH
 from app.core.env import is_MACOS
 from app.core.hotkeys import normalize_hotkey_string
 from app.core.paths import resource_path
 from app.core.replacements import ReplacementError, Replacements
-from app.mixins.settings_pages.api_page import ApiSettingsMixin
-from app.mixins.settings_pages.general_page import GeneralSettingsMixin
-from app.mixins.settings_pages.recording_page import RecordingSettingsMixin
-from app.mixins.settings_pages.transcription_page import TranscriptionPageMixin
 from app.ui.api_keys import ApiKeysTab
 from app.ui.connection_tester import ConnectionTester
-from app.ui.durations import BALLOON_SHORT_MS
 from app.ui.replacements import ReplacementsTab
+from app.ui.settings.api_page import ApiPage
 from app.ui.settings.bindings import load_bindings, save_bindings
+from app.ui.settings.general_page import GeneralPage
+from app.ui.settings.recording_page import RecordingPage
 from app.ui.settings.texts import apply_texts
+from app.ui.settings.theme_page import ThemePage
+from app.ui.settings.transcription_page import TranscriptionPage
 from app.ui.settings.widgets import SliderWheelToScrollArea
 from app.ui.transformations_tab import TransformationsEditor
+from app.ui.tray_icons import app_icon
 
 #: Default window width on first launch (the height default lives in the config).
 _DEFAULT_WINDOW_WIDTH = 760
 
 
-class SettingsMixin(ApiSettingsMixin, TranscriptionPageMixin, RecordingSettingsMixin, GeneralSettingsMixin):
-    """Settings window: build, bind, validate, retranslate, config persistence."""
+class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, ThemePage):
+    """Settings form; the runtime components react to its signals instead of being driven from here."""
 
-    def init_ui(self) -> None:
-        """Build the settings window from main_window.ui and load the saved configuration into it."""
+    #: The form was validated and written to the config (and disk).
+    saved = pyqtSignal()
+    #: Saved hotkeys differ from the running listeners' (not emitted on macOS, which asks for a restart).
+    hotkeys_changed = pyqtSignal()
+    #: The UI language changed; other translated surfaces (tray menu) rebuild.
+    language_changed = pyqtSignal()
+
+    def __init__(self, ctx: AppContext, *, recording: RecordingController, hotkeys: HotkeyController,
+                 files: FileActions, quit_app: Callable[[], None]) -> None:
+        """Build the window from main_window.ui and load the saved configuration into it."""
+        super().__init__()
+        self.ctx = ctx
+        self.config = ctx.config
+        self.translator = ctx.translator
+        self._recording = recording
+        self._hotkeys = hotkeys
+        self._files = files
+        self._quit_app = quit_app
+
         uic.loadUi(resource_path("resources", "main_window.ui"), self)
         self._build_menu_bar()
 
@@ -46,18 +69,13 @@ class SettingsMixin(ApiSettingsMixin, TranscriptionPageMixin, RecordingSettingsM
         self._replacements_tab = ReplacementsTab(self.config["replacements_rules"], self.config["replacements_enabled"],
                                                  self.translator, self)
         self.tabs.insertTab(self.tabs.indexOf(self.general_tab), self._replacements_tab, "")
-        try:
-            self._replacement_rules = Replacements(self.config["replacements_rules"])
-        except ReplacementError as error:
-            self._replacement_rules = Replacements("")
-            logging.warning("replacements_config_invalid line=%s; corrections disabled until settings are fixed", error.line)
         self._init_transcription_page()
         self._build_recording_controls()
         self._build_general_page()
         self._init_transformations_page()
 
         load_bindings(self, self.config)
-        self.hotkey_display.setText(self.hotkey_str)
+        self.hotkey_display.setText(self.config["hotkey"])
         self.pr_hotkey_display.setText(self.config["post_rephrase_hotkey"])
 
         # Live behaviour, connected after loading so the saved values do not trigger handlers.
@@ -70,9 +88,11 @@ class SettingsMixin(ApiSettingsMixin, TranscriptionPageMixin, RecordingSettingsM
         self.test_transcription_api_button.clicked.connect(self._connection_tester.test_transcription)
         self.test_rephrasing_api_button.clicked.connect(self._connection_tester.test_rephrasing)
         self.test_internet_button.clicked.connect(self._connection_tester.test_internet)
-        self.set_hotkey_button.clicked.connect(self.start_hotkey_capture)
-        self.set_pr_hotkey_button.clicked.connect(self.start_hotkey_capture)
-        self.play_g_button.clicked.connect(self.play_latest_recording)
+        self.set_hotkey_button.clicked.connect(
+            lambda: self._hotkeys.start_capture(self.hotkey_display, self.set_hotkey_button))
+        self.set_pr_hotkey_button.clicked.connect(
+            lambda: self._hotkeys.start_capture(self.pr_hotkey_display, self.set_pr_hotkey_button))
+        self.play_g_button.clicked.connect(self._files.play_latest_recording)
         self.liveprompt_help_button.setFixedSize(22, 22)  # Rendered as a round "?" badge by the theme.
         self.liveprompt_help_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.liveprompt_help_button.clicked.connect(self.show_liveprompt_help)
@@ -81,12 +101,17 @@ class SettingsMixin(ApiSettingsMixin, TranscriptionPageMixin, RecordingSettingsM
             SliderWheelToScrollArea(self.transcription_temp_slider, self.transcription_scroll_area)
             SliderWheelToScrollArea(self.rephrasing_temp_slider, self.rephrasing_scroll_area)
         self._build_save_row()
+        self.aac_bitrates_ready.connect(self._apply_aac_bitrates)
+        ctx.files_changed.connect(self.refresh_actions)
 
-        app_icon = self._get_app_icon()
-        self.setWindowIcon(app_icon if not app_icon.isNull()
-                           else self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+        icon = app_icon()
+        style = self.style()
+        if icon.isNull() and style is not None:
+            icon = style.standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
+        self.setWindowIcon(icon)
         self.apply_theme()
         self.retranslate_ui()
+        self.refresh_actions()
 
         # Enforce a minimum window size and restore the last size.
         self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
@@ -103,22 +128,24 @@ class SettingsMixin(ApiSettingsMixin, TranscriptionPageMixin, RecordingSettingsM
         self.main_layout.insertWidget(0, self.menu_bar)
         self.main_layout.setContentsMargins(0, 0, 0, 5)
         self._install_brand_header()
-        self.file_menu = self.menu_bar.addMenu("")
-        self.help_menu = self.menu_bar.addMenu("")
+        file_menu = self.menu_bar.addMenu("")
+        help_menu = self.menu_bar.addMenu("")
+        assert file_menu is not None and help_menu is not None
+        self.file_menu, self.help_menu = file_menu, help_menu
         for menu, attr, handler in (
-            (self.file_menu, "open_config_action", self.open_config_file),
-            (self.file_menu, "open_log_file_action", self.open_log_file),
-            (self.file_menu, "play_last_recording_action", self.play_latest_recording),
-            (self.file_menu, None, None),
-            (self.file_menu, "exit_action", self.quit_app),
-            (self.help_menu, "about_action", self.show_about_dialog),
-            (self.help_menu, "github_action", self.open_github_link),
+            (file_menu, "open_config_action", self._files.open_config_file),
+            (file_menu, "open_log_file_action", self._files.open_log_file),
+            (file_menu, "play_last_recording_action", self._files.play_latest_recording),
+            (file_menu, None, None),
+            (file_menu, "exit_action", self._quit_app),
+            (help_menu, "about_action", self.show_about_dialog),
+            (help_menu, "github_action", self._files.open_github_link),
         ):
-            if attr is None:
+            if attr is None or handler is None:
                 menu.addSeparator()
                 continue
             action = QAction("", self)
-            action.triggered.connect(handler)
+            action.triggered.connect(lambda _checked=False, handler=handler: handler())
             menu.addAction(action)
             setattr(self, attr, action)
 
@@ -156,11 +183,17 @@ class SettingsMixin(ApiSettingsMixin, TranscriptionPageMixin, RecordingSettingsM
         self.config["post_rephrasing_entries"] = self._transformations.entries()
         self._refresh_api_state()
 
+    def refresh_actions(self) -> None:
+        """Enable the file actions only when their files exist."""
+        self.play_last_recording_action.setEnabled(self.ctx.recordings.exists())
+        self.open_log_file_action.setEnabled(self._files.log_file_exists())
+
+    # --- Save ----------------------------------------------------------------------------
     def save_settings(self) -> None:
-        """Validate and store the form, then apply hotkeys, capture, logging and warmup."""
+        """Validate and store the form; ``saved`` lets the runtime apply it."""
         raw_rules = self._replacements_tab.editor.toPlainText()
         try:
-            replacement_rules = Replacements(raw_rules)
+            Replacements(raw_rules)
         except ReplacementError as error:
             QMessageBox.warning(self, self.translator.tr("tab_replacements"),
                                 self.translator.tr("replacements_invalid", line=error.line))
@@ -180,60 +213,35 @@ class SettingsMixin(ApiSettingsMixin, TranscriptionPageMixin, RecordingSettingsM
             return
         self.config["replacements_enabled"] = self._replacements_tab.enabled.isChecked()
         self.config["replacements_rules"] = raw_rules
-        self._replacement_rules = replacement_rules
         save_bindings(self, self.config)
         self._save_recording_controls()
         self._sync_transformations_to_config()
-        self._apply_pending_hotkeys()
+        hotkeys_changed = self._apply_pending_hotkeys()
 
-        self.save_config()
-        if self._use_windows_keep_mic_hot():
-            self._touch_transcription_activity()
-            self._start_background_audio_capture()
-        else:
-            self._stop_background_audio_capture()
-        self.show_tray_balloon(self.translator.tr("settings_saved_message", hotkey=self.hotkey_str), BALLOON_SHORT_MS)
-        self._update_brand_header()
-        self.apply_logging_configuration()
-        self._schedule_http_warmup(activate=True)
-        self.update_logfile_menu_action()
-        self.update_play_last_recording_action()
+        self.ctx.save_config()
+        self.update_brand_header()
+        if hotkeys_changed:
+            self.hotkeys_changed.emit()
+        self.saved.emit()
 
-    def _apply_pending_hotkeys(self) -> None:
-        """Adopt edited hotkeys; restart the listener (macOS asks for an app restart instead)."""
+    def _apply_pending_hotkeys(self) -> bool:
+        """Adopt edited hotkeys; True if the running listeners must restart."""
         pending = normalize_hotkey_string(self.hotkey_display.text()) or self.hotkey_display.text().strip()
         pending_pr = normalize_hotkey_string(self.pr_hotkey_display.text()) or self.pr_hotkey_display.text().strip()
         self.hotkey_display.setText(pending)
         self.pr_hotkey_display.setText(pending_pr)
-        if pending == self.hotkey_str and pending_pr == self.post_rephrase_hotkey_str:
-            return
-        self.hotkey_str = self.config["hotkey"] = pending
-        self.post_rephrase_hotkey_str = self.config["post_rephrase_hotkey"] = pending_pr
+        if pending == self.config["hotkey"] and pending_pr == self.config["post_rephrase_hotkey"]:
+            return False
+        self.config["hotkey"] = pending
+        self.config["post_rephrase_hotkey"] = pending_pr
         if is_MACOS:
             # Restarting the listener at runtime conflicts with the macOS accessibility permissions.
             QMessageBox.information(self, self.translator.tr("macos_hotkey_restart_title"),
                                     self.translator.tr("macos_hotkey_restart_text"))
-        else:
-            self.init_manual_hotkey_listener()
+            return False
+        return True
 
-    def _get_config_store(self) -> ConfigStore:
-        """Return the (lazily created) config persistence helper."""
-        if getattr(self, "_config_store", None) is None:
-            self._config_store = ConfigStore(CONFIG_FILE, normalize_hotkey_string)
-        return self._config_store
-
-    def load_config(self) -> None:
-        """Load the configuration (with migrations) and write it back if anything was added."""
-        self.config, config_updated = self._get_config_store().load()
-        self.hotkey_str = self.config["hotkey"]
-        self.post_rephrase_hotkey_str = self.config["post_rephrase_hotkey"]
-        if config_updated:
-            self.save_config()
-
-    def save_config(self) -> None:
-        """Write the current configuration to disk."""
-        self._get_config_store().save(self.config)
-
+    # --- Translation and window lifecycle -----------------------------------------------
     def retranslate_ui(self) -> None:
         """Apply the current UI language to every text of the window."""
         tr = self.translator.tr
@@ -258,5 +266,67 @@ class SettingsMixin(ApiSettingsMixin, TranscriptionPageMixin, RecordingSettingsM
         self._update_recording_format_controls()
         self._refresh_ffmpeg_status()
         self._update_prompt_token_counter()
-        self.init_tray_icon()  # Rebuild the tray menu with the new texts.
-        self._update_brand_header()
+        self.update_brand_header()
+        self.language_changed.emit()
+
+    def show_window(self) -> None:
+        """Bring the window reliably to the foreground and log its geometry."""
+        t0 = time.perf_counter()
+        try:
+            if self.isMinimized():
+                self.showNormal()
+            else:
+                self.show()
+            self.raise_()
+            self.activateWindow()
+            t_shown = time.perf_counter()
+            # show() returns before the first paint happens; flush pending events so the timing
+            # below reflects the real time until the window is actually rendered.
+            QApplication.processEvents()
+            t_painted = time.perf_counter()
+            logging.info(
+                "show_settings_window timing: show/raise/activate=%.0fms, first_paint_flush=%.0fms, total=%.0fms",
+                (t_shown - t0) * 1000, (t_painted - t_shown) * 1000, (t_painted - t0) * 1000,
+            )
+
+            geo = self.geometry()
+            frame = self.frameGeometry()
+            screen = QApplication.screenAt(frame.center()) or QApplication.primaryScreen()
+            screen_info = ""
+            if screen:
+                sg = screen.availableGeometry()
+                screen_info = (f", screen='{screen.name()}' "
+                               f"available=({sg.x()},{sg.y()},{sg.width()}x{sg.height()})")
+            logging.info(
+                "Settings window shown: "
+                f"visible={self.isVisible()}, active={self.isActiveWindow()}, minimized={self.isMinimized()}, "
+                f"geometry=({geo.x()},{geo.y()},{geo.width()}x{geo.height()}), "
+                f"frame=({frame.x()},{frame.y()},{frame.width()}x{frame.height()})"
+                f"{screen_info}"
+            )
+        except Exception as e:
+            logging.error(f"Failed to show settings window: {e}")
+
+        # Refresh the mic list AFTER the window is visible, on the next event-loop tick, so a slow
+        # PyAudio enumeration never blocks the window from appearing.
+        QTimer.singleShot(0, self.populate_input_devices)
+
+    def show_transformations(self) -> None:
+        """Open the window directly on the transformations templates tab."""
+        self.tabs.setCurrentWidget(self.post_rephrasing_tab)
+        self.show_window()
+
+    def closeEvent(self, event: QCloseEvent | None) -> None:  # noqa: N802 - Qt API
+        """Hide instead of quitting; remember the size and prune old recordings."""
+        # An unfinished hotkey capture must restore the global listeners, or every hotkey stays dead.
+        self._hotkeys.cancel_capture()
+        try:
+            self.config["window_width"] = self.width()
+            self.config["window_height"] = self.height()
+            self.ctx.save_config()
+        except Exception as e:
+            logging.debug(f"Could not persist window size on close: {e}")
+        if event is not None:
+            event.ignore()
+        self.hide()
+        self.ctx.recordings.keep_only_latest()

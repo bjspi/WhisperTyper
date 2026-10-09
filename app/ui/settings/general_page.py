@@ -1,14 +1,11 @@
-"""General page and window actions: languages, theme, input device, text insertion, logging, files."""
+"""General page: languages, theme, input device and text insertion options."""
 from __future__ import annotations
 
 import logging
-import os
 
-from PyQt6.QtCore import QSignalBlocker, QUrl
-from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtCore import QSignalBlocker
 from PyQt6.QtWidgets import QCheckBox, QMessageBox
 
-from app.core.constants import CONFIG_FILE, LOG_FILE_PATH
 from app.core.env import is_WINDOWS
 from app.core.i18n import UI_LANGUAGES
 from app.core.prompts import (
@@ -18,16 +15,14 @@ from app.core.prompts import (
     _default_prompt_for,
     _is_known_default_prompt,
 )
-from app.platform.system import open_with_default_app
-from app.services.logging_config import apply_logging_config
-from app.ui.durations import BALLOON_ERROR_MS, BALLOON_MAX_MS, BALLOON_SHORT_MS
+from app.ui.durations import BALLOON_MAX_MS
+from app.ui.settings.base import SettingsWindowBase
 
-GITHUB_URL = "https://github.com/bjspi/WhisperTyper"
 _COLOR_THEMES = (("system", "color_theme_system"), ("light", "color_theme_light"), ("dark", "color_theme_dark"))
 
 
-class GeneralSettingsMixin:
-    """General settings plus the window's file/help actions."""
+class GeneralPage(SettingsWindowBase):
+    """General settings plus the window's help dialogs."""
 
     def _build_general_page(self) -> None:
         """Fill the selectors and add the controls the .ui file does not contain."""
@@ -38,7 +33,7 @@ class GeneralSettingsMixin:
             self.color_theme_selector.addItem("", theme)
         self.color_theme_selector.setCurrentIndex(max(0, self.color_theme_selector.findData(
             self.config.get("color_theme", "system"))))
-        self._populate_input_device_selector()
+        self.populate_input_devices()
 
         self.post_rephrase_auto_select_all_checkbox = QCheckBox(self)
         play_button_index = self.general_layout.indexOf(self.play_g_button)
@@ -66,15 +61,15 @@ class GeneralSettingsMixin:
     def _on_color_theme_changed(self, *_args: object) -> None:
         """Persist the chosen colour theme and re-apply it immediately."""
         self.config["color_theme"] = self.color_theme_selector.currentData() or "system"
-        self.save_config()
+        self.ctx.save_config()
         self.apply_theme()
 
-    def _populate_input_device_selector(self) -> None:
+    def populate_input_devices(self) -> None:
         """Fill the input-device dropdown with the system default + available microphones."""
         with QSignalBlocker(self.input_device_selector):
             self.input_device_selector.clear()
             self.input_device_selector.addItem(self.translator.tr("input_device_default"), "")
-            for device in self.selectable_input_devices():
+            for device in self._recording.selectable_input_devices():
                 self.input_device_selector.addItem(device["name"], device["name"])
             index = self.input_device_selector.findData(self.config.get("input_device_name", "") or "")
             self.input_device_selector.setCurrentIndex(max(0, index))
@@ -82,8 +77,8 @@ class GeneralSettingsMixin:
     def _on_input_device_changed(self, *_args: object) -> None:
         """Persist the chosen input device and reopen the capture stream on it."""
         self.config["input_device_name"] = self.input_device_selector.currentData() or ""
-        self.save_config()
-        self.apply_input_device_selection()
+        self.ctx.save_config()
+        self._recording.apply_input_device_selection()
 
     def change_language(self, lang_code: str) -> None:
         """Switch the UI language (and untouched default prompts) to ``lang_code``."""
@@ -107,45 +102,10 @@ class GeneralSettingsMixin:
                     widget.setPlainText(new_default)
                     logging.info("Swapped a default prompt to the new UI language.")
 
-    def apply_logging_configuration(self) -> None:
-        """Apply the saved logging level, redaction and file logging."""
-        self._file_log_handler = apply_logging_config(self.config, getattr(self, "_file_log_handler", None))
-
     def show_liveprompt_help(self) -> None:
         """Explain LivePrompting in a long balloon."""
-        self.show_tray_balloon(self.translator.tr("liveprompt_help_tooltip"), BALLOON_MAX_MS)
+        self.ctx.notifier.show(self.translator.tr("liveprompt_help_tooltip"), BALLOON_MAX_MS)
 
     def show_about_dialog(self) -> None:
         """Show the 'About' dialog."""
         QMessageBox.about(self, self.translator.tr("about_dialog_title"), self.translator.tr("about_dialog_text"))
-
-    def open_config_file(self) -> None:
-        """Open config.json in the default editor."""
-        if os.path.exists(CONFIG_FILE):
-            QDesktopServices.openUrl(QUrl.fromLocalFile(CONFIG_FILE))
-        else:
-            self.show_tray_balloon(self.translator.tr("config_file_not_found"), BALLOON_ERROR_MS)
-
-    def open_github_link(self) -> None:
-        """Open the project's GitHub repository."""
-        QDesktopServices.openUrl(QUrl(GITHUB_URL))
-
-    def update_logfile_menu_action(self) -> None:
-        """Enable the 'Open Log File' actions only when the log file exists."""
-        if hasattr(self, "open_log_action"):
-            log_file_exists = os.path.isfile(LOG_FILE_PATH)
-            self.open_log_action.setEnabled(log_file_exists)
-            if hasattr(self, "open_log_file_action"):
-                self.open_log_file_action.setEnabled(log_file_exists)
-
-    def open_log_file(self) -> None:
-        """Open the log file with the system's default application."""
-        if not os.path.isfile(LOG_FILE_PATH):
-            self.show_tray_balloon(self.translator.tr("log_file_not_exist_message"), BALLOON_SHORT_MS)
-            self.update_logfile_menu_action()
-            return
-        try:
-            open_with_default_app(LOG_FILE_PATH)
-        except Exception as e:
-            logging.error(f"Failed to open log file: {e}")
-            self.show_tray_balloon(self.translator.tr("log_file_open_fail_message", error=e), BALLOON_ERROR_MS)

@@ -211,7 +211,7 @@ pip install -e ".[dev]"
 
 # The same checks CI runs on Linux/Windows/macOS:
 ruff check app tests run.py                                # lint
-mypy app/core app/services app/audio app/hotkeys app/ui app/platform    # strict type-check
+mypy app run.py    # type-check
 pytest                                                     # 100+ headless tests
 ```
 

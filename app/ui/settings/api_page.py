@@ -25,6 +25,7 @@ from app.core.models import (
     rephrasing_supports_temperature,
 )
 from app.core.textutil import clean_model_name, estimate_tokens
+from app.ui.settings.base import SettingsWindowBase
 from app.ui.theme import set_style_state
 
 API_TASKS = ("transcription", "rephrasing")
@@ -41,7 +42,7 @@ class _TaskWidgets(NamedTuple):
     model_field: str
 
 
-class ApiSettingsMixin:
+class ApiPage(SettingsWindowBase):
     """Endpoint/provider/key/model selection for both API tasks and their completeness state."""
 
     def _init_api_settings(self) -> None:

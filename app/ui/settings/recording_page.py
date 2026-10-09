@@ -9,9 +9,10 @@ from PyQt6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QHBoxLayout, Q
 from app.audio.aac_encoder import available_aac_bitrates
 from app.core.constants import LANGUAGES
 from app.core.env import is_WINDOWS
+from app.ui.settings.base import SettingsWindowBase
 
 
-class RecordingSettingsMixin:
+class RecordingPage(SettingsWindowBase):
     """Recording controls, including the AAC format offered after a background encoder probe."""
 
     def _build_recording_controls(self) -> None:
@@ -75,7 +76,7 @@ class RecordingSettingsMixin:
         self.windows_keep_mic_hot_idle_label.setEnabled(enabled)
         self.windows_keep_mic_hot_idle_input.setEnabled(enabled)
 
-    def _start_aac_bitrate_probe(self) -> None:
+    def start_aac_bitrate_probe(self) -> None:
         """Probe the optional PyAV AAC encoder in the background; importing PyAV takes noticeable time."""
         def probe() -> None:
             try:
@@ -83,7 +84,7 @@ class RecordingSettingsMixin:
             except Exception as error:
                 logging.warning("AAC encoder probe failed: %s", error)
                 bitrates = ()
-            self.aac_bitrates_ready_signal.emit(bitrates)
+            self.aac_bitrates_ready.emit(bitrates)
 
         threading.Thread(target=probe, name="AacBitrateProbe", daemon=True).start()
 

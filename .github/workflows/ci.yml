@@ -32,10 +32,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install mypy PyQt6 ftfy "httpx>=0.28" "av>=14"
-      # The Qt-free layers are kept strictly mypy-clean. The mixin layer is duck-typed
-      # by design (see the [[tool.mypy.overrides]] note in pyproject.toml) and is covered
-      # by ruff + the test suite instead.
-      - run: mypy app/core app/services app/audio app/hotkeys app/ui app/platform
+      # Every package is type-checked; components declare their collaborators explicitly.
+      - run: mypy app run.py
 
   test:
     name: Tests (${{ matrix.os }}, py${{ matrix.python-version }})
