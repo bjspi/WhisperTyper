@@ -31,6 +31,7 @@ For a recording, the most useful measurements are:
 | `stop_feedback_ms` | Recorder stopped → audio processing started (includes stop sound dispatch) |
 | `audio_prepare_ms` | Read/collect PCM, validate, resample and apply gain |
 | `file_write_ms` | Write the recording file |
+| `audio_encode_ms` | Read the prepared WAV and encode native AAC/M4A in the upload worker (AAC only) |
 | `recording_cleanup_ms` | Update recording actions and prune older recordings before worker setup |
 | `worker_setup_ms` / `worker_queue_ms` | Configure the worker / wait for its thread to run |
 | `upload_prepare_ms` | Prepare the file for upload |
@@ -185,6 +186,34 @@ library checkbox lives in the same group and remains available on every platform
 SendInput and its fallback checkbox are individually hidden on macOS and Linux;
 fast paste is hidden only on Linux. Its existing configuration key
 `windows_fast_paste` is retained so saved Windows choices remain valid without migration.
+
+## Native recording formats
+
+Transcription → Recording offers **WAV (PCM)** and, when an installed native
+encoder is available, **AAC (M4A)**. WAV is the default: mono 16-bit PCM at 16 kHz
+(256 kbit/s). AAC bitrates come from the installed encoder; this Windows machine
+supports 48, 64, 96, 128, 160 and 192 kbit/s. The default AAC bitrate is 64 kbit/s.
+Windows uses Media Foundation via ctypes. macOS uses Apple's included
+`/usr/bin/afconvert` (Core Audio), with synthetic capability probes once during
+settings setup. Linux currently offers WAV only. No extra encoding dependency
+is needed. OPUS is excluded because a native encoder plus a provider-compatible
+container cannot be relied on across these platforms.
+
+Capture, final-block retention, minimum-duration checks, gain and resampling
+remain the same for both formats. The prepared WAV stays available for playback
+and retries. AAC is generated after stop in the existing transcription worker,
+so encoding does not block the GUI. The temporary M4A is uploaded with
+`audio/mp4` and deleted on success or failure. `audio_encode_ms` measures native
+encoding, including reading the prepared WAV. It is part of `upload_prepare_ms`
+and the existing stop-to-response/output totals; do not add overlapping fields.
+`recording_upload` logs the operation ID, selected format/bitrate, WAV source size
+and upload size at INFO, without audio or credentials.
+
+Retained recordings, including retry/retranscription, use the current saved
+recording format and never invoke FFmpeg. An encoder error keeps the WAV and
+reports a normal retryable error. A recording still over the configured upload
+limit is rejected with a suggestion to use AAC/a lower bitrate or a shorter clip.
+Picked files/videos keep their existing extraction/compression behavior.
 
 ## Logging does not wait for the disk
 

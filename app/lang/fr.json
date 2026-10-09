@@ -265,5 +265,8 @@
   "api_key_remove": "Supprimer la clé",
   "api_key_name_required": "Donnez un nom à chaque profil de clé.",
   "groq_key_rotation": "Alterner les clés Groq pour la transcription",
-  "groq_key_rotation_tooltip": "Utilise à tour de rôle toutes les clés Groq distinctes et non vides, en commençant par la clé de transcription sélectionnée. La reformulation utilise toujours son propre profil. Les changements prennent effet après enregistrement."
+  "groq_key_rotation_tooltip": "Utilise à tour de rôle toutes les clés Groq distinctes et non vides, en commençant par la clé de transcription sélectionnée. La reformulation utilise toujours son propre profil. Les changements prennent effet après enregistrement.",
+  "recording_format_label": "Format d’enregistrement :",
+  "recording_bitrate_label": "Débit :",
+  "recording_format_tooltip": "WAV : PCM mono, 16 bits, 16 kHz (256 kbit/s), sans encodage.\nAAC/M4A : encodeur natif ; seuls les débits disponibles sont proposés.\nWindows : Media Foundation. macOS : Core Audio via afconvert d’Apple.\nAAC est encodé après l’arrêt dans le thread d’envoi ; sans FFmpeg.\nLe WAV est conservé pour la lecture et une nouvelle transcription.\nLe journal inclut le temps d’encodage et la taille envoyée."
 }

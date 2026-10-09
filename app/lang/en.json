@@ -265,5 +265,8 @@
   "api_key_remove": "Remove key",
   "api_key_name_required": "Please give every key profile a name.",
   "groq_key_rotation": "Rotate Groq keys for transcription",
-  "groq_key_rotation_tooltip": "Use all distinct, nonempty Groq keys in turn, starting with the selected transcription key. Rephrasing always uses its own selected profile. Changes apply after saving."
+  "groq_key_rotation_tooltip": "Use all distinct, nonempty Groq keys in turn, starting with the selected transcription key. Rephrasing always uses its own selected profile. Changes apply after saving.",
+  "recording_format_label": "Recording format:",
+  "recording_bitrate_label": "Bitrate:",
+  "recording_format_tooltip": "WAV: mono PCM, 16-bit, 16 kHz (256 kbit/s), without encoding.\nAAC/M4A: native encoder; only available bitrates are offered.\nWindows: Media Foundation. macOS: Core Audio via Apple’s afconvert.\nAAC is encoded after stop in the upload worker; no FFmpeg.\nThe WAV is retained for playback and retranscription.\nEncoding time and upload size appear in the timing log."
 }

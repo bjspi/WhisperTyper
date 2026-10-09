@@ -39,6 +39,7 @@ class FakeAPI(BaseHTTPRequestHandler):
     """Answers transcription/chat requests; /fail paths and FAILME payloads get HTTP 500."""
 
     last_chat_body = b""
+    last_transcription_body = b""
     authorization_headers: list[str] = []
     protocol_version = "HTTP/1.1"
 
@@ -60,6 +61,7 @@ class FakeAPI(BaseHTTPRequestHandler):
             self.wfile.write(b'{"error": "simulated failure"}')
             return
         if "audio/transcriptions" in self.path:
+            FakeAPI.last_transcription_body = body
             payload = {"text": "TRANSCRIBED_FAKE_RESULT"}
         else:
             FakeAPI.last_chat_body = body
@@ -457,6 +459,10 @@ def main() -> int:
     def probe_dropdown_arrows() -> None:
         """Verify painted arrows on every combo, including table cells, in both themes."""
         original_theme = wt.config["color_theme"]
+        original_format = wt.recording_format_selector.currentIndex()
+        aac_index = wt.recording_format_selector.findData("aac")
+        if aac_index >= 0:
+            wt.recording_format_selector.setCurrentIndex(aac_index)
         for mode in ("light", "dark"):
             wt.config["color_theme"] = mode
             wt.apply_theme()
@@ -464,6 +470,8 @@ def main() -> int:
             missing = []
             accent = QColor(wt._theme_palette["accent"])
             for selector in wt.findChildren(QComboBox):
+                if selector.isHidden():
+                    continue
                 for index in range(wt.tabs.count()):
                     page = wt.tabs.widget(index)
                     if page.isAncestorOf(selector):
@@ -491,6 +499,7 @@ def main() -> int:
         check("theme: API key provider arrow opens the dropdown", provider.view().isVisible())
         provider.hidePopup()
         wt.config["color_theme"] = original_theme
+        wt.recording_format_selector.setCurrentIndex(original_format)
         wt.apply_theme()
         wt.tabs.setCurrentWidget(wt.transcription_tab)
 
@@ -910,12 +919,52 @@ def main() -> int:
             wt.hotkey_action_signal.emit("stop_transcription", detected_ns)
         def recording_done() -> None:
             check("stop hotkey: transcription and rephrasing pipeline completed", not wt.is_recording)
+            check("recording format: default WAV is uploaded as PCM", b"RIFF" in FakeAPI.last_transcription_body)
             wt.config["generic_rephrase_enabled"] = False
-            step2_transcribe()
+            step2_native_aac()
 
         poll(lambda: wt.last_transcription == "REPHRASED_FAKE_RESULT", 10,
              recording_done,
              lambda: (check("stop hotkey: transcription finished", False, "timeout"), step2_transcribe()))
+
+    def step2_native_aac() -> None:
+        """Encode the retained recording with the real native encoder and upload to the fake API."""
+        check("recording format: WAV is the default and hides bitrate", wt.recording_format_selector.currentData() == "wav"
+              and not wt.recording_bitrate_selector.isEnabled())
+        index = wt.recording_format_selector.findData("aac")
+        if index < 0:
+            step2_transcribe()
+            return
+        wt.recording_format_selector.setCurrentIndex(index)
+        check("recording format: AAC enables supported bitrate choices", wt.recording_bitrate_selector.isEnabled()
+              and wt.recording_bitrate_selector.currentData() == 64)
+        with patch.object(wt, "_collect_validation_warnings", return_value=[]):
+            wt.save_settings()
+        check("recording format: selected codec and bitrate are saved", wt.config["recording_format"] == "aac"
+              and wt.config["recording_aac_bitrate_kbps"] == 64)
+        path = wt.recordings.latest()
+        assert path is not None
+        with open(path, "rb") as recording:
+            original = recording.read()
+        wt.last_transcription = ""
+        with patch("app.mixins.transcription_mixin.resolve_ffmpeg", side_effect=AssertionError("No FFmpeg for recordings")):
+            wt.start_transcription_worker(path, output_mode="clipboard")
+
+        def done() -> None:
+            body = FakeAPI.last_transcription_body
+            check("recording format: real native AAC/M4A reaches HTTP upload", b".m4a" in body
+                  and b"audio/mp4" in body and b"ftyp" in body and b"mdat" in body)
+            with open(path, "rb") as recording:
+                check("recording format: original WAV remains playable", recording.read() == original)
+            check("recording format: temporary encoded upload is removed", not any(
+                name.startswith("whispertyper_upload_") for name in os.listdir(iso_tmp)))
+            wt.recording_format_selector.setCurrentIndex(0)
+            with patch.object(wt, "_collect_validation_warnings", return_value=[]):
+                wt.save_settings()
+            step2_transcribe()
+
+        poll(lambda: wt.last_transcription == "TRANSCRIBED_FAKE_RESULT", 10, done,
+             lambda: (check("recording format: native upload completed", False, "timeout"), step2_transcribe()))
 
     def step2_transcribe() -> None:
         """Drive one file transcription through the worker pipeline into the clipboard."""
@@ -1059,6 +1108,8 @@ def main() -> int:
           and any("enabled=False" in line and "matches=0" in line for line in replacement_logs)
           and all("CORRECTED_FAKE_RESULT" not in line and "Krog" not in line for line in replacement_logs))
     check("timings: correction duration is included", any("replacements_ms=" in line for line in latency_summaries))
+    if wt.recording_format_selector.findData("aac") >= 0:
+        check("recording format: encoding duration appears in the summary", any("audio_encode_ms=" in line for line in latency_summaries))
     check("text commit: summary includes stop-to-commit, clipboard and both waits", any(
         "source=text_commit_probe " in line and all(field in line for field in (
             "stop_to_text_commit_ms=", "text_commit_ms=", "clipboard_write_ms=",

@@ -13,6 +13,7 @@ from PyQt6.QtGui import QAction, QDesktopServices
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QComboBox,
     QDoubleSpinBox,
     QFileDialog,
     QHBoxLayout,
@@ -27,6 +28,7 @@ from PyQt6.QtWidgets import (
     QStyle,
 )
 
+from app.audio.native_encoder import available_aac_bitrates
 from app.core.api_keys import PROVIDER_NAMES, TASK_KEY_FIELDS, masked_api_key, provider_for_url, selected_api_key
 from app.core.config_store import ConfigStore
 from app.core.constants import (
@@ -208,6 +210,31 @@ class SettingsMixin:
         min_recording_layout.addWidget(self.min_recording_input)
         min_recording_layout.addStretch()
         self.recording_group_layout.addLayout(min_recording_layout)
+
+        self.recording_format_label = QLabel(self)
+        self.recording_format_selector = QComboBox(self)
+        self.recording_format_selector.setObjectName("recording_format_selector")
+        self.recording_format_selector.addItem("WAV (PCM)", "wav")
+        self.recording_bitrate_label = QLabel(self)
+        self.recording_bitrate_selector = QComboBox(self)
+        self.recording_bitrate_selector.setObjectName("recording_bitrate_selector")
+        bitrates = available_aac_bitrates()
+        if bitrates:
+            self.recording_format_selector.addItem("AAC (M4A)", "aac")
+        for bitrate in bitrates:
+            self.recording_bitrate_selector.addItem(f"{bitrate} kbit/s", bitrate)
+        self.recording_format_selector.setCurrentIndex(max(0, self.recording_format_selector.findData(
+            self.config.get("recording_format", "wav"))))
+        self.recording_bitrate_selector.setCurrentIndex(max(0, self.recording_bitrate_selector.findData(
+            self.config.get("recording_aac_bitrate_kbps", 64))))
+        self.recording_format_selector.currentIndexChanged.connect(self._update_recording_format_controls)
+        format_layout = QHBoxLayout()
+        for widget in (self.recording_format_label, self.recording_format_selector,
+                       self.recording_bitrate_label, self.recording_bitrate_selector):
+            format_layout.addWidget(widget)
+        format_layout.addStretch()
+        self.recording_group_layout.addLayout(format_layout)
+        self._update_recording_format_controls()
 
         self.lang_code_to_name = {v: k for k, v in LANGUAGES.items()}
         self.language_input.addItems(LANGUAGES.keys())
@@ -421,6 +448,14 @@ class SettingsMixin:
         except (TypeError, ValueError):
             width, height = 760, WINDOW_MIN_HEIGHT
         self.resize(width, height)
+
+    def _update_recording_format_controls(self) -> None:
+        """Compressed bitrate selection only applies to native AAC, not PCM WAV."""
+        aac = self.recording_format_selector.currentData() == "aac"
+        self.recording_bitrate_selector.setEnabled(aac)
+        self.recording_bitrate_label.setEnabled(aac)
+        self.recording_bitrate_selector.setVisible(aac)
+        self.recording_bitrate_label.setVisible(aac)
 
     def _set_provider_endpoint(self, task: str) -> None:
         """Apply a selected official endpoint, or clear the field for a custom URL."""
@@ -651,6 +686,8 @@ class SettingsMixin:
             self.config["windows_keep_mic_hot"] = self.windows_keep_mic_hot_checkbox.isChecked()
             self.config["windows_keep_mic_hot_idle_minutes"] = self.windows_keep_mic_hot_idle_input.value()
         self.config["min_recording_seconds"] = self.min_recording_input.value()
+        self.config["recording_format"] = self.recording_format_selector.currentData() or "wav"
+        self.config["recording_aac_bitrate_kbps"] = self.recording_bitrate_selector.currentData() or 64
         self.config["debug_logging"] = self.debug_logging_checkbox.isChecked()
         try:
             self.config["gain_db"] = float(self.gain_input.text() or 0)
@@ -971,6 +1008,12 @@ class SettingsMixin:
         min_recording_tooltip = self.translator.tr("min_recording_tooltip")
         self.min_recording_label.setToolTip(min_recording_tooltip)
         self.min_recording_input.setToolTip(min_recording_tooltip)
+        self.recording_format_label.setText(self.translator.tr("recording_format_label"))
+        self.recording_bitrate_label.setText(self.translator.tr("recording_bitrate_label"))
+        for widget in (self.recording_format_label, self.recording_format_selector,
+                       self.recording_bitrate_label, self.recording_bitrate_selector):
+            widget.setToolTip(self.translator.tr("recording_format_tooltip"))
+        self._update_recording_format_controls()
         self.input_language_label.setText(self.translator.tr("input_language_label"))
         input_lang_tooltip = self.translator.tr("input_language_tooltip")
         self.input_language_label.setToolTip(input_lang_tooltip)

@@ -265,5 +265,8 @@
   "api_key_remove": "Eliminar clave",
   "api_key_name_required": "Asigna un nombre a cada perfil de clave.",
   "groq_key_rotation": "Rotar claves Groq para transcripción",
-  "groq_key_rotation_tooltip": "Usa por turnos todas las claves Groq distintas y no vacías, empezando por la clave de transcripción seleccionada. La reformulación siempre usa su propio perfil. Los cambios se aplican al guardar."
+  "groq_key_rotation_tooltip": "Usa por turnos todas las claves Groq distintas y no vacías, empezando por la clave de transcripción seleccionada. La reformulación siempre usa su propio perfil. Los cambios se aplican al guardar.",
+  "recording_format_label": "Formato de grabación:",
+  "recording_bitrate_label": "Tasa de bits:",
+  "recording_format_tooltip": "WAV: PCM mono, 16 bits, 16 kHz (256 kbit/s), sin codificación.\nAAC/M4A: codificador nativo; solo tasas de bits disponibles.\nWindows: Media Foundation. macOS: Core Audio mediante afconvert de Apple.\nAAC se codifica después de detener, en el hilo de subida; sin FFmpeg.\nSe conserva WAV para reproducir y volver a transcribir.\nEl registro incluye tiempo de codificación y tamaño de subida."
 }
