@@ -129,6 +129,8 @@ def test_hotkey_stop_reaches_output_with_ordered_milestones(api, tmp_path, monke
         rephrase_use_selection_context=False, liveprompt_enabled=False, generic_rephrase_enabled=rephrase,
         replacements_enabled=True, replacements_rules="wrold ; world", post_rephrasing_entries=[],
         windows_keep_mic_hot=True,
+        # Mark the macOS permission hints as shown; their modal dialogs would block the test.
+        macos_microphone_info_shown=True, macos_accessibility_info_shown=True,
     )
     monkeypatch.setattr(recording_module, "is_WINDOWS", True)  # Exercise the warm-microphone path everywhere.
     pasted: list[str] = []
