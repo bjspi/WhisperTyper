@@ -62,6 +62,12 @@ its own identity in System Settings.
     certificate can also be used for your own builds, as long as you reuse the same
     identity every time.
 
+    The permissions also belong to the bundle ID (default `gh.bjspi.whispertyper`). An
+    install that was built with a different ID can keep it, and with it its permissions:
+    ```bash
+    export WHISPERTYPER_BUNDLE_ID="gh.bjspi.whistertyper"
+    ```
+
 4. In the `dist` folder you'll find the App Bundle. On first launch, the app proactively
    asks for the important macOS permissions it needs — microphone access, Input
    Monitoring and Accessibility. Grant them when prompted.
