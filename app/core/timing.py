@@ -190,6 +190,7 @@ class OperationTiming:
         "stop_feedback_ms": ("recording_stopped", "audio_prepare_start"),
         "audio_prepare_ms": ("audio_prepare_start", "audio_prepare_end"),
         "file_write_ms": ("file_write_start", "file_write_end"),
+        "audio_encode_ms": ("audio_encode_start", "audio_encode_end"),
         "recording_cleanup_ms": ("file_write_end", "transcription_queued"),
         "worker_setup_ms": ("transcription_queued", "transcription_worker_queued"),
         "worker_queue_ms": ("transcription_worker_queued", "transcription_worker_start"),

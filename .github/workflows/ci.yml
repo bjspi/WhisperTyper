@@ -70,5 +70,5 @@ jobs:
           python-version: "3.12"
       # ClipboardMixin imports the application's input backends as well as Qt. Install
       # exactly that dependency slice instead of the full audio/application stack.
-      - run: pip install pytest PyQt6 copykitten pynput pyautogui pyaudio ftfy
-      - run: pytest tests/test_clipboard.py tests/test_audio_capture.py
+      - run: pip install pytest PyQt6 copykitten pynput pyautogui pyaudio ftfy "requests>=2.32" "urllib3>=2.2,<3"
+      - run: pytest tests/test_clipboard.py tests/test_audio_capture.py tests/test_transcription_worker.py

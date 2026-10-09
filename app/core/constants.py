@@ -164,6 +164,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # Recordings shorter than this (seconds) are treated as a mis-tap and discarded without
     # transcribing. 0 disables the guard. Allows an instant "oops" cancel by tapping again.
     "min_recording_seconds": 1.0,
+    "recording_format": "wav",
+    "recording_aac_bitrate_kbps": 64,
     "input_language": SYS_LANG if SYS_LANG in LANGUAGES.values() else "en",
     "ui_language": _DEFAULT_UI_LANG,
     "restore_clipboard": True,

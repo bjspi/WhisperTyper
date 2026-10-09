@@ -44,8 +44,9 @@ class TranscriptionMixin:
         timing = timing or OperationTiming()
         timing.mark("transcription_queued")
         self._http_warm_until = time.monotonic() + 300
-        # Resolve ffmpeg so video files get their audio extracted first; harmless for audio.
-        ffmpeg_path = resolve_ffmpeg(self.config.get("ffmpeg_path", ""))
+        # Retained microphone WAVs (including retries) use only the selected native encoder.
+        recording_format = self.config.get("recording_format", "wav") if audio_path in self.recordings.list() else None
+        ffmpeg_path = None if recording_format is not None else resolve_ffmpeg(self.config.get("ffmpeg_path", ""))
         needs_extraction = bool(ffmpeg_path) and is_video_file(audio_path)
         # Snapshot the language together with the worker settings. A later settings change must
         # not make the status balloon disagree with the language used by this in-flight request.
@@ -83,6 +84,8 @@ class TranscriptionMixin:
             max_upload_bytes=int(self.config.get("max_upload_mb", 24) * 1024 * 1024),
             min_bitrate_kbps=int(self.config.get("min_audio_bitrate_kbps", 80)),
             timing=timing,
+            recording_format=recording_format,
+            recording_bitrate_kbps=int(self.config.get("recording_aac_bitrate_kbps", 64)),
         )
         worker.moveToThread(thread)
         self.active_workers.append(worker)
