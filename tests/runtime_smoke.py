@@ -329,7 +329,18 @@ def main() -> int:
             and overlay_buttons[1].toolTip() == "Polish",
         )
         if len(overlay_buttons) >= 2:
-            overlay_buttons[1].click()
+            with patch.dict(wt.config, {"rephrasing_api_url": "https://api.openai.com/v1/chat/completions"}), \
+                    patch.object(wt._http_warmup, "schedule") as warmup:
+                wt._http_warm_until = 0
+                overlay_buttons[1].click()
+                check("HTTP: selecting an overlay prompt immediately prioritizes OpenAI rephrasing warmup",
+                      warmup.call_args.args == (("https://api.openai.com/v1/chat/completions", wt.config["api_endpoint"]),
+                                               wt.config["proxy_url"], wt.config["use_local_px_proxy"])
+                      and wt._http_warm_until > time.monotonic() + 290)
+                overlay_buttons[0].click()
+                check("HTTP: Standard selection leaves the prompt empty without another warmup",
+                      wt.current_recording_prompt is None and warmup.call_count == 1)
+                overlay_buttons[1].click()
         check(
             "startup: recording prompt overlay updates selection",
             wt.current_recording_prompt == "CUSTOM_OVERLAY_PROMPT",
