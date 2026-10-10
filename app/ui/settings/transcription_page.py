@@ -1,7 +1,7 @@
 """Transcription page: layout, FFmpeg path row and the prompt token counter."""
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy
 
 from app.core.models import prompt_token_limit, transcription_supports_prompt, transcription_supports_temperature
@@ -27,12 +27,6 @@ class TranscriptionPage(SettingsWindowBase):
         self.prompt_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
         self.prompt_input.setMinimumHeight(80)
         self.transcription_layout.setStretch(self.transcription_layout.indexOf(self.prompt_input), 1)
-        # Model and temperature share one row 50:50, top-aligned so both captions line up.
-        self.model_temp_row.setStretch(0, 1)
-        self.model_temp_row.setStretch(1, 1)
-        self.model_temp_row.setSpacing(8)
-        for column in (self.model_col, self.temp_col):
-            self.model_temp_row.setAlignment(column, Qt.AlignmentFlag.AlignTop)
         # Hotkey / language / gain row: long hotkey combos get the room a two-digit gain does not need.
         for index, stretch in enumerate((3, 2, 1)):
             self.controls_layout.setStretch(index, stretch)

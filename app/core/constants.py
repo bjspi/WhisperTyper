@@ -72,6 +72,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "api_key_profiles": [],
     "transcription_key_profile_id": "",
     "rephrasing_key_profile_id": "",
+    # The user's own endpoints, kept while an official provider is selected.
+    "transcription_custom_url": "",
+    "rephrasing_custom_url": "",
     "groq_key_rotation": False,
     "replacements_enabled": True,
     "replacements_rules": "",

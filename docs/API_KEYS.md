@@ -5,22 +5,34 @@ for each key, give it a name, choose OpenAI, Groq or Custom, and paste its key.
 Key cells and profile dropdowns show the first 10 and last 4 characters, with the
 middle masked. Keys of 14 characters or fewer stay fully masked. The password
 input beneath each preview allows editing without revealing the full key.
-Keys are stored in the local `config.json` without encryption,
-as they were before this change.
+Keys are stored in the local `config.json` without encryption.
 
-Transcription and Rephrasing each have an independent **Key profile** dropdown.
-Only profiles for the current endpoint's provider appear. Choose a profile in each
-panel and save settings. Custom endpoints use Custom profiles. Connection tests
-use the current unsaved selection and edits; normal requests use saved settings.
+## Provider, model and key
 
-Both panels have a **Provider** dropdown with OpenAI, Groq and Custom. Selecting
-OpenAI or Groq sets its endpoint URL. Selecting Custom clears the URL for entry;
-you can also edit URLs directly, which updates the provider dropdown.
-On a provider change, the matching saved valid key profile is selected, otherwise
-the first valid matching key in table order. Empty and invalid keys are skipped.
-Without a valid matching key the selection stays empty. Same-provider edits keep
-your current selection. Review the chosen profile/model and save. Rephrasing
-settings apply to LivePrompt and the prompts from the Prompts tab.
+The Transcription and Rephrasing API sections have the same controls:
+**Provider** (OpenAI, Groq or Custom) and **Model** in the first row, **Temperature**
+and **Test connection** in the last row, and a status line in between.
+
+- **OpenAI and Groq** use their official API URL; the URL field stays hidden. The
+  key is chosen automatically: the provider's first profile with a valid key, in
+  API Keys table order. Empty keys and keys with line breaks are skipped.
+- The status line shows the key in use (`✓ Key: name (masked key)`). Without a
+  usable key it warns `No API key stored for …` and offers **Add API key…**, which
+  opens the API Keys tab; the section is then marked incomplete.
+- With more than one usable key, **Choose another key** reveals the **Key profile**
+  dropdown. Its first entry, **Automatic**, is the first matching key; any other
+  entry is an explicit choice that is saved and used until the provider changes,
+  which returns to the automatic choice. A saved choice that is no longer usable
+  (deleted, emptied, or for another provider) falls back to the automatic one.
+- **Custom** shows the **API URL** field and the **Key profile** dropdown with
+  Custom profiles. A key is required. The custom URL is stored separately
+  (`transcription_custom_url`, `rephrasing_custom_url`), so switching to OpenAI or
+  Groq and back restores it. Entering an official URL in the field switches the
+  provider accordingly.
+
+Connection tests use the current unsaved form; normal requests use the saved
+settings. Rephrasing settings apply to LivePrompt and the prompts from the
+Prompts tab.
 
 Both model dropdowns show suggestions only for the endpoint's provider and are
 directly editable: select a suggestion using the arrow or type your own model
@@ -58,31 +70,29 @@ Other transcription models keep their existing `language` and temperature
 parameters. See the
 [OpenAI GPT-6 parameter guidance](https://developers.openai.com/api/docs/guides/latest-model#gpt-6-astra-update-api-and-model-parameters).
 
-Renaming a profile keeps its selections. Removing a selected profile clears the
-corresponding dropdown, so another key is never selected implicitly. Empty keys
-are allowed while entering profiles, but cannot make requests. Every profile must
-have a name before settings can be saved.
+Renaming a profile keeps its selections. Removing an explicitly chosen profile
+returns that section to the automatic choice. Empty keys are allowed while
+entering profiles, but cannot make requests. Every profile must have a name before
+settings can be saved.
 
 Existing inline transcription and rephrasing keys are migrated on startup into
 named profiles with stable IDs. Identical keys for the same provider share one
 profile. Keys for different providers stay separate. The former inline credential
-fields are removed from the saved config. A missing rephrasing key is not replaced
-by a transcription key.
+fields are removed from the saved config.
 
 ## Optional Groq rotation
 
 Enable **Rotate Groq keys for transcription** in the API Keys tab and save. The
-first request uses the selected transcription key; subsequent requests cycle
-through all distinct, nonempty Groq keys in table order. Duplicate key values and
-invalid header values are skipped. Rotation is disabled by default and only
-applies to a Groq transcription endpoint with an explicitly selected valid profile.
-OpenAI and Custom endpoints use their selected key.
+first request uses the transcription key in use (automatic or chosen); subsequent
+requests cycle through all distinct, nonempty Groq keys in table order. Duplicate
+key values and invalid header values are skipped. Rotation is disabled by default
+and only applies to a Groq transcription endpoint. OpenAI and Custom endpoints use
+their key in use.
 
 Microphone/file transcription and manual retries take the next key when their
 worker is constructed. In-flight workers keep their own credential snapshots.
-Changing the selected key or key pool restarts the cycle at the chosen key.
-Rephrasing prompts and connection tests always use their explicitly
-selected profile. Rotation does not add automatic retries or failure-based key
+Changing the key in use or the key pool restarts the cycle at that key.
+Rephrasing prompts and connection tests always use the key shown in their section. Rotation does not add automatic retries or failure-based key
 switching. All configured Groq keys participate when rotation is enabled.
 
 The INFO record `transcription_credential` links each operation's `op` ID to the

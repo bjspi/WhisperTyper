@@ -6,11 +6,14 @@ import uuid
 from typing import Any, Mapping
 from urllib.parse import urlsplit
 
+#: Per task: effective endpoint field, explicit key-profile field, legacy inline key field.
 TASK_KEY_FIELDS = {
     "transcription": ("api_endpoint", "transcription_key_profile_id", "api_key"),
     "rephrasing": ("rephrasing_api_url", "rephrasing_key_profile_id", "rephrasing_api_key"),
 }
 PROVIDER_NAMES = {"openai": "OpenAI", "groq": "Groq", "custom": "Custom"}
+#: Per task: the user's own endpoint, kept while an official provider is selected.
+TASK_CUSTOM_URL_FIELDS = {"transcription": "transcription_custom_url", "rephrasing": "rephrasing_custom_url"}
 _PROVIDER_API_BASES = {"openai": "https://api.openai.com/v1/", "groq": "https://api.groq.com/openai/v1/"}
 _TASK_API_PATHS = {"transcription": "audio/transcriptions", "rephrasing": "chat/completions"}
 # Official key prefixes; a mismatch is only a hint (keys are never rejected).
@@ -63,15 +66,22 @@ def rephrasing_configured(config: Mapping[str, Any]) -> bool:
                 and selected_api_key(config, "rephrasing"))
 
 
-def selected_api_key(config: Mapping[str, Any], task: str) -> str:
-    """Resolve the explicitly selected profile only when it matches the task's provider."""
+def resolve_key_profile(config: Mapping[str, Any], task: str) -> dict[str, str] | None:
+    """The profile a task sends with: the explicit choice if it fits the endpoint's provider,
+    otherwise the first profile of that provider with a sendable key (API Keys tab order).
+    """
     endpoint_field, selection_field, _ = TASK_KEY_FIELDS[task]
-    selected_id = config.get(selection_field, "")
     provider = provider_for_url(config.get(endpoint_field, ""))
-    for profile in config.get("api_key_profiles", []):
-        if profile["id"] == selected_id and profile["provider"] == provider:
-            return _clean_key(profile["key"])
-    return ""
+    usable = [profile for profile in config.get("api_key_profiles", [])
+              if profile["provider"] == provider and _clean_key(profile["key"])]
+    selected_id = config.get(selection_field, "")
+    return next((profile for profile in usable if profile["id"] == selected_id), usable[0] if usable else None)
+
+
+def selected_api_key(config: Mapping[str, Any], task: str) -> str:
+    """The sendable key of the task's resolved profile, or "" when the provider has none."""
+    profile = resolve_key_profile(config, task)
+    return _clean_key(profile["key"]) if profile else ""
 
 
 def _clean_key(key: str) -> str:
@@ -146,9 +156,10 @@ class GroqKeyRotation:
         self.last_profile_id = ""
 
     def next_key(self, config: Mapping[str, Any]) -> str:
-        """Start with the chosen key, then rotate unique nonempty Groq keys per request."""
-        selected = selected_api_key(config, "transcription")
-        self.last_profile_id = config.get("transcription_key_profile_id", "") if selected else ""
+        """Start with the resolved key, then rotate unique nonempty Groq keys per request."""
+        profile = resolve_key_profile(config, "transcription")
+        selected = _clean_key(profile["key"]) if profile else ""
+        self.last_profile_id = profile["id"] if profile else ""
         if not selected or not config.get("groq_key_rotation", False) or provider_for_url(config.get("api_endpoint", "")) != "groq":
             self._pool = ()
             return selected
