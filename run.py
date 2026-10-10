@@ -22,6 +22,7 @@ try:
     from PyQt6.QtWidgets import QApplication, QMessageBox
 
     from app.application import WhisperTyperApp
+    from app.ui.fonts import install_emoji_font
 except ModuleNotFoundError as exc:
     if exc.name == "PyQt6":
         maybe_reexec_with_project_venv()
@@ -46,6 +47,7 @@ def main() -> int:
     app = QApplication([sys.argv[0]])
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("WhisperTyper")
+    install_emoji_font()
 
     instance_lock, message = acquire_single_instance_lock(args.restart)
     if instance_lock is None:

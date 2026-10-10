@@ -26,7 +26,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-  "PyQt6",
+  "PyQt6>=6.9",
   "pyaudio",
   "pynput",
   "pyautogui",
