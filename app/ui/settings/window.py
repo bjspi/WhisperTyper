@@ -176,9 +176,10 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
             list_placeholder=self.post_rp_list_placeholder, caption_edit=self.post_rp_caption_edit,
             text_label=self.text_label, text_edit=self.post_rp_text_edit,
             show_during_recording=self.post_rp_show_during_recording_checkbox,
-            options_stack=self.post_rp_options_stack, auto_apply=self.post_rp_auto_apply_checkbox,
+            auto_apply=self.post_rp_auto_apply_checkbox,
             instruction=InstructionControls(
-                enabled=self.liveprompt_enabled_checkbox, trigger_words=self.liveprompt_trigger_words_input,
+                active=self.post_rp_instruction_enabled_checkbox, options=self.post_rp_instruction_options,
+                trigger_enabled=self.liveprompt_enabled_checkbox, trigger_words=self.liveprompt_trigger_words_input,
                 scan_depth=self.liveprompt_trigger_scan_depth_input,
                 strip_trigger=self.liveprompt_strip_trigger_checkbox, selection_context=self.rephrase_context_checkbox,
             ),

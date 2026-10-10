@@ -63,6 +63,7 @@ def default_instruction_entry(lang_code: str) -> Dict[str, Any]:
         "caption": _default_prompt_for(DEFAULT_INSTRUCTION_CAPTIONS, lang_code),
         "text": _default_prompt_for(DEFAULT_LIVEPROMPT_SYSTEM_PROMPTS, lang_code),
         "enabled": True,
+        "trigger_enabled": True,
     })
 
 
@@ -87,7 +88,9 @@ def transformation_entry(entry: Any) -> Dict[str, Any]:
     if canonical["kind"] == INSTRUCTION:
         canonical.update(
             auto_apply=False,  # the instruction runs on a trigger word or an explicit choice only
+            # ``enabled`` switches the whole entry; ``trigger_enabled`` only LivePrompting by trigger word.
             enabled=source.get("enabled", True) is True,
+            trigger_enabled=source.get("trigger_enabled", True) is True,
             trigger_words=str(source.get("trigger_words", DEFAULT_TRIGGER_WORDS)),
             scan_depth=_scan_depth(source.get("scan_depth")),
             strip_trigger=source.get("strip_trigger") is True,

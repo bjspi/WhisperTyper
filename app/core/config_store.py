@@ -26,7 +26,7 @@ HotkeyNormalizer = Callable[[str], str]
 
 #: Top-level LivePrompt keys of older configs and the instruction-entry fields they fill.
 _LEGACY_LIVEPROMPT_FIELDS = {
-    "liveprompt_enabled": "enabled",
+    "liveprompt_enabled": "trigger_enabled",
     "liveprompt_trigger_words": "trigger_words",
     "liveprompt_trigger_word_scan_depth": "scan_depth",
     "liveprompt_strip_trigger": "strip_trigger",
