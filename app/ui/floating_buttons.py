@@ -141,11 +141,15 @@ class RecordingPromptOverlay(QWidget):
 
     _instance: Optional['RecordingPromptOverlay'] = None
 
-    def __init__(self, prompts: List[Dict[str, str]], status_text: str, standard_text: str,
+    def __init__(self, prompts: List[Dict[str, Any]], status_text: str, none_text: str,
                  on_selection_changed: Callable[[Optional[str]], None],
                  use_system_position: bool = True,
                  system_anchor: Optional[QPoint] = None) -> None:
-        """Build a fixed palette near the cursor without taking focus from the target app."""
+        """Build a fixed palette near the cursor without taking focus from the target app.
+
+        The prompt marked ``auto_apply`` starts selected (otherwise "None"); only clicks report
+        a selection, so the preselection itself leaves the automatic default in charge.
+        """
         if RecordingPromptOverlay._instance:
             RecordingPromptOverlay._instance.close()
         super().__init__()
@@ -215,14 +219,14 @@ class RecordingPromptOverlay(QWidget):
         )
         layout.addWidget(status_label)
 
-        standard_button = self._build_prompt_button(standard_text)
-        standard_button.setChecked(True)
-        standard_button.clicked.connect(partial(self._select_prompt, None, standard_button))
-        standard_row = QHBoxLayout()
-        standard_row.setContentsMargins(0, 0, 0, 0)
-        standard_row.addWidget(standard_button)
-        standard_row.addStretch()
-        layout.addLayout(standard_row)
+        none_button = self._build_prompt_button(none_text)
+        none_button.clicked.connect(partial(self._select_prompt, None, none_button))
+        none_row = QHBoxLayout()
+        none_row.setContentsMargins(0, 0, 0, 0)
+        none_row.addWidget(none_button)
+        none_row.addStretch()
+        layout.addLayout(none_row)
+        preselected = none_button
 
         prompt_row = QHBoxLayout()
         prompt_row.setContentsMargins(0, 0, 0, 0)
@@ -233,8 +237,11 @@ class RecordingPromptOverlay(QWidget):
             button.setToolTip(caption)
             button.clicked.connect(partial(self._select_prompt, prompt["text"], button))
             prompt_row.addWidget(button)
+            if prompt.get("auto_apply"):
+                preselected = button
         prompt_row.addStretch()
         layout.addLayout(prompt_row)
+        preselected.setChecked(True)
 
         self._position_for_platform(use_system_position, system_anchor)
         self.show()

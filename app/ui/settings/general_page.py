@@ -9,7 +9,6 @@ from PyQt6.QtWidgets import QCheckBox, QMessageBox
 from app.core.env import is_WINDOWS
 from app.core.i18n import UI_LANGUAGES
 from app.core.prompts import (
-    DEFAULT_GENERIC_REPHRASE_PROMPTS,
     DEFAULT_LIVEPROMPT_SYSTEM_PROMPTS,
     DEFAULT_TRANSCRIPTION_PROMPTS,
     _default_prompt_for,
@@ -34,6 +33,8 @@ class GeneralPage(SettingsWindowBase):
         self.color_theme_selector.setCurrentIndex(max(0, self.color_theme_selector.findData(
             self.config.get("color_theme", "system"))))
         self.populate_input_devices()
+        # The proxy field takes the row's free width; the test button keeps a fixed width.
+        self.proxy_row_layout.setStretch(0, 1)
 
         self.post_rephrase_auto_select_all_checkbox = QCheckBox(self)
         play_button_index = self.general_layout.indexOf(self.play_g_button)
@@ -57,6 +58,15 @@ class GeneralPage(SettingsWindowBase):
             self.color_theme_selector.setItemText(index, self.translator.tr(key))
         if self.input_device_selector.count() > 0:
             self.input_device_selector.setItemText(0, self.translator.tr("input_device_default"))
+        self._fix_test_internet_button_width()
+
+    def _fix_test_internet_button_width(self) -> None:
+        """Size the button for its widest caption, so "testing…" never resizes the proxy field."""
+        button = self.test_internet_button
+        metrics = button.fontMetrics()
+        padding = button.sizeHint().width() - metrics.horizontalAdvance(button.text())
+        captions = (button.text(), self.translator.tr("api_test_testing_button"))
+        button.setFixedWidth(max(metrics.horizontalAdvance(caption) for caption in captions) + padding)
 
     def _on_color_theme_changed(self, *_args: object) -> None:
         """Persist the chosen colour theme and re-apply it immediately."""
@@ -93,7 +103,6 @@ class GeneralPage(SettingsWindowBase):
         for widget, prompt_map in (
             (self.prompt_input, DEFAULT_TRANSCRIPTION_PROMPTS),
             (self.liveprompt_system_prompt_input, DEFAULT_LIVEPROMPT_SYSTEM_PROMPTS),
-            (self.generic_rephrase_prompt_input, DEFAULT_GENERIC_REPHRASE_PROMPTS),
         ):
             current_text = widget.toPlainText()
             if _is_known_default_prompt(prompt_map, current_text):

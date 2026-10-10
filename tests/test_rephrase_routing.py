@@ -11,9 +11,9 @@ from app.core.rephrase_routing import RephrasePlan, plan_rephrase, usable_transc
 
 def config(**overrides):
     cfg = deepcopy(DEFAULT_CONFIG)
-    cfg.update(liveprompt_enabled=False, generic_rephrase_enabled=False, liveprompt_trigger_words="prompt",
+    cfg.update(liveprompt_enabled=False, liveprompt_trigger_words="prompt",
                liveprompt_trigger_word_scan_depth=3, liveprompt_system_prompt="LIVE", liveprompt_strip_trigger=False,
-               rephrase_use_selection_context=False, generic_rephrase_prompt="Polish")
+               rephrase_use_selection_context=False)
     cfg.update(overrides)
     return cfg
 
@@ -28,9 +28,9 @@ def test_usable_transcript_strips_wrappers_and_rejects_echoed_prompt(text, expec
     assert usable_transcript(text, " the transcription PROMPT ") == expected
 
 
-def test_palette_prompt_overrides_liveprompt_and_generic_rephrasing():
-    cfg = config(liveprompt_enabled=True, generic_rephrase_enabled=True)
-    assert plan_rephrase("prompt write a poem", cfg, "  Translate  ", "selection") == RephrasePlan(
+def test_palette_prompt_overrides_liveprompt_and_the_automatic_prompt():
+    cfg = config(liveprompt_enabled=True)
+    assert plan_rephrase("prompt write a poem", cfg, "  Translate  ", "selection", "Polish") == RephrasePlan(
         "Translate", "prompt write a poem")
 
 
@@ -39,15 +39,15 @@ def test_palette_prompt_overrides_liveprompt_and_generic_rephrasing():
     (True, True, RephrasePlan("LIVE", "write a poem", "selection")),
 ])
 def test_liveprompt_trigger_within_scan_depth(strip, use_context, expected):
-    cfg = config(liveprompt_enabled=True, generic_rephrase_enabled=True,
-                 liveprompt_strip_trigger=strip, rephrase_use_selection_context=use_context)
-    assert plan_rephrase("Okay prompt, write a poem", cfg, None, "selection") == expected
+    cfg = config(liveprompt_enabled=True, liveprompt_strip_trigger=strip, rephrase_use_selection_context=use_context)
+    # A LivePrompt trigger takes precedence over the automatic prompt.
+    assert plan_rephrase("Okay prompt, write a poem", cfg, None, "selection", "Polish") == expected
 
 
-def test_trigger_beyond_scan_depth_falls_through_to_generic_rephrasing():
-    cfg = config(liveprompt_enabled=True, generic_rephrase_enabled=True)
-    plan = plan_rephrase("one two three prompt four", cfg, None, "selection")
-    assert plan == RephrasePlan("", "Polish\n\nText: one two three prompt four")
+def test_trigger_beyond_scan_depth_falls_through_to_the_automatic_prompt():
+    cfg = config(liveprompt_enabled=True)
+    plan = plan_rephrase("one two three prompt four", cfg, None, "selection", " Polish ")
+    assert plan == RephrasePlan("Polish", "one two three prompt four")
 
 
 def test_without_any_rephrasing_the_text_is_delivered_unchanged():

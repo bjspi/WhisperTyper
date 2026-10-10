@@ -80,10 +80,10 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
   <tr>
     <td align="center" width="50%" valign="top">
       <a href="screenshots/app/settings-transformations.jpg" target="_blank">
-        <img src="screenshots/app/settings-transformations.jpg" alt="Transformations settings: custom rephrasing presets" />
+        <img src="screenshots/app/settings-transformations.jpg" alt="Prompts settings: custom rephrasing prompts" />
       </a>
       <br />
-      <sub><b>✍️ Transformations</b> — Up to 10 custom one-click presets (translate, summarize, polish an e-mail, …). Select text in any application, press the post-rephrase hotkey, and pick the transformation from a popup menu.</sub>
+      <sub><b>✍️ Prompts</b> — Up to 10 custom one-click prompts (translate, summarize, polish an e-mail, …). Select text in any application, press the rephrase hotkey, and pick the prompt from a popup menu. One prompt can be applied automatically to every transcription.</sub>
     </td>
     <td align="center" width="50%" valign="top">
       <a href="screenshots/app/settings-general.jpg" target="_blank">
@@ -114,7 +114,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 ## 💖 Key Features
 
 -   **Global Voice Typing**: Transcribe your voice into any application with a single hotkey.
--   **Recording-Time Transformations**: Mark selected transformation presets for a compact, non-activating palette during recording, choose `Standard` or a preset before stopping, and have the result transformed before it is inserted. The palette can sit by the Windows system tray / macOS menu bar or near the pointer; in system-area mode, a small recording indicator continues to follow the pointer.
+-   **Recording-Time Prompts**: Mark prompts for a compact, non-activating palette during recording, choose `None` or a prompt before stopping, and have the result rephrased before it is inserted. A prompt marked **Apply automatically** is preselected and applies to every transcription unless you pick `None` (a LivePrompt trigger word takes precedence). The palette can sit by the Windows system tray / macOS menu bar or near the pointer; in system-area mode, a small recording indicator continues to follow the pointer.
 -   **AI-Powered**: Supports OpenAI (Whisper, GPT models), Groq and any other Whisper-API with identical API-design for fast and accurate transcription and rephrasing.
 -   **Central API Keys**: Named provider profiles, independent selections for transcription and rephrasing, and optional Groq transcription-key rotation. See [API key settings](docs/API_KEYS.md).
 -   **LivePrompting**: A revolutionary feature! Use trigger words to turn your speech directly into a prompt for an AI, which then types out the result.

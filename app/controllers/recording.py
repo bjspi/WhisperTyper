@@ -19,7 +19,7 @@ from app.controllers.warmup import WarmupScheduler
 from app.core import dsp
 from app.core.api_keys import rephrasing_configured, transcription_configured
 from app.core.env import is_MACOS, is_WINDOWS
-from app.core.prompts import recording_prompt_entries
+from app.core.prompts import auto_apply_prompt, recording_prompt_entries
 from app.core.redaction import redact_for_log
 from app.core.timing import OperationTiming
 from app.platform.windows import is_console_foreground_window
@@ -65,8 +65,10 @@ class RecordingController(QObject):
         self.is_recording = False
         #: Set while the push-to-talk key is held; the hotkey listener reads and clears it.
         self.push_to_talk_active = False
-        #: Transformation prompt chosen in the palette for the running recording.
+        #: Prompt explicitly clicked in the palette for the running recording.
         self.current_prompt: Optional[str] = None
+        #: False once "None" is clicked: the automatic prompt is skipped for this recording.
+        self.use_auto_prompt = True
         self._palette_status: Optional[MouseFollowerTooltip] = None
         self.latest_audio_level = 0.0
         self.last_activity_ts = time.monotonic()
@@ -245,8 +247,8 @@ class RecordingController(QObject):
         collect: Optional[Callable[[], List[bytes]]] = None
         if not self.mac_recorder.active:
             collect = self.active_capture().stop_recording(timing)
-        recording_prompt = self.current_prompt
-        self.current_prompt = None
+        recording_prompt, use_auto_prompt = self.current_prompt, self.use_auto_prompt
+        self.current_prompt, self.use_auto_prompt = None, True
         self._close_prompt_palette()
         self.push_to_talk_active = False
         self.state_changed.emit(False)
@@ -257,10 +259,10 @@ class RecordingController(QObject):
         logging.info("Recording stopped. Processing audio.")
         self._sounds.play('sound_end.wav')
         if recorded_file_path:
-            self._process_recorded_file(recorded_file_path, recording_prompt, timing)
+            self._process_recorded_file(recorded_file_path, recording_prompt, use_auto_prompt, timing)
         else:
             self._finish(b"".join(frames), self.microphone.samplerate, self._ctx.recordings.new_path(),
-                         recording_prompt, timing)
+                         recording_prompt, use_auto_prompt, timing)
 
     def cancel(self) -> None:
         """Stops the current recording without processing it."""
@@ -304,7 +306,7 @@ class RecordingController(QObject):
             return 0.0
 
     def _finish(self, raw_audio: bytes, samplerate: int, filepath: str,
-                transformation_prompt: Optional[str], timing: OperationTiming) -> None:
+                transformation_prompt: Optional[str], use_auto_prompt: bool, timing: OperationTiming) -> None:
         """Validate captured PCM, write it as the retained WAV and start transcription."""
         timing.mark("audio_prepare_start")
         if not raw_audio:
@@ -340,7 +342,8 @@ class RecordingController(QObject):
             return
         logging.info(f"Recording saved to: {filepath}")
         self._ctx.recordings.keep_only_latest()
-        self._pipeline.start(filepath, transformation_prompt=transformation_prompt, timing=timing)
+        self._pipeline.start(filepath, transformation_prompt=transformation_prompt,
+                             use_auto_prompt=use_auto_prompt, timing=timing)
         # Menus re-check file availability once the request is already on its way.
         self._ctx.files_changed.emit()
 
@@ -349,7 +352,7 @@ class RecordingController(QObject):
         return macos_recorder.DEVICE_NAME if macos_recorder.available() else self.microphone.device_name
 
     def _process_recorded_file(self, filepath: str, transformation_prompt: Optional[str],
-                               timing: OperationTiming) -> None:
+                               use_auto_prompt: bool, timing: OperationTiming) -> None:
         """Process a recorder-produced WAV file in place and start transcription."""
         try:
             with wave.open(filepath, 'rb') as wf:
@@ -363,7 +366,7 @@ class RecordingController(QObject):
             return
         if channels != 1 or sampwidth != 2:
             logging.warning(f"macOS: unexpected native recorder format (channels={channels}, sampwidth={sampwidth}).")
-        self._finish(raw_audio, samplerate, filepath, transformation_prompt, timing)
+        self._finish(raw_audio, samplerate, filepath, transformation_prompt, use_auto_prompt, timing)
 
     # --- Recording feedback and prompt palette ---------------------------------------------
     def _show_feedback(self) -> None:
@@ -377,16 +380,16 @@ class RecordingController(QObject):
             return
         self.show_prompt_palette(prompts)
 
-    def show_prompt_palette(self, prompts: List[Dict[str, str]]) -> None:
+    def show_prompt_palette(self, prompts: List[Dict[str, Any]]) -> None:
         """Show the fixed prompt selector for the current microphone recording."""
         self._notifier.hide()
         self._palette_status = None
-        self.current_prompt = None
+        self.current_prompt, self.use_auto_prompt = None, True
         use_system_position = bool(self._config.get("recording_prompt_overlay_system_position", True))
         RecordingPromptOverlay(
             prompts=prompts,
             status_text=self._ctx.tr("recording_running_message"),
-            standard_text=self._ctx.tr("recording_prompt_standard"),
+            none_text=self._ctx.tr("recording_prompt_none"),
             on_selection_changed=self._on_prompt_selected,
             use_system_position=use_system_position,
             system_anchor=self._palette_anchor(),
@@ -399,10 +402,21 @@ class RecordingController(QObject):
             self._palette_status = MouseFollowerTooltip._instance
 
     def _on_prompt_selected(self, prompt_text: Optional[str]) -> None:
-        """Remember the current palette choice until this recording is stopped."""
+        """Remember the clicked palette choice until this recording is stopped.
+
+        A prompt click is an explicit choice (it beats LivePrompt triggers); "None" (``None``)
+        delivers the raw transcription by skipping the automatic prompt.
+        """
         self.current_prompt = prompt_text
+        self.use_auto_prompt = prompt_text is not None
         if prompt_text:
             self._warmup.schedule(activate=True)
+
+    def rephrasing_expected(self) -> bool:
+        """Whether this recording will be rephrased by a palette or automatic prompt."""
+        if self.current_prompt:
+            return True
+        return self.use_auto_prompt and auto_apply_prompt(self._config.get("post_rephrasing_entries", [])) is not None
 
     def _close_prompt_palette(self) -> None:
         """Close the recording selector without changing the already selected prompt."""
@@ -416,5 +430,5 @@ class RecordingController(QObject):
 
     def abandon_prompt_selection(self) -> None:
         """Close the selector and discard its choice when no request will use it."""
-        self.current_prompt = None
+        self.current_prompt, self.use_auto_prompt = None, True
         self._close_prompt_palette()

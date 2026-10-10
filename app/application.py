@@ -58,7 +58,7 @@ class WhisperTyperApp(QObject):
 
         self.workers = WorkerThreads()
         self.warmup = WarmupScheduler(config, is_recording=lambda: self.recording.is_recording,
-                                      rephrasing_first=lambda: bool(self.recording.current_prompt))
+                                      rephrasing_first=lambda: self.recording.rephrasing_expected())
         self.permissions = MacPermissions(self.ctx, dialog_parent=lambda: self.settings)
         self.text_output = TextOutput(config, self.ctx.tr, self.ctx.notifier.show, self.permissions.warn)
         self.pipeline = TranscriptionPipeline(self.ctx, self.text_output, self.warmup, self.workers)

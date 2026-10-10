@@ -1,7 +1,7 @@
 """Decide how a finished transcription is post-processed — pure logic, no Qt, no I/O.
 
 Priority: an explicit recording-palette prompt, then a LivePrompt trigger word, then the
-generic rephrase prompt; otherwise the transcription is delivered as-is.
+automatically applied prompt; otherwise the transcription is delivered as-is.
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def usable_transcript(text: str, transcription_prompt: str) -> Optional[str]:
 
 
 def plan_rephrase(text: str, config: Mapping[str, Any], transformation_prompt: Optional[str],
-                  selection_context: str) -> Optional[RephrasePlan]:
+                  selection_context: str, auto_prompt: Optional[str] = None) -> Optional[RephrasePlan]:
     """Return the rephrasing request for ``text``, or None to deliver it unchanged."""
     # 1. An explicit recording-palette choice overrides every automatic rephrasing mode.
     if transformation_prompt and transformation_prompt.strip():
@@ -52,8 +52,8 @@ def plan_rephrase(text: str, config: Mapping[str, Any], transformation_prompt: O
             context = selection_context if config["rephrase_use_selection_context"] else ""
             return RephrasePlan(config["liveprompt_system_prompt"], instruction, context)
 
-    # 3. Generic rephrasing: combine the generic prompt with the transcription.
-    if config["generic_rephrase_enabled"]:
-        return RephrasePlan(system_prompt="", user_prompt=f"{config['generic_rephrase_prompt']}\n\nText: {text}")
+    # 3. The prompt marked "apply automatically" in the Prompts tab.
+    if auto_prompt and auto_prompt.strip():
+        return RephrasePlan(system_prompt=auto_prompt.strip(), user_prompt=text)
 
     return None

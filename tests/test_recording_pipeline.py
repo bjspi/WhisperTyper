@@ -126,8 +126,10 @@ def test_hotkey_stop_reaches_output_with_ordered_milestones(api, tmp_path, monke
         api_key_profiles=[{"id": "p", "name": "Local", "provider": "custom", "key": "test-key"}],
         transcription_key_profile_id="p", rephrasing_key_profile_id="p", rephrasing_model="test-model",
         min_recording_seconds=0, restore_clipboard=False, use_local_px_proxy=False, proxy_url="",
-        rephrase_use_selection_context=False, liveprompt_enabled=False, generic_rephrase_enabled=rephrase,
-        replacements_enabled=True, replacements_rules="wrold ; world", post_rephrasing_entries=[],
+        rephrase_use_selection_context=False, liveprompt_enabled=False,
+        replacements_enabled=True, replacements_rules="wrold ; world",
+        # The automatic prompt drives the rephrase branch (preselected in the recording palette).
+        post_rephrasing_entries=[{"caption": "Fix", "text": "Fix it", "auto_apply": True}] if rephrase else [],
         windows_keep_mic_hot=True,
         # Mark the macOS permission hints as shown; their modal dialogs would block the test.
         macos_microphone_info_shown=True, macos_accessibility_info_shown=True,
@@ -201,3 +203,17 @@ def test_hotkey_stop_reaches_output_with_ordered_milestones(api, tmp_path, monke
     positions = [events.index(name) for name in milestones]
     assert positions == sorted(positions), [name for name in events if name in milestones]
     assert "recording_tail_timeout" not in events
+
+
+def test_palette_clicks_decide_between_explicit_automatic_and_raw():
+    recording = RecordingController.__new__(RecordingController)
+    recording._config = {"post_rephrasing_entries": [{"caption": "Fix", "text": "Fix it", "auto_apply": True}]}
+    recording._warmup = Mock()
+    recording.current_prompt, recording.use_auto_prompt = None, True
+    assert recording.rephrasing_expected()  # The preselected automatic prompt applies without a click.
+    recording._on_prompt_selected(None)  # "None"
+    assert (recording.current_prompt, recording.use_auto_prompt) == (None, False)
+    assert not recording.rephrasing_expected()
+    recording._on_prompt_selected("Mail it")  # An explicit prompt beats LivePrompt and the automatic prompt.
+    assert (recording.current_prompt, recording.use_auto_prompt) == ("Mail it", True)
+    recording._warmup.schedule.assert_called_once_with(activate=True)

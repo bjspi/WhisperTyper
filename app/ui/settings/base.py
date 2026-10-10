@@ -137,10 +137,6 @@ class SettingsWindowBase(QWidget):
     liveprompt_system_prompt_label: QLabel
     liveprompt_system_prompt_input: QTextEdit
     rephrase_context_checkbox: QCheckBox
-    generic_rephrase_group: QGroupBox
-    generic_rephrase_enabled_checkbox: QCheckBox
-    generic_rephrase_prompt_label: QLabel
-    generic_rephrase_prompt_input: QTextEdit
     shared_api_group: QGroupBox
     rephrasing_api_url_label: QLabel
     rephrasing_api_url_input: QLineEdit
@@ -165,6 +161,7 @@ class SettingsWindowBase(QWidget):
     caption_label: QLabel
     post_rp_caption_edit: QLineEdit
     post_rp_show_during_recording_checkbox: QCheckBox
+    post_rp_auto_apply_checkbox: QCheckBox
     text_label: QLabel
     post_rp_text_edit: QTextEdit
     post_rp_add_btn: QPushButton
@@ -196,6 +193,8 @@ class SettingsWindowBase(QWidget):
     recording_prompt_overlay_system_position_checkbox: QCheckBox
     quit_without_confirmation_checkbox: QCheckBox
     text_insertion_group: QGroupBox
+    logging_group: QGroupBox
+    proxy_row_layout: QHBoxLayout
     alt_clipboard_lib_checkbox: QCheckBox
     windows_sendinput_text_checkbox: QCheckBox
     windows_sendinput_fallback_checkbox: QCheckBox

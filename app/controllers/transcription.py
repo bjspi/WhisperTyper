@@ -18,9 +18,10 @@ from app.context import AppContext
 from app.controllers.text_output import TextOutput
 from app.controllers.warmup import WarmupScheduler
 from app.controllers.workers import WorkerThreads
-from app.core.api_keys import GroqKeyRotation, provider_for_url, selected_api_key
+from app.core.api_keys import GroqKeyRotation, provider_for_url, rephrasing_configured, selected_api_key
 from app.core.audio_formats import is_video_file, needs_audio_normalization
 from app.core.constants import LANGUAGES
+from app.core.prompts import auto_apply_prompt
 from app.core.rephrase_routing import RephrasePlan, plan_rephrase, usable_transcript
 from app.core.replacements import ReplacementError, Replacements
 from app.core.textutil import shorten
@@ -73,7 +74,8 @@ class TranscriptionPipeline:
 
     # --- Transcription -------------------------------------------------------------------
     def start(self, audio_path: str, output_mode: str = "insert",
-              transformation_prompt: Optional[str] = None, timing: Optional[OperationTiming] = None) -> None:
+              transformation_prompt: Optional[str] = None, timing: Optional[OperationTiming] = None,
+              use_auto_prompt: bool = True) -> None:
         """Transcribe ``audio_path`` on a worker thread.
 
         Args:
@@ -82,6 +84,7 @@ class TranscriptionPipeline:
                 it to the clipboard instead (better when no text field is focused yet).
             transformation_prompt: Optional system prompt selected for this microphone recording.
             timing: Recording-stop timing, or a fresh operation for a file transcription.
+            use_auto_prompt: False when "None" was picked in the palette for this recording.
         """
         config = self._config
         timing = timing or OperationTiming()
@@ -130,16 +133,25 @@ class TranscriptionPipeline:
         worker.transcribing.connect(lambda language=lang_code: self._on_transcription_phase_started(language))
         # Bind this request's output mode into the result handlers so a concurrently started
         # request (with a different mode) cannot redirect this one's delivery.
+        # Snapshot the automatic prompt too, so editing prompts mid-request cannot change this one.
+        auto_prompt = self.auto_prompt() if use_auto_prompt else None
         worker.finished.connect(
-            lambda text, mode=output_mode, selected_prompt=transformation_prompt, operation=timing:
-                self.on_transcription_finished(text, mode, selected_prompt, operation)
+            lambda text, mode=output_mode, selected_prompt=transformation_prompt, operation=timing, auto=auto_prompt:
+                self.on_transcription_finished(text, mode, selected_prompt, operation, auto)
         )
         worker.error.connect(
-            lambda message, path, mode=output_mode, selected_prompt=transformation_prompt, operation=timing:
-                self.on_transcription_error(message, path, mode, selected_prompt, operation)
+            lambda message, path, mode=output_mode, selected_prompt=transformation_prompt, operation=timing,
+            auto=use_auto_prompt:
+                self.on_transcription_error(message, path, mode, selected_prompt, operation, auto)
         )
         self._workers.start(worker, (worker.finished, worker.error),
                             queued=lambda: timing.mark("transcription_worker_queued"))
+
+    def auto_prompt(self) -> Optional[str]:
+        """The prompt applied automatically to transcriptions, when rephrasing can run."""
+        if not rephrasing_configured(self._config):
+            return None
+        return auto_apply_prompt(self._config.get("post_rephrasing_entries", []))
 
     def _on_compression_phase_started(self, filename: str) -> None:
         """Show a distinct 'compressing…' spinner while an oversized file is downsampled."""
@@ -161,7 +173,8 @@ class TranscriptionPipeline:
 
     def on_transcription_finished(self, text: str, output_mode: str = "insert",
                                   transformation_prompt: Optional[str] = None,
-                                  timing: Optional[OperationTiming] = None) -> None:
+                                  timing: Optional[OperationTiming] = None,
+                                  auto_prompt: Optional[str] = None) -> None:
         """Handle a successful transcription and route it through rephrasing if configured.
 
         Args:
@@ -169,6 +182,7 @@ class TranscriptionPipeline:
             output_mode: How this request's final text should be delivered (insert/clipboard).
             transformation_prompt: Explicit recording-palette prompt, if one was selected.
             timing: This request's recording/HTTP timings, preserved through rephrasing.
+            auto_prompt: The automatic prompt snapshotted when the request started, if any.
         """
         timing = timing or OperationTiming("transcription_result")
         timing.mark("transcription_result_received")
@@ -185,7 +199,7 @@ class TranscriptionPipeline:
 
         processed = self._apply_replacements(processed, timing)
         timing.mark("result_processed")
-        plan = plan_rephrase(processed, self._config, transformation_prompt, self.selection_context)
+        plan = plan_rephrase(processed, self._config, transformation_prompt, self.selection_context, auto_prompt)
         if plan is None:
             self.finalize_output(processed, output_mode=output_mode, timing=timing)
         else:
@@ -207,7 +221,7 @@ class TranscriptionPipeline:
     def on_transcription_error(self, error_message: str, audio_file_path: str,
                                output_mode: str = "insert",
                                transformation_prompt: Optional[str] = None,
-                               timing: OperationTiming = NO_TIMING) -> None:
+                               timing: OperationTiming = NO_TIMING, use_auto_prompt: bool = True) -> None:
         """Report a failed transcription and offer a retry (batches skip the file instead)."""
         logging.error(f"Transcription error: {error_message}")
         timing.finish("transcription_failed")
@@ -227,7 +241,7 @@ class TranscriptionPipeline:
         msg_box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Retry)
         if msg_box.exec() == QMessageBox.StandardButton.Retry:
             self.start(audio_file_path, output_mode=output_mode, transformation_prompt=transformation_prompt,
-                       timing=OperationTiming("retry"))
+                       timing=OperationTiming("retry"), use_auto_prompt=use_auto_prompt)
 
     # --- Rephrasing ----------------------------------------------------------------------
     def start_rephrasing(self, system_prompt: str, user_prompt: str, context: str, timing: Optional[OperationTiming],

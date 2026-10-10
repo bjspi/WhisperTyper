@@ -110,7 +110,6 @@ def _seed_config(iso_home: str, port: int) -> None:
             "windows_keep_mic_hot": False,      # never touch the microphone in this harness
             "quit_without_confirmation": True,  # allow programmatic quit_app()
             "liveprompt_enabled": False,
-            "generic_rephrase_enabled": False,
         }, f)
 
 
@@ -334,8 +333,9 @@ def main() -> int:
                                                wt.ctx.config["proxy_url"], wt.ctx.config["use_local_px_proxy"])
                       and wt.warmup.http.active)
                 overlay_buttons[0].click()
-                check("HTTP: Standard selection leaves the prompt empty without another warmup",
-                      wt.recording.current_prompt is None and warmup.call_count == 1)
+                check("HTTP: None selection skips the automatic prompt without another warmup",
+                      wt.recording.current_prompt is None and not wt.recording.use_auto_prompt
+                      and warmup.call_count == 1)
                 overlay_buttons[1].click()
         check(
             "startup: recording prompt overlay updates selection",
@@ -377,7 +377,7 @@ def main() -> int:
             mac_overlay = RecordingPromptOverlay(
                 prompts=[{"caption": "Polish", "text": "CUSTOM_OVERLAY_PROMPT"}],
                 status_text="Recording",
-                standard_text="Standard",
+                none_text="None",
                 on_selection_changed=lambda _prompt: None,
                 use_system_position=True,
                 # Deliberately left of center: macOS must still choose top-right.
@@ -554,10 +554,11 @@ def main() -> int:
               <= sw.rephrasing_tab.height())
         sw.tabs.setCurrentWidget(sw.general_tab)
         qapp.processEvents()
-        sw.general_scroll_area.ensureWidgetVisible(sw.play_g_button)
+        last_control = sw.quit_without_confirmation_checkbox
+        sw.general_scroll_area.ensureWidgetVisible(last_control)
         qapp.processEvents()
         check("resize: short General page scrolls", sw.general_scroll_area.verticalScrollBar().maximum() > 0)
-        bottom = sw.play_g_button.mapTo(sw.general_tab, QPoint(0, sw.play_g_button.height())).y()
+        bottom = last_control.mapTo(sw.general_tab, QPoint(0, last_control.height())).y()
         check("resize: last General control is reachable", bottom <= sw.general_tab.height(),
               f"last-control-bottom={bottom}, page-height={sw.general_tab.height()}")
         general_controls = [sw.general_layout.itemAt(i).widget() for i in range(sw.general_layout.count())]
@@ -585,7 +586,7 @@ def main() -> int:
         original_profiles = tab.profiles()
         original_selection = (wt.ctx.config["transcription_key_profile_id"], wt.ctx.config["rephrasing_key_profile_id"])
         check("keys: table uses theme separators instead of the native grid", not table.showGrid())
-        check("keys: central tab is between Transformations and General", sw.tabs.indexOf(tab) == 3 and sw.tabs.indexOf(sw.general_tab) == 5)
+        check("keys: central tab is between Prompts and General", sw.tabs.indexOf(tab) == 3 and sw.tabs.indexOf(sw.general_tab) == 5)
         check("keys: legacy identical keys migrated into one profile", len(original_profiles) == 1
               and original_selection[0] == original_selection[1] and "api_key" not in wt.ctx.config and "rephrasing_api_key" not in wt.ctx.config)
         ids = []
@@ -882,11 +883,11 @@ def main() -> int:
             check("replacements: explicit transformation receives corrected text", rephrase.call_args.args[0].user_prompt == "Groq"
                   and rephrase.call_args.args[1] == "Groq")
         wt.ctx.config["liveprompt_enabled"] = False
-        wt.ctx.config["generic_rephrase_enabled"] = True
         with patch.object(wt.pipeline, "_start_post_transcription_rephrase") as rephrase:
-            wt.pipeline.on_transcription_finished("Krog", "clipboard")
-            check("replacements: generic rephrasing receives corrected text", rephrase.call_args.args[0].user_prompt.endswith("Text: Groq"))
-        wt.ctx.config["generic_rephrase_enabled"] = False
+            wt.pipeline.on_transcription_finished("Krog", "clipboard", None, None, "AUTO_PROMPT")
+            check("replacements: the automatic prompt receives corrected text",
+                  rephrase.call_args.args[0].user_prompt == "Groq"
+                  and rephrase.call_args.args[0].system_prompt == "AUTO_PROMPT")
         tab.enabled.setChecked(False)
         with patch.object(sw, "_collect_validation_warnings", return_value=[]):
             sw.save_settings()
@@ -912,7 +913,9 @@ def main() -> int:
             wt.recording.microphone.samplerate = audio.getframerate()
         captured = SimpleNamespace(stop_recording=lambda _timing: lambda: frames)
         wt.ctx.config["min_recording_seconds"] = 0
-        wt.ctx.config["generic_rephrase_enabled"] = True
+        saved_prompts = wt.ctx.config["post_rephrasing_entries"]
+        # An automatic prompt routes the stopped recording through rephrasing.
+        wt.ctx.config["post_rephrasing_entries"] = [{"caption": "Auto", "text": "AUTO_PROMPT", "auto_apply": True}]
         wt.recording.is_recording = True
         detected_ns = time.perf_counter_ns() - 5_000_000
         # Deliver to clipboard so the real stop path cannot send paste keys to another application.
@@ -924,7 +927,7 @@ def main() -> int:
         def recording_done() -> None:
             check("stop hotkey: transcription and rephrasing pipeline completed", not wt.recording.is_recording)
             check("recording format: default WAV is uploaded as PCM", b"RIFF" in FakeAPI.last_transcription_body)
-            wt.ctx.config["generic_rephrase_enabled"] = False
+            wt.ctx.config["post_rephrasing_entries"] = saved_prompts
             step2_native_aac()
 
         poll(lambda: wt.pipeline.last_transcription == "REPHRASED_FAKE_RESULT", 10,

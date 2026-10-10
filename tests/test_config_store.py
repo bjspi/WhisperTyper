@@ -63,6 +63,12 @@ class TestMigrations:
         assert changed is True
         assert config["post_rephrase_hotkey"] == DEFAULT_CONFIG["post_rephrase_hotkey"]
 
+    def test_global_generic_rephrasing_keys_are_dropped(self, store: ConfigStore):
+        write_config(store, {"generic_rephrase_enabled": True, "generic_rephrase_prompt": "Polish"})
+        config, changed = store.load()
+        assert changed is True
+        assert "generic_rephrase_enabled" not in config and "generic_rephrase_prompt" not in config
+
     def test_windows_fast_paste_key_is_renamed(self, store: ConfigStore):
         write_config(store, {"windows_fast_paste": True})
         config, changed = store.load()

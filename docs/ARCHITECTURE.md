@@ -90,7 +90,7 @@ component's constructor documents its dependencies and tests can build it in iso
 | `TranscriptionPipeline` | transcription/rephrasing requests, rephrase routing, replacements, batch, last result | direct calls into `TextOutput` |
 | `TextOutput` | SendInput / clipboard paste, delayed clipboard restore, selection reading | return values |
 | `HotkeyController` | pynput / Win32 listeners, bindings, "Set hotkey" capture | `action_triggered(action, detected_ns)` |
-| `PostRephraseController` | floating transformation palette for selected text | direct calls |
+| `PostRephraseController` | floating prompt palette for selected text | direct calls |
 | `TrayController` | tray icon, menu, level meter, git updater | — |
 | `MacPermissions` | one-time permission dialogs, startup prompts | — |
 | `SettingsWindow` | the form, theme, translations | `saved`, `hotkeys_changed`, `language_changed` |
@@ -156,7 +156,7 @@ sequenceDiagram
     W->>API: multipart upload (AAC/FFmpeg compression if needed)
     API-->>W: transcription text
     W->>M: finished(text) [queued]
-    alt Rephrasing planned (palette, LivePrompt trigger, generic)
+    alt Rephrasing planned (palette, LivePrompt trigger, automatic prompt)
         M->>W: RephrasingWorker(config snapshot)
         W->>API: chat completion
         API-->>W: reply

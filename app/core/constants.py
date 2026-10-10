@@ -14,7 +14,6 @@ from typing import Any, Dict
 from app.core.env import is_MACOS, is_WINDOWS
 from app.core.models import DEFAULT_REPHRASING_MODEL, DEFAULT_TRANSCRIPTION_MODEL
 from app.core.prompts import (
-    DEFAULT_GENERIC_REPHRASE_PROMPTS,
     DEFAULT_LIVEPROMPT_SYSTEM_PROMPTS,
     DEFAULT_TRANSCRIPTION_PROMPTS,
     _default_prompt_for,
@@ -132,8 +131,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "liveprompt_strip_trigger": False,
     "liveprompt_system_prompt": _default_prompt_for(DEFAULT_LIVEPROMPT_SYSTEM_PROMPTS, _DEFAULT_UI_LANG),
     "rephrase_use_selection_context": False,
-    "generic_rephrase_enabled": False,
-    "generic_rephrase_prompt": _default_prompt_for(DEFAULT_GENERIC_REPHRASE_PROMPTS, _DEFAULT_UI_LANG),
     "rephrasing_api_url": "https://api.openai.com/v1/chat/completions",
     "rephrasing_model": DEFAULT_REPHRASING_MODEL,
     "rephrasing_temperature": 0.7,

@@ -1,4 +1,4 @@
-"""Transformation template editing: stable edit targets across reordering, limits, removal."""
+"""Prompt editing: stable edit targets across reordering, limits, removal, automatic prompt."""
 from __future__ import annotations
 
 import os
@@ -26,7 +26,7 @@ def editor():
     splitter.addWidget(placeholder)
     splitter.addWidget(QWidget())
     widgets = dict(caption_edit=QLineEdit(), text_edit=QTextEdit(), show_during_recording=QCheckBox(),
-                   add_button=QPushButton(), remove_button=QPushButton())
+                   auto_apply=QCheckBox(), add_button=QPushButton(), remove_button=QPushButton())
     entries = [{"caption": "First", "text": "one", "show_during_recording": True},
                {"caption": "Second", "text": "two"}, "not a template"]
     instance = TransformationsEditor(entries, _Translator(), splitter=splitter, list_placeholder=placeholder, **widgets)
@@ -37,8 +37,10 @@ def editor():
 
 def test_loads_valid_templates_and_selects_the_first(editor):
     instance, widgets = editor
-    assert instance.entries() == [{"caption": "First", "text": "one", "show_during_recording": True},
-                                  {"caption": "Second", "text": "two", "show_during_recording": False}]
+    assert instance.entries() == [
+        {"caption": "First", "text": "one", "show_during_recording": True, "auto_apply": False},
+        {"caption": "Second", "text": "two", "show_during_recording": False, "auto_apply": False},
+    ]
     assert widgets["caption_edit"].text() == "First"
 
 
@@ -65,3 +67,18 @@ def test_add_respects_the_limit_and_remove_selects_a_neighbour(editor):
     assert len(instance.entries()) == instance.max_entries - 1
     assert widgets["caption_edit"].text() == "Second"
     assert widgets["add_button"].isEnabled()
+
+
+def test_automatic_prompt_is_exclusive_and_always_shown(editor):
+    instance, widgets = editor
+    widgets["auto_apply"].setChecked(True)  # First
+    assert widgets["show_during_recording"].isChecked() and not widgets["show_during_recording"].isEnabled()
+    instance.list.setCurrentRow(1)  # Second
+    assert widgets["show_during_recording"].isEnabled() and not widgets["auto_apply"].isChecked()
+    widgets["auto_apply"].setChecked(True)
+    assert widgets["show_during_recording"].isChecked()
+    assert [(entry["auto_apply"], entry["show_during_recording"]) for entry in instance.entries()] == [
+        (False, True), (True, True)]
+    widgets["auto_apply"].setChecked(False)
+    assert widgets["show_during_recording"].isEnabled()
+    assert not any(entry["auto_apply"] for entry in instance.entries())

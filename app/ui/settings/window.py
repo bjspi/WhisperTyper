@@ -163,7 +163,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self.main_layout.addLayout(save_row)
 
     def _init_transformations_page(self) -> None:
-        """Template editor on the transformations tab; edits are mirrored into the live config."""
+        """Prompt editor on the Prompts tab; edits are mirrored into the live config."""
         # Description texts take minimal height; the editor splitter takes the rest.
         for label in (self.transformations_tab_description_label, self.transformations_unavailable_label,
                       self.transformations_info_label):
@@ -173,7 +173,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
             self.config.get("post_rephrasing_entries", []), self.translator, splitter=self.splitter,
             list_placeholder=self.post_rp_list_placeholder, caption_edit=self.post_rp_caption_edit,
             text_edit=self.post_rp_text_edit, show_during_recording=self.post_rp_show_during_recording_checkbox,
-            add_button=self.post_rp_add_btn, remove_button=self.post_rp_remove_btn,
+            auto_apply=self.post_rp_auto_apply_checkbox, add_button=self.post_rp_add_btn, remove_button=self.post_rp_remove_btn,
         )
         self.post_rp_list = self._transformations.list
         self._transformations.changed.connect(self._sync_transformations_to_config)

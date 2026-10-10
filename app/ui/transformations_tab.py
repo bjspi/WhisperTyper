@@ -56,7 +56,8 @@ class TransformationsEditor(QObject):
 
     def __init__(self, entries: Any, translator: TranslationManager, *, splitter: QSplitter,
                  list_placeholder: QWidget, caption_edit: QLineEdit, text_edit: QTextEdit,
-                 show_during_recording: QCheckBox, add_button: QPushButton, remove_button: QPushButton) -> None:
+                 show_during_recording: QCheckBox, auto_apply: QCheckBox, add_button: QPushButton,
+                 remove_button: QPushButton) -> None:
         """Replace the placeholder with a reorderable list and load ``entries``."""
         super().__init__(splitter)
         self.translator = translator
@@ -64,6 +65,7 @@ class TransformationsEditor(QObject):
         self._caption_edit = caption_edit
         self._text_edit = text_edit
         self._show_during_recording = show_during_recording
+        self._auto_apply = auto_apply
         self._add_button = add_button
         self._remove_button = remove_button
         self._entries: Dict[str, Dict[str, Any]] = {}
@@ -82,6 +84,7 @@ class TransformationsEditor(QObject):
             self._append_item(entry_id)
         self.list.currentRowChanged.connect(self._on_selection_changed)
         self.list.reordered.connect(self._on_reordered)
+        auto_apply.toggled.connect(self._on_auto_apply_toggled)
         add_button.clicked.connect(self._add)
         remove_button.clicked.connect(self._remove)
         self._load_editor(None)
@@ -127,7 +130,8 @@ class TransformationsEditor(QObject):
         assert self._current_id is not None
         entry = self._entries[self._current_id]
         entry.update(caption=self._caption_edit.text(), text=self._text_edit.toPlainText(),
-                     show_during_recording=self._show_during_recording.isChecked())
+                     show_during_recording=self._show_during_recording.isChecked(),
+                     auto_apply=self._auto_apply.isChecked())
         item = self._item_for(self._current_id)
         if item is not None:
             item.setText(self._label(entry))
@@ -136,16 +140,33 @@ class TransformationsEditor(QObject):
         """Show one entry in the editor fields, or clear and disable them."""
         self._loading = True
         entry = self._entries.get(entry_id) if entry_id else None
-        for widget in (self._caption_edit, self._text_edit, self._show_during_recording):
+        auto_apply = bool(entry and entry.get("auto_apply") is True)
+        for widget in (self._caption_edit, self._text_edit, self._auto_apply):
             widget.setEnabled(entry is not None)
+        # The automatic prompt is always offered in the palette, so it can be deselected there.
+        self._show_during_recording.setEnabled(entry is not None and not auto_apply)
         # Deliberately no focus change: this runs on every selection change, and moving focus
         # into the editor would break arrow-key navigation through the list.
         self._caption_edit.setText(str(entry.get("caption", "")) if entry else "")
         self._text_edit.setPlainText(str(entry.get("text", "")) if entry else "")
         self._show_during_recording.setChecked(bool(entry and entry.get("show_during_recording") is True))
+        self._auto_apply.setChecked(auto_apply)
         self._current_id = entry_id if entry else None
         self._loading = False
         self._update_buttons()
+
+    def _on_auto_apply_toggled(self, checked: bool) -> None:
+        """Only one template applies automatically, and it is always shown during recording."""
+        if self._loading or self._current_id not in self._entries:
+            return
+        if checked:
+            self._show_during_recording.setChecked(True)
+            for entry_id, entry in self._entries.items():
+                if entry_id != self._current_id:
+                    entry["auto_apply"] = False
+        self._show_during_recording.setEnabled(not checked)
+        self._commit_editor()
+        self.changed.emit()
 
     def _update_buttons(self) -> None:
         """Respect the template limit and require a selection for removal."""
