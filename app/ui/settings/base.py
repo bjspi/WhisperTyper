@@ -25,7 +25,6 @@ from PyQt6.QtWidgets import (
     QSlider,
     QSpinBox,
     QSplitter,
-    QStackedWidget,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -153,11 +152,10 @@ class SettingsWindowBase(QWidget):
     splitter: QSplitter
     post_rp_list: QListWidget
     post_rp_list_placeholder: QWidget
+    post_rp_instruction_enabled_checkbox: QCheckBox
     caption_label: QLabel
     post_rp_caption_edit: QLineEdit
     post_rp_show_during_recording_checkbox: QCheckBox
-    post_rp_options_stack: QStackedWidget
-    post_rp_prompt_options: QWidget
     post_rp_auto_apply_checkbox: QCheckBox
     post_rp_instruction_options: QWidget
     liveprompt_enabled_checkbox: QCheckBox

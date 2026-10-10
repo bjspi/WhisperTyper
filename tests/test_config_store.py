@@ -86,7 +86,8 @@ class TestMigrations:
         instruction, template = config["post_rephrasing_entries"]
         assert instruction == {
             "kind": "instruction", "caption": "\u2728 Instruction", "text": "My own instruction prompt",
-            "show_during_recording": False, "auto_apply": False, "enabled": False,
+            # A switched-off LivePrompt keeps the entry usable by click; only the trigger word is off.
+            "show_during_recording": False, "auto_apply": False, "enabled": True, "trigger_enabled": False,
             "trigger_words": "befehl, ki", "scan_depth": 7, "strip_trigger": True, "use_selection_context": True,
         }
         assert template["caption"] == "Polish"

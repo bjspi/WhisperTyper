@@ -17,7 +17,6 @@ from PyQt6.QtWidgets import (  # noqa: E402
     QPushButton,
     QSpinBox,
     QSplitter,
-    QStackedWidget,
     QTextEdit,
     QWidget,
 )
@@ -40,15 +39,13 @@ def editor():
     placeholder = QWidget()
     splitter.addWidget(placeholder)
     splitter.addWidget(QWidget())
-    stack = QStackedWidget()
-    stack.addWidget(QWidget())
-    stack.addWidget(QWidget())
     scan_depth = QSpinBox()
     scan_depth.setRange(1, 99)
-    controls = InstructionControls(enabled=QCheckBox(), trigger_words=QLineEdit(), scan_depth=scan_depth,
-                                   strip_trigger=QCheckBox(), selection_context=QCheckBox())
+    controls = InstructionControls(active=QCheckBox(), options=QWidget(), trigger_enabled=QCheckBox(),
+                                   trigger_words=QLineEdit(), scan_depth=scan_depth, strip_trigger=QCheckBox(),
+                                   selection_context=QCheckBox())
     widgets = dict(caption_edit=QLineEdit(), text_label=QLabel(), text_edit=QTextEdit(), show_during_recording=QCheckBox(),
-                   options_stack=stack, auto_apply=QCheckBox(), add_button=QPushButton(), remove_button=QPushButton())
+                   auto_apply=QCheckBox(), add_button=QPushButton(), remove_button=QPushButton())
     entries = [INSTRUCTION, {"caption": "First", "text": "one", "show_during_recording": True},
                {"caption": "Second", "text": "two"}, "not a template"]
     instance = TransformationsEditor(entries, _Translator(), splitter=splitter, list_placeholder=placeholder,
@@ -65,8 +62,12 @@ def test_loads_valid_templates_and_selects_the_first(editor):
     assert instance.entries()[1] == {"kind": "prompt", "caption": "First", "text": "one",
                                      "show_during_recording": True, "auto_apply": False}
     assert widgets["caption_edit"].text() == "Go"
-    assert widgets["options_stack"].currentIndex() == 1  # the instruction shows its trigger settings
+    # The instruction shows its switch and LivePrompting block instead of "apply automatically".
+    assert not widgets["instruction"].options.isHidden() and not widgets["instruction"].active.isHidden()
+    assert widgets["auto_apply"].isHidden()
     assert widgets["text_label"].text() == "<liveprompt_system_prompt_label>"
+    instance.list.setCurrentRow(1)
+    assert widgets["instruction"].options.isHidden() and not widgets["auto_apply"].isHidden()
 
 
 def test_edits_follow_the_template_after_reordering(editor):
@@ -133,9 +134,14 @@ def test_instruction_settings_are_stored_and_inactive_entry_is_greyed(editor):
     controls.scan_depth.setValue(8)
     controls.strip_trigger.setChecked(True)
     controls.selection_context.setChecked(True)
-    controls.enabled.setChecked(False)
+    controls.trigger_enabled.setChecked(False)
+    assert not controls.trigger_words.isEnabled()  # LivePrompting off greys its trigger settings
+    assert controls.selection_context.isEnabled()
+    controls.active.setChecked(False)
+    assert not widgets["text_edit"].isEnabled()  # a switched-off instruction greys the whole form
     instruction = instance.entries()[0]
-    assert (instruction["enabled"], instruction["trigger_words"], instruction["scan_depth"],
-            instruction["strip_trigger"], instruction["use_selection_context"]) == (False, "befehl, ki", 8, True, True)
+    assert (instruction["enabled"], instruction["trigger_enabled"], instruction["trigger_words"],
+            instruction["scan_depth"], instruction["strip_trigger"], instruction["use_selection_context"]) == (
+        False, False, "befehl, ki", 8, True, True)
     disabled = instance.list.palette().color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text)
     assert instance.list.item(0).foreground().color() == disabled

@@ -69,3 +69,11 @@ def test_trigger_beyond_scan_depth_falls_through_to_the_automatic_prompt():
 
 def test_without_any_rephrasing_the_text_is_delivered_unchanged():
     assert plan_rephrase("prompt write a poem", config(), "   ", "selection") is None
+
+
+def test_trigger_word_needs_livepromting_on_while_a_palette_click_still_runs_the_instruction():
+    cfg = config(enabled=True)
+    cfg["post_rephrasing_entries"][0]["trigger_enabled"] = False
+    assert plan_rephrase("prompt write a mail", cfg, None, "") is None
+    plan = plan_rephrase("write a mail", cfg, "Carry it out", "", instruction_selected=True)
+    assert plan is not None and plan.user_prompt == "write a mail"

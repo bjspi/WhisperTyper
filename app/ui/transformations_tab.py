@@ -7,7 +7,7 @@ settings instead of the template options.
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, List, NamedTuple, Optional
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal
 from PyQt6.QtGui import QBrush, QDropEvent, QPalette
@@ -19,10 +19,8 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
-    QSizePolicy,
     QSpinBox,
     QSplitter,
-    QStackedWidget,
     QTextEdit,
     QWidget,
 )
@@ -41,13 +39,14 @@ from app.core.prompts import (
 
 _ENTRY_ID = Qt.ItemDataRole.UserRole
 #: Pages of the options stack.
-_PROMPT_PAGE, _INSTRUCTION_PAGE = 0, 1
-
-
 class InstructionControls(NamedTuple):
-    """Widgets of the instruction entry's options page."""
+    """Widgets shown only for the instruction entry."""
 
-    enabled: QCheckBox
+    #: Switches the whole entry on or off (trigger word, palette, rephrase window).
+    active: QCheckBox
+    #: LivePrompting by trigger word; the block below the prompt text holds its settings.
+    options: QWidget
+    trigger_enabled: QCheckBox
     trigger_words: QLineEdit
     scan_depth: QSpinBox
     strip_trigger: QCheckBox
@@ -86,7 +85,7 @@ class TransformationsEditor(QObject):
 
     def __init__(self, entries: Any, translator: TranslationManager, *, splitter: QSplitter,
                  list_placeholder: QWidget, caption_edit: QLineEdit, text_label: QLabel, text_edit: QTextEdit,
-                 show_during_recording: QCheckBox, options_stack: QStackedWidget, auto_apply: QCheckBox,
+                 show_during_recording: QCheckBox, auto_apply: QCheckBox,
                  instruction: InstructionControls, add_button: QPushButton, remove_button: QPushButton,
                  selection_context_supported: bool = True) -> None:
         """Replace the placeholder with a reorderable list and load ``entries``."""
@@ -97,7 +96,6 @@ class TransformationsEditor(QObject):
         self._text_label = text_label
         self._text_edit = text_edit
         self._show_during_recording = show_during_recording
-        self._options_stack = options_stack
         self._auto_apply = auto_apply
         self._instruction = instruction
         self._add_button = add_button
@@ -122,7 +120,8 @@ class TransformationsEditor(QObject):
         self.list.currentRowChanged.connect(self._on_selection_changed)
         self.list.reordered.connect(self._on_reordered)
         auto_apply.toggled.connect(self._on_auto_apply_toggled)
-        instruction.enabled.toggled.connect(self._on_instruction_toggled)
+        instruction.active.toggled.connect(self._on_instruction_toggled)
+        instruction.trigger_enabled.toggled.connect(self._on_instruction_toggled)
         add_button.clicked.connect(self._add)
         remove_button.clicked.connect(self._remove)
         self._load_editor(None)
@@ -207,23 +206,14 @@ class TransformationsEditor(QObject):
                      show_during_recording=self._show_during_recording.isChecked())
         if entry["kind"] == INSTRUCTION:
             controls = self._instruction
-            entry.update(enabled=controls.enabled.isChecked(), trigger_words=controls.trigger_words.text(),
+            entry.update(enabled=controls.active.isChecked(), trigger_enabled=controls.trigger_enabled.isChecked(),
+                         trigger_words=controls.trigger_words.text(),
                          scan_depth=controls.scan_depth.value(), strip_trigger=controls.strip_trigger.isChecked(),
                          use_selection_context=self._selection_context_supported
                          and controls.selection_context.isChecked())
         else:
             entry["auto_apply"] = self._auto_apply.isChecked()
         self._refresh_item(self._current_id)
-
-    def _show_options_page(self, page: int) -> None:
-        """Show one options page; the hidden page takes no height, so the stack fits the visible one."""
-        self._options_stack.setCurrentIndex(page)
-        for index in range(self._options_stack.count()):
-            widget = self._options_stack.widget(index)
-            if widget is not None:
-                vertical = QSizePolicy.Policy.Preferred if index == page else QSizePolicy.Policy.Ignored
-                widget.setSizePolicy(QSizePolicy.Policy.Preferred, vertical)
-        self._options_stack.adjustSize()
 
     def _update_text_label(self, entry: Optional[Dict[str, Any]]) -> None:
         """The instruction's text is its system prompt; templates keep the generic label."""
@@ -249,16 +239,37 @@ class TransformationsEditor(QObject):
         self._auto_apply.setChecked(auto_apply)
         if entry is not None and is_instruction:
             controls = self._instruction
-            controls.enabled.setChecked(entry["enabled"])
+            controls.active.setChecked(entry["enabled"])
+            controls.trigger_enabled.setChecked(entry["trigger_enabled"])
             controls.trigger_words.setText(entry["trigger_words"])
             controls.scan_depth.setValue(entry["scan_depth"])
             controls.strip_trigger.setChecked(entry["strip_trigger"])
             controls.selection_context.setChecked(entry["use_selection_context"])
-        self._show_options_page(_INSTRUCTION_PAGE if is_instruction else _PROMPT_PAGE)
+        # Hidden widgets take no room, so each kind shows a compact form with the text filling the rest.
+        self._auto_apply.setVisible(not is_instruction)
+        self._instruction.active.setVisible(is_instruction)
+        self._instruction.options.setVisible(is_instruction)
         self._update_text_label(entry)
         self._current_id = entry_id if entry else None
         self._loading = False
+        self._update_instruction_states()
         self._update_buttons()
+
+    def _update_instruction_states(self) -> None:
+        """Grey out what a switched-off instruction, or switched-off LivePrompting, does not use."""
+        entry = self._entries.get(self._current_id) if self._current_id else None
+        if entry is None or entry["kind"] != INSTRUCTION:
+            return
+        controls = self._instruction
+        active = controls.active.isChecked()
+        entry_widgets: Tuple[QWidget, ...] = (self._caption_edit, self._text_edit, self._show_during_recording,
+                                              controls.trigger_enabled, controls.selection_context)
+        for widget in entry_widgets:
+            widget.setEnabled(active)
+        triggered = active and controls.trigger_enabled.isChecked()
+        trigger_widgets: Tuple[QWidget, ...] = (controls.trigger_words, controls.scan_depth, controls.strip_trigger)
+        for widget in trigger_widgets:
+            widget.setEnabled(triggered)
 
     def _on_auto_apply_toggled(self, checked: bool) -> None:
         """Only one template applies automatically, and it is always shown during recording."""
@@ -274,9 +285,10 @@ class TransformationsEditor(QObject):
         self.changed.emit()
 
     def _on_instruction_toggled(self, _checked: bool) -> None:
-        """Switching the instruction on or off takes effect (and greys its row) right away."""
+        """Switching the instruction or its trigger takes effect (and greys its row) right away."""
         if self._loading:
             return
+        self._update_instruction_states()
         self._commit_editor()
         self.changed.emit()
 

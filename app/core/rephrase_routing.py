@@ -52,7 +52,7 @@ def plan_rephrase(text: str, config: Mapping[str, Any], transformation_prompt: O
                             context=context if instruction_selected else "")
 
     # 2. LivePrompting via trigger words: the transcription itself is the instruction.
-    if instruction["enabled"] and rephrasing_configured(config):
+    if instruction["enabled"] and instruction["trigger_enabled"] and rephrasing_configured(config):
         trigger_words = liveprompt.parse_trigger_words(instruction["trigger_words"])
         if liveprompt.contains_trigger(text, trigger_words, instruction["scan_depth"]):
             # Optionally drop the trigger word and everything before it, so only the

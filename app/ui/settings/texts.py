@@ -88,6 +88,7 @@ TEXTS: Tuple[Text, ...] = (
     # Prompts
     Text("transformations_tab_description", "transformations_tab_description_label"),
     Text("transformations_unavailable_message", "transformations_unavailable_label"),
+    _check("post_rp_instruction_enabled_checkbox", "instruction_enabled_checkbox", "instruction_enabled_tooltip"),
     Text("caption_label", "caption_label"),
     _check("post_rp_show_during_recording_checkbox", "show_during_recording_checkbox", "show_during_recording_tooltip"),
     _check("post_rp_auto_apply_checkbox", "auto_apply_checkbox", "auto_apply_tooltip"),

@@ -680,6 +680,16 @@
           <enum>Qt::Horizontal</enum>
          </property>
          <widget class="QListWidget" name="post_rp_list_placeholder"/>
+         <widget class="QScrollArea" name="post_rp_editor_scroll">
+          <property name="frameShape">
+           <enum>QFrame::NoFrame</enum>
+          </property>
+          <property name="horizontalScrollBarPolicy">
+           <enum>Qt::ScrollBarAlwaysOff</enum>
+          </property>
+          <property name="widgetResizable">
+           <bool>true</bool>
+          </property>
          <widget class="QWidget" name="post_rp_editor_container" native="true">
           <layout class="QVBoxLayout" name="editor_layout">
            <property name="leftMargin">
@@ -698,6 +708,13 @@
             <number>8</number>
            </property>
            <item>
+            <widget class="QCheckBox" name="post_rp_instruction_enabled_checkbox">
+             <property name="text">
+              <string>Active</string>
+             </property>
+            </widget>
+           </item>
+           <item>
             <widget class="QLabel" name="caption_label">
              <property name="text">
               <string>Caption:</string>
@@ -715,30 +732,23 @@
              </widget>
             </item>
             <item>
-             <widget class="QStackedWidget" name="post_rp_options_stack">
-              <widget class="QWidget" name="post_rp_prompt_options">
-               <layout class="QVBoxLayout" name="post_rp_prompt_options_layout">
-                <property name="leftMargin">
-                 <number>0</number>
-                </property>
-                <property name="topMargin">
-                 <number>0</number>
-                </property>
-                <property name="rightMargin">
-                 <number>0</number>
-                </property>
-                <property name="bottomMargin">
-                 <number>0</number>
-                </property>
-                <item>
-                 <widget class="QCheckBox" name="post_rp_auto_apply_checkbox">
-                  <property name="text">
-                   <string>Apply automatically</string>
-                  </property>
-                 </widget>
-                </item>
-               </layout>
-              </widget>
+             <widget class="QCheckBox" name="post_rp_auto_apply_checkbox">
+              <property name="text">
+               <string>Apply automatically</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="text_label">
+             <property name="text">
+              <string>System Prompt:</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QTextEdit" name="post_rp_text_edit"/>
+           </item>
+           <item>
               <widget class="QWidget" name="post_rp_instruction_options">
                <layout class="QVBoxLayout" name="post_rp_instruction_options_layout">
                 <property name="leftMargin">
@@ -837,19 +847,9 @@
                 </item>
                </layout>
               </widget>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLabel" name="text_label">
-             <property name="text">
-              <string>System Prompt:</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QTextEdit" name="post_rp_text_edit"/>
            </item>
           </layout>
+         </widget>
          </widget>
         </widget>
        </item>
