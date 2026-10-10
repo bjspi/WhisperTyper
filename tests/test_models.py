@@ -12,12 +12,12 @@ from app.core.models import (
 )
 
 
-@pytest.mark.parametrize("model", ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5.6-luna", "gpt-6-luna"])
+@pytest.mark.parametrize("model", ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5.5", "gpt-5.6-luna", "gpt-6-luna"])
 def test_reasoning_models_keep_their_default_temperature(model):
     assert not rephrasing_supports_temperature(model)
 
 
-@pytest.mark.parametrize("model", ["gpt-5.2", "gpt-5.4-mini", "gpt-5.5", "gpt-4.1-mini", "llama-3.3-70b-versatile"])
+@pytest.mark.parametrize("model", ["gpt-5.2", "gpt-5.4-mini", "gpt-4.1-mini", "openai/gpt-oss-20b", "llama-3.3-70b-versatile"])
 def test_other_models_accept_a_temperature(model):
     assert rephrasing_supports_temperature(model)
 
@@ -45,3 +45,10 @@ def test_transcription_fields_follow_the_model_capabilities():
 def test_dropdown_lists_come_from_the_same_catalog():
     assert sum(len(models) for models in REPHRASING_MODEL_OPTIONS.values()) == len(REPHRASING_MODELS)
     assert REPHRASING_MODEL_OPTIONS["groq"][0] == "openai/gpt-oss-120b"
+
+
+def test_a_model_takes_a_temperature_only_when_it_does_not_reason_by_default():
+    for model_id, spec in REPHRASING_MODELS.items():
+        if spec.provider == "openai" and spec.reasoning_efforts:
+            assert spec.temperature == (spec.default_reasoning == "none"), model_id
+

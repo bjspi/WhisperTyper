@@ -7,7 +7,7 @@ the same tables. Models that are not listed (typed by hand, custom endpoints) ge
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, NamedTuple, Optional
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 from app.core.textutil import clean_model_name
 
@@ -27,9 +27,13 @@ class ModelSpec(NamedTuple):
     diarization: bool = False
     #: Transcription: the language is sent as ``languages[]`` instead of ``language``.
     language_list: bool = False
+    #: Rephrasing: accepted ``reasoning_effort`` values, empty for models without reasoning control.
+    reasoning_efforts: Tuple[str, ...] = ()
+    #: Rephrasing: the effort the model uses when none is sent (None where the provider does not document it).
+    default_reasoning: Optional[str] = None
 
 
-# Verified against the providers' official model lists on 2026-10-10 (active models only).
+# Verified against the providers' official model pages on 2026-10-10 (active models only).
 TRANSCRIPTION_MODELS: Dict[str, ModelSpec] = {
     "gpt-transcribe": ModelSpec("openai", temperature=False, language_list=True),
     "gpt-4o-transcribe": ModelSpec("openai"),
@@ -41,29 +45,41 @@ TRANSCRIPTION_MODELS: Dict[str, ModelSpec] = {
     "whisper-large-v3": ModelSpec("groq", prompt_token_limit=WHISPER_PROMPT_TOKEN_LIMIT),
 }
 
+# Reasoning effort scales as documented per model family.
+_GPT5_EFFORTS = ("minimal", "low", "medium", "high")
+_GPT5X_EFFORTS = ("none", "low", "medium", "high", "xhigh")
+_GPT56_EFFORTS = ("none", "low", "medium", "high", "xhigh", "max")
+_GPT6_HIGH_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+_GPT_OSS_EFFORTS = ("low", "medium", "high")
+
+# A model only accepts a temperature while it does not reason: true for models whose default
+# effort is "none"; models that reason by default get no temperature (HTTP 400 otherwise).
 REPHRASING_MODELS: Dict[str, ModelSpec] = {
-    "gpt-6-luna": ModelSpec("openai", temperature=False),
-    "gpt-6.1-sol": ModelSpec("openai", temperature=False),
-    "gpt-6-astra": ModelSpec("openai", temperature=False),
-    "gpt-6-sol": ModelSpec("openai", temperature=False),
-    "gpt-5.6-luna": ModelSpec("openai", temperature=False),
-    "gpt-5.6-terra": ModelSpec("openai", temperature=False),
-    "gpt-5.6-sol": ModelSpec("openai", temperature=False),
-    # GPT-5.2/5.4/5.5 default to reasoning effort "none" and accept a temperature.
-    "gpt-5.5": ModelSpec("openai"),
-    "gpt-5.4": ModelSpec("openai"),
-    "gpt-5.4-mini": ModelSpec("openai"),
-    "gpt-5.2": ModelSpec("openai"),
-    "gpt-5": ModelSpec("openai", temperature=False),
-    "gpt-5-mini": ModelSpec("openai", temperature=False),
-    "gpt-5-nano": ModelSpec("openai", temperature=False),
+    "gpt-6-luna": ModelSpec("openai", temperature=False, reasoning_efforts=_GPT56_EFFORTS, default_reasoning="medium"),
+    "gpt-6.1-sol": ModelSpec("openai", temperature=False, reasoning_efforts=_GPT6_HIGH_EFFORTS,
+                             default_reasoning="medium"),
+    "gpt-6-astra": ModelSpec("openai", temperature=False, reasoning_efforts=_GPT6_HIGH_EFFORTS),
+    "gpt-6-sol": ModelSpec("openai", temperature=False, reasoning_efforts=_GPT56_EFFORTS, default_reasoning="medium"),
+    "gpt-5.6-luna": ModelSpec("openai", temperature=False, reasoning_efforts=_GPT56_EFFORTS,
+                              default_reasoning="medium"),
+    "gpt-5.6-terra": ModelSpec("openai", temperature=False, reasoning_efforts=_GPT56_EFFORTS,
+                               default_reasoning="medium"),
+    "gpt-5.6-sol": ModelSpec("openai", temperature=False, reasoning_efforts=_GPT56_EFFORTS,
+                             default_reasoning="medium"),
+    "gpt-5.5": ModelSpec("openai", temperature=False, reasoning_efforts=_GPT5X_EFFORTS, default_reasoning="medium"),
+    "gpt-5.4": ModelSpec("openai", reasoning_efforts=_GPT5X_EFFORTS, default_reasoning="none"),
+    "gpt-5.4-mini": ModelSpec("openai", reasoning_efforts=_GPT5X_EFFORTS, default_reasoning="none"),
+    "gpt-5.2": ModelSpec("openai", reasoning_efforts=_GPT5X_EFFORTS, default_reasoning="none"),
+    "gpt-5": ModelSpec("openai", temperature=False, reasoning_efforts=_GPT5_EFFORTS),
+    "gpt-5-mini": ModelSpec("openai", temperature=False, reasoning_efforts=_GPT5_EFFORTS),
+    "gpt-5-nano": ModelSpec("openai", temperature=False, reasoning_efforts=_GPT5_EFFORTS),
     "gpt-4.1-mini": ModelSpec("openai"),
     "gpt-4.1": ModelSpec("openai"),
     "gpt-4.1-nano": ModelSpec("openai"),
     "gpt-4o-mini": ModelSpec("openai"),
     "gpt-4o": ModelSpec("openai"),
-    "openai/gpt-oss-120b": ModelSpec("groq"),
-    "openai/gpt-oss-20b": ModelSpec("groq"),
+    "openai/gpt-oss-120b": ModelSpec("groq", reasoning_efforts=_GPT_OSS_EFFORTS),
+    "openai/gpt-oss-20b": ModelSpec("groq", reasoning_efforts=_GPT_OSS_EFFORTS),
     "llama-3.3-70b-versatile": ModelSpec("groq"),
     "llama-3.1-8b-instant": ModelSpec("groq"),
 }
