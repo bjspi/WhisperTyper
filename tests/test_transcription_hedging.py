@@ -110,3 +110,14 @@ def test_thresholds_grow_with_the_upload_size():
     large_upload, large_wait = service.hedge_thresholds(6 * 1024 * 1024)
     assert small_upload == service._HEDGE_UPLOAD_MIN_S and large_upload > small_upload
     assert large_wait > small_wait >= service._HEDGE_RESPONSE_MIN_S
+
+
+def test_upload_finishing_late_starts_the_response_deadline_instead_of_hedging(tmp_path, monkeypatch):
+    monkeypatch.setattr(service, "_HEDGE_RESPONSE_MIN_S", 0.3)
+    # Upload done within its 0.05 s budget, answer after 0.15 s: past the upload budget, but within
+    # the 0.3 s response wait that starts when the upload is done.
+    api = FakeApi((0.01, 0.15, ok("first")), (0.0, 0.0, ok("second")))
+    text, timing = run(tmp_path, monkeypatch, api)
+    assert text == "first"
+    assert len(api.calls) == 1
+    assert "transcription_hedge_started" not in timing._events
