@@ -4,13 +4,36 @@ from __future__ import annotations
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional
 
-from PyQt6.QtCore import QPoint, Qt
+from PyQt6.QtCore import QPoint, Qt, QTextBoundaryFinder
 from PyQt6.QtGui import QCursor, QKeyEvent
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from app.core.env import is_MACOS, is_WINDOWS
 from app.ui import theme
 
+#: Emoji presentation selector and combining keycap: digits/letters drawn as emoji (1️⃣, ©️).
+_EMOJI_MARKS = frozenset("\ufe0f\u20e3")
+
+
+def graphemes(text: str) -> List[str]:
+    """User-perceived characters (emoji sequences, flags, keycaps stay whole), via Qt's UAX #29 rules."""
+    units = text.encode("utf-16-le")  # Qt reports boundaries in UTF-16 code units
+    finder = QTextBoundaryFinder(QTextBoundaryFinder.BoundaryType.Grapheme, text)
+    bounds = [0]
+    while (position := finder.toNextBoundary()) != -1:
+        bounds.append(position)
+    return [units[start * 2:end * 2].decode("utf-16-le") for start, end in zip(bounds, bounds[1:])]
+
+
+def compact_caption(caption: str, length: int = 3) -> str:
+    """Short palette label: a leading emoji/symbol alone, otherwise the first ``length`` characters."""
+    characters = graphemes(caption.strip())
+    if not characters:
+        return ""
+    first = characters[0]
+    if not first[0].isalnum() or _EMOJI_MARKS.intersection(first):
+        return first
+    return "".join(characters[:length]).strip()
 
 class FloatingButtonWindow(QWidget):
     """Cross‑platform floating button palette near the cursor."""
@@ -233,7 +256,7 @@ class RecordingPromptOverlay(QWidget):
         prompt_row.setSpacing(4)
         for prompt in prompts:
             caption = prompt["caption"]
-            button = self._build_prompt_button(caption[:3], compact=True)
+            button = self._build_prompt_button(compact_caption(caption), compact=True)
             button.setToolTip(caption)
             button.clicked.connect(partial(self._select_prompt, prompt["text"], button))
             prompt_row.addWidget(button)

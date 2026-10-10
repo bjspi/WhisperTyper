@@ -1,19 +1,26 @@
-"""API settings shared by the transcription and rephrasing pages: provider, key profile, model."""
+"""API settings shared by the transcription and rephrasing pages: provider, model and key.
+
+Both groups have the same controls. OpenAI and Groq use their official URL and, unless the
+user picks another one, the provider's first usable key from the API Keys tab; only a custom
+provider shows the URL field and the key selector.
+"""
 from __future__ import annotations
 
 from typing import Any, Dict, List, NamedTuple, Optional
 
-from PyQt6.QtCore import QSignalBlocker
-from PyQt6.QtWidgets import QComboBox, QLineEdit, QMessageBox
+from PyQt6.QtCore import QSignalBlocker, Qt
+from PyQt6.QtWidgets import QComboBox, QLabel, QLineEdit, QMessageBox, QPushButton
 
 from app.core.api_keys import (
     PROVIDER_NAMES,
+    TASK_CUSTOM_URL_FIELDS,
     TASK_KEY_FIELDS,
     key_format_warning,
     masked_api_key,
     provider_endpoint,
     provider_for_url,
     rephrasing_configured,
+    resolve_key_profile,
     selected_api_key,
     transcription_configured,
     usable_profile_ids,
@@ -34,28 +41,49 @@ API_TASKS = ("transcription", "rephrasing")
 class _TaskWidgets(NamedTuple):
     """Settings controls that exist once per API task."""
 
+    endpoint_label: QLabel
     endpoint: QLineEdit
     provider: QComboBox
+    key_label: QLabel
     key_profile: QComboBox
+    key_status: QLabel
+    key_choose: QPushButton
+    key_add: QPushButton
     model: QComboBox
     model_catalogs: Dict[str, List[str]]
     model_field: str
 
 
 class ApiPage(SettingsWindowBase):
-    """Endpoint/provider/key/model selection for both API tasks and their completeness state."""
+    """Provider/model/key selection for both API tasks and their completeness state."""
 
     def _init_api_settings(self) -> None:
         """Fill provider/model/key selectors and keep them consistent while the form changes."""
+        # The user's own URL per task, restored when switching back to the custom provider.
+        self._custom_urls: Dict[str, str] = {}
+        # Whether the key selector is shown for an official provider ("choose another key").
+        self._key_choice_open: Dict[str, bool] = {}
+        profiles = self._api_keys_tab.profiles()
         for task in API_TASKS:
             widgets = self._task_widgets(task)
-            for provider in PROVIDER_NAMES:
-                widgets.provider.addItem(self._provider_label(provider), provider)
-            widgets.provider.setCurrentIndex(widgets.provider.findData(provider_for_url(widgets.endpoint.text())))
-            widgets.provider.currentIndexChanged.connect(lambda _index, task=task: self._set_provider_endpoint(task))
-            widgets.endpoint.textChanged.connect(lambda _url, task=task: self._refresh_model_selectors(only_task=task))
-            widgets.endpoint.textChanged.connect(self._refresh_key_profile_selectors)
+            provider = provider_for_url(widgets.endpoint.text())
+            for provider_id in PROVIDER_NAMES:
+                widgets.provider.addItem(self._provider_label(provider_id), provider_id)
+            widgets.provider.setCurrentIndex(widgets.provider.findData(provider))
+            self._custom_urls[task] = (self.config.get(TASK_CUSTOM_URL_FIELDS[task], "")
+                                       or (widgets.endpoint.text() if provider == "custom" else ""))
+            usable = usable_profile_ids(profiles, provider)
+            saved_id = self.config[TASK_KEY_FIELDS[task][1]]
+            # A saved choice that differs from the automatic one stays visible.
+            self._key_choice_open[task] = bool(saved_id in usable and usable and saved_id != usable[0])
+            for button in (widgets.key_choose, widgets.key_add):
+                set_style_state(button, "link", True)
+                button.setCursor(Qt.CursorShape.PointingHandCursor)
+            widgets.provider.currentIndexChanged.connect(lambda _index, task=task: self._on_provider_changed(task))
+            widgets.endpoint.textChanged.connect(lambda _url, task=task: self._on_endpoint_edited(task))
             widgets.key_profile.currentIndexChanged.connect(self._refresh_api_state)
+            widgets.key_choose.clicked.connect(lambda _checked=False, task=task: self._open_key_choice(task))
+            widgets.key_add.clicked.connect(lambda _checked=False: self.tabs.setCurrentWidget(self._api_keys_tab))
         self._refresh_model_selectors(preserve_saved=True)
         self._refresh_key_profile_selectors()
         self._api_keys_tab.profiles_changed.connect(self._refresh_key_profile_selectors)
@@ -64,13 +92,17 @@ class ApiPage(SettingsWindowBase):
         self.liveprompt_enabled_checkbox.stateChanged.connect(self._refresh_api_state)
 
     def _task_widgets(self, task: str) -> _TaskWidgets:
-        """The endpoint/provider/key/model controls of one API task (transcription or rephrasing)."""
+        """The controls of one API task (transcription or rephrasing)."""
         if task == "transcription":
-            return _TaskWidgets(self.api_endpoint_input, self.transcription_provider_selector,
-                                self.transcription_key_profile_selector, self.model_dropdown,
+            return _TaskWidgets(self.api_endpoint_label, self.api_endpoint_input, self.transcription_provider_selector,
+                                self.api_key_label, self.transcription_key_profile_selector,
+                                self.transcription_key_status_label, self.transcription_key_choose_button,
+                                self.transcription_key_add_button, self.model_dropdown,
                                 TRANSCRIPTION_MODEL_OPTIONS, "model")
-        return _TaskWidgets(self.rephrasing_api_url_input, self.rephrasing_provider_selector,
-                            self.rephrasing_key_profile_selector, self.rephrasing_model_input,
+        return _TaskWidgets(self.rephrasing_api_url_label, self.rephrasing_api_url_input, self.rephrasing_provider_selector,
+                            self.rephrasing_api_key_label, self.rephrasing_key_profile_selector,
+                            self.rephrasing_key_status_label, self.rephrasing_key_choose_button,
+                            self.rephrasing_key_add_button, self.rephrasing_model_input,
                             REPHRASING_MODEL_OPTIONS, "rephrasing_model")
 
     def _provider_label(self, provider: str) -> str:
@@ -78,16 +110,35 @@ class ApiPage(SettingsWindowBase):
         return self.translator.tr("api_key_custom_provider") if provider == "custom" else PROVIDER_NAMES[provider]
 
     def _retranslate_api_settings(self) -> None:
-        """Re-label the translated provider entry and the key selectors."""
+        """Re-label the translated provider entry, the key selectors and the key status."""
         for task in API_TASKS:
             selector = self._task_widgets(task).provider
             selector.setItemText(selector.findData("custom"), self._provider_label("custom"))
         self._refresh_key_profile_selectors()
 
-    def _set_provider_endpoint(self, task: str) -> None:
-        """Apply a selected official endpoint, or clear the field for a custom URL."""
+    def _on_provider_changed(self, task: str) -> None:
+        """Apply the official URL or the user's own one; the key returns to the automatic choice."""
         widgets = self._task_widgets(task)
-        widgets.endpoint.setText(provider_endpoint(widgets.provider.currentData(), task))
+        self._key_choice_open[task] = False
+        provider = widgets.provider.currentData()
+        url = self._custom_urls[task] if provider == "custom" else provider_endpoint(provider, task)
+        if widgets.endpoint.text() == url:
+            self._on_endpoint_edited(task)  # same text emits no signal, but the controls must follow
+        else:
+            widgets.endpoint.setText(url)
+
+    def _on_endpoint_edited(self, task: str) -> None:
+        """Remember a custom URL and re-filter models and keys for the endpoint's provider."""
+        url = self._task_widgets(task).endpoint.text()
+        if provider_for_url(url) == "custom":
+            self._custom_urls[task] = url
+        self._refresh_model_selectors(only_task=task)
+        self._refresh_key_profile_selectors()
+
+    def _open_key_choice(self, task: str) -> None:
+        """Show the key selector for an official provider, too."""
+        self._key_choice_open[task] = True
+        self._refresh_api_state()
 
     def _refresh_model_selectors(self, preserve_saved: bool = False, only_task: Optional[str] = None) -> None:
         """Filter models by endpoint; keep saved/custom names and replace incompatible built-ins on a provider change."""
@@ -112,31 +163,27 @@ class ApiPage(SettingsWindowBase):
         self._refresh_api_state()
 
     def _refresh_key_profile_selectors(self) -> None:
-        """Select a valid profile on provider changes; preserve choices during profile edits."""
+        """List the provider's profiles behind "Automatic"; a provider change resets to automatic."""
         profiles = self._api_keys_tab.profiles()
         for task in API_TASKS:
             widgets = self._task_widgets(task)
             selector = widgets.key_profile
-            saved_id = self.config[TASK_KEY_FIELDS[task][1]]
             selected_id = selector.currentData()
             if selected_id is None:
-                selected_id = saved_id
+                selected_id = self.config[TASK_KEY_FIELDS[task][1]]
             provider = provider_for_url(widgets.endpoint.text())
             with QSignalBlocker(widgets.provider):
                 widgets.provider.setCurrentIndex(widgets.provider.findData(provider))
             previous_provider = selector.property("key_provider")
             selector.setProperty("key_provider", provider)
             if previous_provider is not None and previous_provider != provider:
-                # The endpoint switched provider: keep the saved key if it fits, else the first usable one.
-                valid_ids = usable_profile_ids(profiles, provider)
-                selected_id = saved_id if saved_id in valid_ids else next(iter(valid_ids), "")
+                selected_id = ""
             with QSignalBlocker(selector):
                 selector.clear()
-                selector.addItem(self.translator.tr("api_key_none"), "")
+                selector.addItem(self.translator.tr("api_key_automatic"), "")
                 for profile in profiles:
                     if profile["provider"] == provider:
-                        label = f"{profile['name']} ({self._provider_label(provider)}) — {masked_api_key(profile['key'])}"
-                        selector.addItem(label, profile["id"])
+                        selector.addItem(f"{profile['name']} — {masked_api_key(profile['key'])}", profile["id"])
                 selector.setCurrentIndex(max(0, selector.findData(selected_id)))
         self._refresh_api_state()
 
@@ -156,16 +203,40 @@ class ApiPage(SettingsWindowBase):
         return selected_api_key(self._form_api_config(), task)
 
     def _refresh_api_state(self, *_args: object) -> None:
-        """Mark incomplete API sections and enable temperature only where the model accepts it."""
+        """Show the controls each provider needs, the key in use, and mark incomplete sections."""
         temperature_supported = rephrasing_supports_temperature(self.rephrasing_model_input.currentText())
         self.rephrasing_temp_slider.setEnabled(temperature_supported)
         self.rephrasing_temp_label.setEnabled(temperature_supported)
         form = self._form_api_config()
+        for task in API_TASKS:
+            self._refresh_key_controls(task, form)
         set_style_state(self.transcription_api_group, "incomplete", not transcription_configured(form))
         rephrasing_incomplete = not rephrasing_configured(form)
         set_style_state(self.shared_api_group, "incomplete", rephrasing_incomplete)
-        # Transformations use the same fields, so their unavailable state shows on that tab live.
+        # Prompts use the same fields, so their unavailable state shows on that tab live.
         self.transformations_unavailable_label.setVisible(rephrasing_incomplete)
+
+    def _refresh_key_controls(self, task: str, form: Dict[str, Any]) -> None:
+        """URL/key visibility and the status line for one task."""
+        widgets = self._task_widgets(task)
+        provider = provider_for_url(widgets.endpoint.text())
+        custom = provider == "custom"
+        widgets.endpoint_label.setVisible(custom)
+        widgets.endpoint.setVisible(custom)
+        show_selector = custom or self._key_choice_open.get(task, False)
+        widgets.key_label.setVisible(show_selector)
+        widgets.key_profile.setVisible(show_selector)
+        profile = resolve_key_profile(form, task)
+        if profile is not None:
+            widgets.key_status.setText(self.translator.tr(
+                "api_key_status_ok", name=profile["name"], masked=masked_api_key(profile["key"])))
+        else:
+            widgets.key_status.setText(self.translator.tr(
+                "api_key_status_missing", provider=self._provider_label(provider)))
+        set_style_state(widgets.key_status, "key_status", "ok" if profile is not None else "missing")
+        usable = usable_profile_ids(form["api_key_profiles"], provider)
+        widgets.key_choose.setVisible(not show_selector and len(usable) > 1)
+        widgets.key_add.setVisible(profile is None)
 
     def _collect_validation_warnings(self, model_raw: str) -> List[str]:
         """Translated hints about the current form (saving proceeds regardless)."""
@@ -179,7 +250,7 @@ class ApiPage(SettingsWindowBase):
         return warnings
 
     def _save_api_settings(self) -> bool:
-        """Store profiles, selections and models; False (nothing stored) if a profile lacks a name."""
+        """Store profiles, key choices, custom URLs and models; False (nothing stored) if a profile lacks a name."""
         profiles = self._api_keys_tab.profiles()
         if any(not profile["name"] for profile in profiles):
             QMessageBox.warning(self, self.translator.tr("tab_api_keys"), self.translator.tr("api_key_name_required"))
@@ -190,5 +261,6 @@ class ApiPage(SettingsWindowBase):
         for task in API_TASKS:
             widgets = self._task_widgets(task)
             self.config[TASK_KEY_FIELDS[task][1]] = widgets.key_profile.currentData() or ""
+            self.config[TASK_CUSTOM_URL_FIELDS[task]] = self._custom_urls[task]
             self.config[widgets.model_field] = widgets.model.currentText().strip()
         return True

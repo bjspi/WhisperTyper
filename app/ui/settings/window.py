@@ -29,7 +29,7 @@ from app.ui.settings.recording_page import RecordingPage
 from app.ui.settings.texts import apply_texts
 from app.ui.settings.theme_page import ThemePage
 from app.ui.settings.transcription_page import TranscriptionPage
-from app.ui.settings.widgets import SliderWheelToScrollArea
+from app.ui.settings.widgets import SliderWheelToScrollArea, fit_button_to_captions
 from app.ui.transformations_tab import TransformationsEditor
 from app.ui.tray_icons import app_icon
 
@@ -281,6 +281,9 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self._replacements_tab.retranslate_ui()
         self._retranslate_api_settings()
         self._retranslate_general_page()
+        # Test buttons show "testing…" while running; a fixed width keeps the slider/proxy field still.
+        for button in (self.test_internet_button, self.test_transcription_api_button, self.test_rephrasing_api_button):
+            fit_button_to_captions(button, tr("api_test_testing_button"))
         self._update_recording_format_controls()
         self._refresh_ffmpeg_status()
         self._update_prompt_token_counter()

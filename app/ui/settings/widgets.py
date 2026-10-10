@@ -5,7 +5,7 @@ from typing import Optional
 
 from PyQt6.QtCore import QEvent, QObject
 from PyQt6.QtGui import QWheelEvent
-from PyQt6.QtWidgets import QScrollArea, QSlider
+from PyQt6.QtWidgets import QPushButton, QScrollArea, QSlider
 
 #: Pixels scrolled per wheel notch, at least; trackpads report exact pixel deltas instead.
 _MIN_WHEEL_STEP_PX = 18
@@ -39,3 +39,10 @@ class SliderWheelToScrollArea(QObject):
             return True
         scrollbar.setValue(scrollbar.value() + delta)
         return True
+
+
+def fit_button_to_captions(button: QPushButton, *captions: str) -> None:
+    """Fix ``button`` to its widest caption, so switching texts never resizes its neighbours."""
+    metrics = button.fontMetrics()
+    padding = button.sizeHint().width() - metrics.horizontalAdvance(button.text())
+    button.setFixedWidth(max(metrics.horizontalAdvance(caption) for caption in (button.text(), *captions)) + padding)

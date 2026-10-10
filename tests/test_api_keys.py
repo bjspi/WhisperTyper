@@ -5,7 +5,15 @@ from copy import deepcopy
 
 import pytest
 
-from app.core.api_keys import GroqKeyRotation, key_format_warning, masked_api_key, migrate_api_keys, provider_for_url, selected_api_key
+from app.core.api_keys import (
+    GroqKeyRotation,
+    key_format_warning,
+    masked_api_key,
+    migrate_api_keys,
+    provider_for_url,
+    resolve_key_profile,
+    selected_api_key,
+)
 from app.core.constants import DEFAULT_CONFIG
 
 
@@ -34,12 +42,13 @@ def test_legacy_keys_migrate_without_loss_or_cross_provider_sharing(same_key, sa
     assert config == snapshot
 
 
-def test_explicit_rephrase_selection_does_not_fall_back_to_transcription():
+def test_task_without_explicit_choice_uses_the_first_key_of_its_provider():
     config = deepcopy(DEFAULT_CONFIG)
     config.update(api_key="sk-test-a", rephrasing_api_key="")
     migrate_api_keys(config)
+    assert config["rephrasing_key_profile_id"] == ""
     assert selected_api_key(config, "transcription") == "sk-test-a"
-    assert selected_api_key(config, "rephrasing") == ""
+    assert selected_api_key(config, "rephrasing") == "sk-test-a"
 
 
 @pytest.mark.parametrize("endpoint", ["https://api.openai.com.evil.test/v1", "https://evil.test/api.openai.com", "https://api.groq.com/v1"])
@@ -125,9 +134,21 @@ def test_disabled_rotation_and_other_providers_use_only_the_chosen_key():
     assert [rotation.next_key(config) for _ in range(3)] == ["sk-test"] * 3
 
 
-def test_missing_or_deleted_selection_never_uses_another_key_implicitly():
+def test_stale_or_foreign_choice_falls_back_to_the_first_usable_key():
     config = rotation_config()
-    config["transcription_key_profile_id"] = "deleted"
+    config["groq_key_rotation"] = False
+    for stale in ("deleted", "other", "empty", "bad"):  # unknown, other provider, unusable keys
+        config["transcription_key_profile_id"] = stale
+        assert resolve_key_profile(config, "transcription")["id"] == "a"
+        rotation = GroqKeyRotation()
+        assert rotation.next_key(config) == "gsk-test-a" and rotation.last_profile_id == "a"
+
+
+def test_provider_without_a_usable_key_resolves_to_nothing():
+    config = rotation_config()
+    config["api_endpoint"] = "https://my-server.test/v1/audio/transcriptions"
+    assert resolve_key_profile(config, "transcription") is None
+    assert selected_api_key(config, "transcription") == ""
     assert GroqKeyRotation().next_key(config) == ""
 
 

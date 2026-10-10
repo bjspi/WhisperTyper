@@ -241,13 +241,17 @@ def main() -> int:
             "startup: transformation warning hidden with complete API settings",
             sw.transformations_unavailable_label.isHidden(),
         )
-        saved_rephrasing_id = sw.rephrasing_key_profile_selector.currentData()
-        sw.rephrasing_key_profile_selector.setCurrentIndex(0)
+        saved_rephrasing_url = sw.rephrasing_api_url_input.text()
+        sw.rephrasing_provider_selector.setCurrentIndex(sw.rephrasing_provider_selector.findData("openai"))
         check(
-            "startup: transformation warning shown without API key",
-            not sw.transformations_unavailable_label.isHidden(),
+            "startup: transformation warning and key status shown without a matching API key",
+            not sw.transformations_unavailable_label.isHidden()
+            and sw.rephrasing_key_status_label.property("key_status") == "missing"
+            and not sw.rephrasing_key_add_button.isHidden(),
         )
-        sw.rephrasing_key_profile_selector.setCurrentIndex(sw.rephrasing_key_profile_selector.findData(saved_rephrasing_id))
+        sw.rephrasing_provider_selector.setCurrentIndex(sw.rephrasing_provider_selector.findData("custom"))
+        check("providers: switching back to Custom restores the custom URL",
+              sw.rephrasing_api_url_input.text() == saved_rephrasing_url)
         probe_api_key_management()
         probe_automatic_key_selection()
         probe_provider_models()
@@ -604,9 +608,13 @@ def main() -> int:
         check("providers: Groq selection sets the chat-completions URL",
               sw.rephrasing_api_url_input.text() == "https://api.groq.com/openai/v1/chat/completions")
         check("providers: manually entered URL updates the provider dropdown", sw.transcription_provider_selector.currentData() == "groq")
-        check("providers: both panels select the first matching Groq key automatically",
-              sw.transcription_key_profile_selector.currentData() == ids[0] and sw.rephrasing_key_profile_selector.currentData() == ids[0])
-        sw.transcription_key_profile_selector.setCurrentIndex(sw.transcription_key_profile_selector.findData(ids[0]))
+        check("providers: both panels use the first matching Groq key automatically",
+              sw._ui_api_key("transcription") == "gsk-smoke-a" and sw._ui_api_key("rephrasing") == "gsk-smoke-a"
+              and sw.transcription_key_profile_selector.currentData() == "" and sw.transcription_key_profile_selector.isHidden())
+        check("providers: official providers hide URL and key selector", sw.api_endpoint_input.isHidden()
+              and sw.rephrasing_api_url_input.isHidden() and not sw.rephrasing_key_choose_button.isHidden())
+        sw.rephrasing_key_choose_button.click()
+        check("keys: 'choose another key' reveals the selector", not sw.rephrasing_key_profile_selector.isHidden())
         sw.rephrasing_key_profile_selector.setCurrentIndex(sw.rephrasing_key_profile_selector.findData(ids[1]))
         check("keys: task selections are independent", sw._ui_api_key("transcription") == "gsk-smoke-a"
               and sw._ui_api_key("rephrasing") == "gsk-smoke-b")
@@ -621,50 +629,56 @@ def main() -> int:
         sw.rephrasing_provider_selector.setCurrentIndex(sw.rephrasing_provider_selector.findData("openai"))
         check("providers: OpenAI selection sets the chat-completions URL",
               sw.rephrasing_api_url_input.text() == "https://api.openai.com/v1/chat/completions")
-        check("providers: changing provider selects the matching OpenAI profile and filters keys",
-              sw.rephrasing_key_profile_selector.currentData() == openai_id
+        check("providers: changing provider returns to the automatic OpenAI key and filters keys",
+              sw.rephrasing_key_profile_selector.currentData() == ""
+              and sw.rephrasing_key_profile_selector.isHidden()
               and sw.rephrasing_key_profile_selector.findData(ids[1]) == -1
-              and sw.rephrasing_key_profile_selector.findData(openai_id) > 0)
-        sw.rephrasing_key_profile_selector.setCurrentIndex(sw.rephrasing_key_profile_selector.findData(openai_id))
-        check("providers: OpenAI profile resolves from the current form", sw._ui_api_key("rephrasing") == "sk-smoke-openai")
+              and sw.rephrasing_key_profile_selector.findData(openai_id) > 0
+              and sw._ui_api_key("rephrasing") == "sk-smoke-openai")
         sw.rephrasing_api_url_input.setText(f"http://127.0.0.1:{port}/v1/chat/completions")
-        check("providers: custom URLs remain editable with Custom profiles", sw.rephrasing_key_profile_selector.findData(original_profiles[0]["id"]) > 0
-              and sw.rephrasing_key_profile_selector.findData(openai_id) == -1)
+        check("providers: custom URLs show URL and Custom profiles", sw.rephrasing_key_profile_selector.findData(original_profiles[0]["id"]) > 0
+              and sw.rephrasing_key_profile_selector.findData(openai_id) == -1
+              and not sw.rephrasing_api_url_input.isHidden() and not sw.rephrasing_key_profile_selector.isHidden())
         check("providers: changes await saving and preserve the model and transcription selection",
               wt.ctx.config["rephrasing_api_url"] == f"http://127.0.0.1:{port}/v1/chat/completions"
               and sw.rephrasing_model_input.currentText() == "fake-model"
-              and sw.transcription_key_profile_selector.currentData() == ids[0])
+              and sw._ui_api_key("transcription") == "gsk-smoke-a")
         table.selectRow(openai_row)
         tab.remove_button.click()
         sw.rephrasing_provider_selector.setCurrentIndex(sw.rephrasing_provider_selector.findData("groq"))
+        sw.rephrasing_key_choose_button.click()
         sw.rephrasing_key_profile_selector.setCurrentIndex(sw.rephrasing_key_profile_selector.findData(ids[1]))
         check("keys: provider filters exclude the custom profile", sw.transcription_key_profile_selector.findData(original_profiles[0]["id"]) == -1)
         table.item(1, 0).setText("Renamed Groq key")
-        check("keys: renaming retains the selected ID", sw.transcription_key_profile_selector.currentData() == ids[0])
+        check("keys: the status line follows a renamed automatic key", "Renamed Groq key" in sw.transcription_key_status_label.text())
         secret = table.cellWidget(1, 2).findChild(QLineEdit)
         secret.setText("gsk-smoke-a-edited")
+        selector = sw.transcription_key_profile_selector
         check("keys: preview shows only the first 10 and last 4 characters",
               table.cellWidget(1, 2).findChild(QLabel).text() == "gsk-smoke-••••••ited"
-              and sw.transcription_key_profile_selector.currentText().endswith("gsk-smoke-••••••ited")
+              and selector.itemText(selector.findData(ids[0])).endswith("gsk-smoke-••••••ited")
+              and "gsk-smoke-••••••ited" in sw.transcription_key_status_label.text()
               and secret.echoMode() == QLineEdit.EchoMode.Password
               and tab.profiles()[1]["key"] == "gsk-smoke-a-edited")
         check("keys: unsaved edit does not affect runtime credentials", selected_api_key(wt.ctx.config, "transcription") == "sk-test-dummy")
         with (patch("app.ui.connection_tester.net.run_transcription_connection_test", return_value=("ok", "")) as connection,
               patch("app.ui.connection_tester.QMessageBox.information")):
             sw._connection_tester.test_transcription()
-        check("keys: connection test uses the unsaved selected key", connection.call_args.args[1] == "gsk-smoke-a-edited")
+        check("keys: connection test uses the unsaved automatic key", connection.call_args.args[1] == "gsk-smoke-a-edited")
         tab.groq_rotation.setChecked(True)
         with patch.object(sw, "_collect_validation_warnings", return_value=[]):
             sw.save_settings()
         with open(os.path.join(iso_home, ".WhisperTyper", "config.json"), encoding="utf-8") as saved:
             persisted = json.load(saved)
-        check("keys: save persists profiles, independent choices and rotation", persisted["transcription_key_profile_id"] == ids[0]
+        check("keys: save persists automatic and explicit choices and rotation", persisted["transcription_key_profile_id"] == ""
               and persisted["rephrasing_key_profile_id"] == ids[1] and persisted["groq_key_rotation"]
               and "api_key" not in persisted and "rephrasing_api_key" not in persisted)
-        check("providers: save persists the provider-selected URL", persisted["rephrasing_api_url"] == "https://api.groq.com/openai/v1/chat/completions")
+        check("providers: save persists the provider-selected URL and the custom URL",
+              persisted["rephrasing_api_url"] == "https://api.groq.com/openai/v1/chat/completions"
+              and persisted["rephrasing_custom_url"] == f"http://127.0.0.1:{port}/v1/chat/completions")
         table.selectRow(1)
         tab.remove_button.click()
-        check("keys: deleting a selected key never selects its neighbour", sw.transcription_key_profile_selector.currentData() == ""
+        check("keys: deleting the automatic key moves on to the next usable one", sw._ui_api_key("transcription") == "gsk-smoke-b"
               and sw.rephrasing_key_profile_selector.currentData() == ids[1])
         table.selectRow(1)
         tab.remove_button.click()
@@ -693,24 +707,29 @@ def main() -> int:
         wt.ctx.config["transcription_key_profile_id"] = ids[-1]
         sw.transcription_provider_selector.setCurrentIndex(sw.transcription_provider_selector.findData("groq"))
         sw.rephrasing_provider_selector.setCurrentIndex(sw.rephrasing_provider_selector.findData("groq"))
-        check("keys: provider switch prefers the saved valid profile", sw.transcription_key_profile_selector.currentData() == ids[-1])
+        check("keys: provider switch uses the first valid key, skipping empty and invalid ones",
+              sw._ui_api_key("transcription") == "gsk-first-valid" and sw._ui_api_key("rephrasing") == "gsk-first-valid"
+              and sw.transcription_key_profile_selector.currentData() == "")
         check("models: plain Groq model names do not trigger provider-label warnings",
               not any("selected model" in warning for warning in sw._collect_validation_warnings(sw.model_dropdown.currentText())))
-        check("keys: provider switch skips empty and invalid keys", sw.rephrasing_key_profile_selector.currentData() == ids[2])
+        sw.rephrasing_key_choose_button.click()
         sw.rephrasing_key_profile_selector.setCurrentIndex(sw.rephrasing_key_profile_selector.findData(ids[-1]))
         sw.rephrasing_api_url_input.setText("https://api.groq.com/openai/v1/chat/completions?test=1")
         check("keys: same-provider URL edits preserve manual selection", sw.rephrasing_key_profile_selector.currentData() == ids[-1])
         sw.transcription_provider_selector.setCurrentIndex(sw.transcription_provider_selector.findData("openai"))
         sw.rephrasing_provider_selector.setCurrentIndex(sw.rephrasing_provider_selector.findData("openai"))
-        check("keys: provider without a key leaves both selectors empty", sw.transcription_key_profile_selector.currentData() == ""
-              and sw.rephrasing_key_profile_selector.currentData() == "")
-        sw.transcription_provider_selector.setCurrentIndex(sw.transcription_provider_selector.findData("groq"))
-        check("keys: switching back displays the saved Groq profile", sw.transcription_key_profile_selector.currentData() == ids[-1])
-        check("keys: transcription provider change does not alter rephrasing selection", sw.rephrasing_key_profile_selector.currentData() == "")
+        check("keys: provider without a key warns in both sections", sw._ui_api_key("transcription") == ""
+              and sw.transcription_key_status_label.property("key_status") == "missing"
+              and sw.rephrasing_key_status_label.property("key_status") == "missing"
+              and sw.transcription_api_group.property("incomplete") is True)
+        sw.rephrasing_provider_selector.setCurrentIndex(sw.rephrasing_provider_selector.findData("groq"))
+        check("keys: switching back returns to the automatic Groq key", sw.rephrasing_key_profile_selector.currentData() == ""
+              and sw._ui_api_key("rephrasing") == "gsk-first-valid")
+        check("keys: rephrasing provider change does not alter transcription", sw._ui_api_key("transcription") == "")
         for row in range(table.rowCount() - 1, original_count - 1, -1):
             table.selectRow(row)
             tab.remove_button.click()
-        check("keys: removing selected profiles still leaves the selection empty", sw.transcription_key_profile_selector.currentData() == "")
+        check("keys: removing all Groq profiles leaves no key", sw._ui_api_key("rephrasing") == "")
         wt.ctx.config["transcription_key_profile_id"] = saved_transcription
         sw.api_endpoint_input.setText(wt.ctx.config["api_endpoint"])
         sw.rephrasing_api_url_input.setText(wt.ctx.config["rephrasing_api_url"])
@@ -720,7 +739,8 @@ def main() -> int:
               and sw.rephrasing_provider_selector.currentData() == "custom")
         sw.rephrasing_provider_selector.setCurrentIndex(sw.rephrasing_provider_selector.findData("openai"))
         sw.rephrasing_provider_selector.setCurrentIndex(sw.rephrasing_provider_selector.findData("custom"))
-        check("providers: choosing Custom prepares an editable empty URL", sw.rephrasing_api_url_input.text() == "")
+        check("providers: choosing Custom restores the user's custom URL",
+              sw.rephrasing_api_url_input.text() == wt.ctx.config["rephrasing_api_url"])
         sw.rephrasing_api_url_input.setText(wt.ctx.config["rephrasing_api_url"])
 
     def probe_provider_models() -> None:

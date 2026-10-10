@@ -130,6 +130,12 @@ QPushButton#save_button {
 QPushButton#save_button:hover { background: %(accent_hover)s; border-color: %(accent_hover)s; color: %(on_accent)s; }
 QPushButton#save_button:pressed { background: %(accent_press)s; }
 /* Small round "?" help badge next to the LivePrompting toggle (fixed 22px in code). */
+QPushButton[link="true"] {
+    background: transparent; border: none; padding: 0 4px; color: %(accent)s; text-decoration: underline;
+}
+QPushButton[link="true"]:hover { color: %(accent_hover)s; background: transparent; }
+QLabel[key_status="ok"] { color: %(muted)s; }
+QLabel[key_status="missing"] { color: %(warn)s; font-weight: 600; }
 QPushButton#liveprompt_help_button {
     padding: 0; border-radius: 11px; font-weight: 700;
     background: %(panel2)s; color: %(muted)s; border: 1px solid %(border)s;
@@ -148,8 +154,10 @@ QCheckBox::indicator:checked { background: %(accent)s; border-color: %(accent)s;
 QSlider::groove:horizontal { height: 4px; background: %(border)s; border-radius: 2px; }
 QSlider::sub-page:horizontal { background: %(accent)s; border-radius: 2px; }
 QSlider::handle:horizontal {
+    /* 12px + 2px border on each side = 16px wide; the 4px groove + 6px margins = 16px high:
+       equal sides and a radius of half that make the handle a circle. */
     background: %(panel)s; border: 2px solid %(accent)s;
-    width: 14px; height: 14px; margin: -6px 0; border-radius: 9px;
+    width: 12px; margin: -6px 0; border-radius: 8px;
 }
 QSlider::handle:horizontal:hover { background: %(accent)s; }
 

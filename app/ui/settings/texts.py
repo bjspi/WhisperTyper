@@ -27,6 +27,22 @@ def _field(key: str, tooltip_key: Optional[str], label: str, *widgets: str) -> T
     return Text(key, label, tooltip_key, (label, *widgets) if tooltip_key else ())
 
 
+def _api_group_texts(provider_label: str, provider: str, model_label: str, model: str, url_label: str, url: str,
+                     key_label: str, key: str, choose: str, add: str, temp_label: str, temp: str,
+                     test: str, test_tooltip_key: str) -> Tuple[Text, ...]:
+    """The same captions for both API groups; only the test button explains its own request."""
+    return (
+        Text("api_key_provider", provider_label, "api_provider_tooltip", (provider_label, provider), template="{}:"),
+        _field("model_label", "model_tooltip", model_label, model),
+        _field("api_url_label", "api_url_tooltip", url_label, url),
+        _field("api_key_profile_label", "api_key_profile_tooltip", key_label, key),
+        Text("api_key_choose_other", choose),
+        Text("api_key_open_tab", add),
+        _field("temperature_label", "temperature_tooltip", temp_label, temp),
+        Text("test_connection_button", test, test_tooltip_key, (test,), template="🔌  {}"),
+    )
+
+
 TEXTS: Tuple[Text, ...] = (
     # Menus
     Text("menu_file", "file_menu"),
@@ -39,14 +55,11 @@ TEXTS: Tuple[Text, ...] = (
     Text("menu_help_github", "github_action"),
     # Transcription
     Text("transcription_api_group_title", "transcription_api_group"),
-    _field("api_key_profile_label", "api_key_profile_tooltip", "api_key_label", "transcription_key_profile_selector"),
-    _field("api_endpoint_label", "api_endpoint_tooltip", "api_endpoint_label",
-           "api_endpoint_input", "transcription_provider_selector"),
-    Text("api_key_provider", "transcription_provider_label", template="{}:"),
-    Text("test_connection_button", "test_transcription_api_button", "test_connection_tooltip",
-         ("test_transcription_api_button",), template="🔌  {}"),
-    _field("model_label", "model_tooltip", "model_label", "model_dropdown"),
-    _field("temperature_label", "temperature_tooltip", "transcription_temp_label_title", "transcription_temp_slider"),
+    *_api_group_texts("transcription_provider_label", "transcription_provider_selector", "model_label", "model_dropdown",
+                      "api_endpoint_label", "api_endpoint_input", "api_key_label", "transcription_key_profile_selector",
+                      "transcription_key_choose_button", "transcription_key_add_button",
+                      "transcription_temp_label_title", "transcription_temp_slider",
+                      "test_transcription_api_button", "test_connection_tooltip"),
     _field("ffmpeg_label", "ffmpeg_tooltip", "ffmpeg_label", "ffmpeg_path_input"),
     Text("ffmpeg_browse_button", "ffmpeg_browse_button"),
     _field("transcription_prompt_label", "transcription_prompt_tooltip", "transcription_prompt_label", "prompt_input"),
@@ -77,14 +90,12 @@ TEXTS: Tuple[Text, ...] = (
            "liveprompt_system_prompt_input"),
     _check("rephrase_context_checkbox", "rephrase_context_checkbox", "rephrase_context_tooltip"),
     Text("shared_api_group_title", "shared_api_group", "shared_api_group_tooltip", ("shared_api_group",)),
-    _field("rephrase_api_url_label", "rephrase_api_url_tooltip", "rephrasing_api_url_label",
-           "rephrasing_api_url_input", "rephrasing_provider_selector"),
-    Text("api_key_provider", "rephrasing_provider_label", template="{}:"),
-    _field("api_key_profile_label", "api_key_profile_tooltip", "rephrasing_api_key_label", "rephrasing_key_profile_selector"),
-    _field("rephrase_model_label", "model_tooltip", "rephrasing_model_label", "rephrasing_model_input"),
-    _field("temperature_label", "temperature_tooltip", "rephrasing_temp_label_title", "rephrasing_temp_slider"),
-    Text("test_api_button", "test_rephrasing_api_button", "test_api_button_tooltip",
-         ("test_rephrasing_api_button",), template="🔌  {}"),
+    *_api_group_texts("rephrasing_provider_label", "rephrasing_provider_selector", "rephrasing_model_label",
+                      "rephrasing_model_input", "rephrasing_api_url_label", "rephrasing_api_url_input",
+                      "rephrasing_api_key_label", "rephrasing_key_profile_selector",
+                      "rephrasing_key_choose_button", "rephrasing_key_add_button",
+                      "rephrasing_temp_label_title", "rephrasing_temp_slider",
+                      "test_rephrasing_api_button", "test_api_button_tooltip"),
     # Prompts
     Text("transformations_tab_description", "transformations_tab_description_label"),
     Text("transformations_unavailable_message", "transformations_unavailable_label"),
@@ -118,6 +129,7 @@ TEXTS: Tuple[Text, ...] = (
     _check("play_g_button", "play_last_recording_button", "play_last_recording_tooltip"),
     _check("post_rephrase_auto_select_all_checkbox", "post_rephrase_auto_select_all_checkbox",
            "post_rephrase_auto_select_all_tooltip"),
+    Text("misc_group_title", "misc_group"),
     Text("text_insertion_group_title", "text_insertion_group"),
     Text("logging_group_title", "logging_group"),
     _check("alt_clipboard_lib_checkbox", "alt_clipboard_lib_checkbox", "alt_clipboard_lib_tooltip", rich=True),

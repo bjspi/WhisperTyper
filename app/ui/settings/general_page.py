@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 
 from PyQt6.QtCore import QSignalBlocker
-from PyQt6.QtWidgets import QCheckBox, QMessageBox
+from PyQt6.QtWidgets import QCheckBox, QMessageBox, QStyle
 
 from app.core.env import is_WINDOWS
 from app.core.i18n import UI_LANGUAGES
@@ -37,9 +37,11 @@ class GeneralPage(SettingsWindowBase):
         self.proxy_row_layout.setStretch(0, 1)
 
         self.post_rephrase_auto_select_all_checkbox = QCheckBox(self)
-        play_button_index = self.general_layout.indexOf(self.play_g_button)
-        self.general_layout.insertWidget(play_button_index if play_button_index >= 0 else self.general_layout.count(),
-                                         self.post_rephrase_auto_select_all_checkbox)
+        self.misc_layout.insertWidget(self.misc_layout.indexOf(self.play_g_button),
+                                      self.post_rephrase_auto_select_all_checkbox)
+        style = self.style()
+        if style is not None:
+            self.play_g_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
 
     def _connect_general_page(self) -> None:
         """React to immediate-apply selectors and dependent checkboxes."""
@@ -58,15 +60,6 @@ class GeneralPage(SettingsWindowBase):
             self.color_theme_selector.setItemText(index, self.translator.tr(key))
         if self.input_device_selector.count() > 0:
             self.input_device_selector.setItemText(0, self.translator.tr("input_device_default"))
-        self._fix_test_internet_button_width()
-
-    def _fix_test_internet_button_width(self) -> None:
-        """Size the button for its widest caption, so "testing…" never resizes the proxy field."""
-        button = self.test_internet_button
-        metrics = button.fontMetrics()
-        padding = button.sizeHint().width() - metrics.horizontalAdvance(button.text())
-        captions = (button.text(), self.translator.tr("api_test_testing_button"))
-        button.setFixedWidth(max(metrics.horizontalAdvance(caption) for caption in captions) + padding)
 
     def _on_color_theme_changed(self, *_args: object) -> None:
         """Persist the chosen colour theme and re-apply it immediately."""

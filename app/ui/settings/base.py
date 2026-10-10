@@ -86,9 +86,9 @@ class SettingsWindowBase(QWidget):
     transcription_provider_label: QLabel
     transcription_provider_selector: QComboBox
     test_transcription_api_button: QPushButton
-    model_temp_row: QHBoxLayout
-    model_col: QVBoxLayout
-    temp_col: QVBoxLayout
+    transcription_key_status_label: QLabel
+    transcription_key_choose_button: QPushButton
+    transcription_key_add_button: QPushButton
     model_label: QLabel
     model_dropdown: QComboBox
     transcription_temp_label_title: QLabel
@@ -150,6 +150,9 @@ class SettingsWindowBase(QWidget):
     rephrasing_temp_slider: QSlider
     rephrasing_temp_label: QLabel
     test_rephrasing_api_button: QPushButton
+    rephrasing_key_status_label: QLabel
+    rephrasing_key_choose_button: QPushButton
+    rephrasing_key_add_button: QPushButton
 
     # Transformations page
     transformations_tab_description_label: QLabel
@@ -192,6 +195,8 @@ class SettingsWindowBase(QWidget):
     systray_double_click_copy_checkbox: QCheckBox
     recording_prompt_overlay_system_position_checkbox: QCheckBox
     quit_without_confirmation_checkbox: QCheckBox
+    misc_group: QGroupBox
+    misc_layout: QVBoxLayout
     text_insertion_group: QGroupBox
     logging_group: QGroupBox
     proxy_row_layout: QHBoxLayout
