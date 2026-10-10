@@ -70,8 +70,6 @@ BINDINGS: Tuple[Binding, ...] = (
     # Selected-text context needs permissions macOS does not grant reliably.
     Binding("rephrase_context_checkbox", "rephrase_use_selection_context", "check", "not_macos",
             unsupported_value=False),
-    Binding("generic_rephrase_enabled_checkbox", "generic_rephrase_enabled", "check"),
-    Binding("generic_rephrase_prompt_input", "generic_rephrase_prompt", "plain"),
     Binding("rephrasing_api_url_input", "rephrasing_api_url", "text"),
     Binding("rephrasing_temp_slider", "rephrasing_temperature", "temperature",
             companions=("rephrasing_temp_label",)),

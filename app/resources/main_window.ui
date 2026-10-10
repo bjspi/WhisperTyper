@@ -555,27 +555,35 @@
         </widget>
        </item>
        <item>
-        <widget class="QGroupBox" name="generic_rephrase_group">
+        <widget class="QGroupBox" name="pr_hotkey_group">
          <property name="title">
-          <string>Generic Rephrasing</string>
+          <string>Post-Rephrase Hotkey</string>
          </property>
-         <layout class="QVBoxLayout" name="generic_rephrase_layout">
+         <layout class="QVBoxLayout" name="pr_hotkey_layout">
           <item>
-           <widget class="QCheckBox" name="generic_rephrase_enabled_checkbox">
+           <widget class="QLabel" name="pr_hotkey_label">
             <property name="text">
-             <string>Enable Generic Rephrasing</string>
+             <string>Hotkey:</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QLabel" name="generic_rephrase_prompt_label">
-            <property name="text">
-             <string>Rephrasing Prompt:</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QTextEdit" name="generic_rephrase_prompt_input"/>
+           <layout class="QHBoxLayout" name="pr_hotkey_h_layout">
+            <item>
+             <widget class="QLineEdit" name="pr_hotkey_display">
+              <property name="readOnly">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="set_pr_hotkey_button">
+              <property name="text">
+               <string>Set</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
           </item>
          </layout>
         </widget>
@@ -636,6 +644,13 @@
          </property>
          <property name="wordWrap">
           <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="recording_prompt_overlay_system_position_checkbox">
+         <property name="text">
+          <string>Show recording prompt palette near the system status area</string>
          </property>
         </widget>
        </item>
@@ -702,6 +717,13 @@
              </widget>
             </item>
             <item>
+             <widget class="QCheckBox" name="post_rp_auto_apply_checkbox">
+              <property name="text">
+               <string>Apply automatically</string>
+              </property>
+             </widget>
+            </item>
+            <item>
              <widget class="QLabel" name="text_label">
              <property name="text">
               <string>System Prompt:</string>
@@ -746,40 +768,6 @@
          </item>
         </layout>
        </item>
-       <item>
-        <widget class="QGroupBox" name="pr_hotkey_group">
-         <property name="title">
-          <string>Post-Rephrase Hotkey</string>
-         </property>
-         <layout class="QVBoxLayout" name="pr_hotkey_layout">
-          <item>
-           <widget class="QLabel" name="pr_hotkey_label">
-            <property name="text">
-             <string>Hotkey:</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <layout class="QHBoxLayout" name="pr_hotkey_h_layout">
-            <item>
-             <widget class="QLineEdit" name="pr_hotkey_display">
-              <property name="readOnly">
-               <bool>false</bool>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="set_pr_hotkey_button">
-              <property name="text">
-               <string>Set</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </item>
-         </layout>
-        </widget>
-       </item>
       </layout>
      </widget>
      <widget class="QWidget" name="general_tab">
@@ -813,34 +801,50 @@
          <widget class="QWidget" name="general_scroll_widget">
       <layout class="QVBoxLayout" name="general_layout">
        <item>
-        <widget class="QLabel" name="ui_language_label">
-         <property name="text">
-          <string>UI Language:</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QComboBox" name="ui_language_selector"/>
-       </item>
-       <item>
-        <widget class="QLabel" name="color_theme_label">
-         <property name="text">
-          <string>Color theme:</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QComboBox" name="color_theme_selector"/>
-       </item>
-       <item>
-        <widget class="QLabel" name="input_device_label">
-         <property name="text">
-          <string>Input device (microphone):</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QComboBox" name="input_device_selector"/>
+        <layout class="QHBoxLayout" name="general_selectors_layout">
+         <item>
+          <layout class="QVBoxLayout" name="ui_language_v_layout">
+           <item>
+            <widget class="QLabel" name="ui_language_label">
+             <property name="text">
+              <string>UI Language:</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QComboBox" name="ui_language_selector"/>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <layout class="QVBoxLayout" name="color_theme_v_layout">
+           <item>
+            <widget class="QLabel" name="color_theme_label">
+             <property name="text">
+              <string>Color theme:</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QComboBox" name="color_theme_selector"/>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <layout class="QVBoxLayout" name="input_device_v_layout">
+           <item>
+            <widget class="QLabel" name="input_device_label">
+             <property name="text">
+              <string>Input device (microphone):</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QComboBox" name="input_device_selector"/>
+           </item>
+          </layout>
+         </item>
+        </layout>
        </item>
        <item>
         <widget class="QLabel" name="proxy_url_label">
@@ -850,11 +854,22 @@
         </widget>
        </item>
        <item>
-        <widget class="QLineEdit" name="proxy_url_input">
-         <property name="placeholderText">
-          <string>http://user:pass@proxy:8080</string>
-         </property>
-        </widget>
+        <layout class="QHBoxLayout" name="proxy_row_layout">
+         <item>
+          <widget class="QLineEdit" name="proxy_url_input">
+           <property name="placeholderText">
+            <string>http://user:pass@proxy:8080</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="test_internet_button">
+           <property name="text">
+            <string>Test Internet (google.com)</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
        <item>
         <widget class="QCheckBox" name="use_px_proxy_checkbox">
@@ -864,67 +879,6 @@
         </widget>
        </item>
        <item>
-        <layout class="QHBoxLayout" name="internet_test_layout">
-         <item>
-          <widget class="QPushButton" name="test_internet_button">
-           <property name="text">
-            <string>Test Internet (google.com)</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <spacer name="internet_test_spacer">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="log_retention_layout">
-         <item>
-          <widget class="QLabel" name="log_retention_label">
-           <property name="text">
-            <string>Keep log files for (days):</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QSpinBox" name="log_retention_input">
-           <property name="minimum">
-            <number>0</number>
-           </property>
-           <property name="maximum">
-            <number>365</number>
-           </property>
-           <property name="value">
-            <number>3</number>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <spacer name="log_retention_spacer">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
-        </layout>
-       </item>
-       <item>
         <widget class="QCheckBox" name="restore_clipboard_checkbox">
          <property name="text">
           <string>Restore clipboard content after pasting</string>
@@ -932,44 +886,9 @@
         </widget>
        </item>
        <item>
-        <widget class="QCheckBox" name="debug_logging_checkbox">
-         <property name="text">
-          <string>Enable debug logging to console</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QCheckBox" name="file_logging_checkbox">
-         <property name="text">
-          <string>Enable logging to file (WhisperTyper.log)</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QCheckBox" name="redact_log_checkbox">
-         <property name="text">
-          <string>Redact transcript/prompt text in the log file</string>
-         </property>
-        </widget>
-       </item>
-       <item>
         <widget class="QCheckBox" name="systray_double_click_copy_checkbox">
          <property name="text">
           <string>Enable double click on SysTray to copy transcript</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QCheckBox" name="recording_prompt_overlay_system_position_checkbox">
-         <property name="text">
-          <string>Show recording prompt palette near the system status area</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QCheckBox" name="quit_without_confirmation_checkbox">
-         <property name="text">
-          <string>Quit without confirmation</string>
          </property>
         </widget>
        </item>
@@ -1004,6 +923,78 @@
         <widget class="QPushButton" name="play_g_button">
          <property name="text">
           <string>Play Last Recording</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="logging_group">
+         <property name="title"><string>Logging</string></property>
+         <layout class="QVBoxLayout" name="logging_layout">
+           <item>
+            <layout class="QHBoxLayout" name="log_retention_layout">
+             <item>
+              <widget class="QLabel" name="log_retention_label">
+               <property name="text">
+                <string>Keep log files for (days):</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QSpinBox" name="log_retention_input">
+               <property name="minimum">
+                <number>0</number>
+               </property>
+               <property name="maximum">
+                <number>365</number>
+               </property>
+               <property name="value">
+                <number>3</number>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <spacer name="log_retention_spacer">
+               <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>40</width>
+                 <height>20</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <widget class="QCheckBox" name="debug_logging_checkbox">
+             <property name="text">
+              <string>Enable debug logging to console</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QCheckBox" name="file_logging_checkbox">
+             <property name="text">
+              <string>Enable logging to file (WhisperTyper.log)</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QCheckBox" name="redact_log_checkbox">
+             <property name="text">
+              <string>Redact transcript/prompt text in the log file</string>
+             </property>
+            </widget>
+           </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="quit_without_confirmation_checkbox">
+         <property name="text">
+          <string>Quit without confirmation</string>
          </property>
         </widget>
        </item>

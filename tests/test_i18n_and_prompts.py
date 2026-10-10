@@ -11,6 +11,8 @@ from app.core.prompts import (
     DEFAULT_TRANSCRIPTION_PROMPTS,
     _default_prompt_for,
     _is_known_default_prompt,
+    auto_apply_prompt,
+    load_transformations,
     recording_prompt_entries,
 )
 
@@ -74,8 +76,8 @@ class TestRecordingPromptEntries:
             {"caption": "Second", "text": "Do second", "show_during_recording": True},
         ]
         assert recording_prompt_entries(entries) == [
-            {"caption": "First", "text": "Do first"},
-            {"caption": "Second", "text": "Do second"},
+            {"caption": "First", "text": "Do first", "auto_apply": False},
+            {"caption": "Second", "text": "Do second", "auto_apply": False},
         ]
 
     def test_rejects_non_lists_and_non_boolean_opt_in(self):
@@ -83,3 +85,21 @@ class TestRecordingPromptEntries:
         assert recording_prompt_entries([
             {"caption": "Wrong type", "text": "No", "show_during_recording": 1},
         ]) == []
+
+
+class TestAutoApplyPrompt:
+    def test_only_the_first_marked_prompt_applies_and_is_always_shown(self):
+        entries = load_transformations([
+            {"caption": "Fix", "text": "Fix it", "auto_apply": True, "show_during_recording": False},
+            {"caption": "Mail", "text": "Write a mail", "auto_apply": True, "show_during_recording": True},
+        ])
+        assert [(entry["auto_apply"], entry["show_during_recording"]) for entry in entries] == [
+            (True, True), (False, True)]
+        assert auto_apply_prompt(entries) == "Fix it"
+        assert [prompt["auto_apply"] for prompt in recording_prompt_entries(entries)] == [True, False]
+
+    def test_no_marked_prompt_means_no_automatic_rephrasing(self):
+        assert auto_apply_prompt([{"caption": "Fix", "text": "Fix it", "show_during_recording": True}]) is None
+        assert auto_apply_prompt([{"caption": "", "text": "No caption", "auto_apply": True}]) is None
+        assert auto_apply_prompt(None) is None
+

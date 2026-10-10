@@ -1,6 +1,6 @@
 # API key profiles
 
-The **API Keys** settings tab sits between Transformations and General. Add a row
+The **API Keys** settings tab sits between Prompts and General. Add a row
 for each key, give it a name, choose OpenAI, Groq or Custom, and paste its key.
 Key cells and profile dropdowns show the first 10 and last 4 characters, with the
 middle masked. Keys of 14 characters or fewer stay fully masked. The password
@@ -20,7 +20,7 @@ On a provider change, the matching saved valid key profile is selected, otherwis
 the first valid matching key in table order. Empty and invalid keys are skipped.
 Without a valid matching key the selection stays empty. Same-provider edits keep
 your current selection. Review the chosen profile/model and save. Rephrasing
-settings apply to LivePrompt, general rephrasing and transformation presets.
+settings apply to LivePrompt and the prompts from the Prompts tab.
 
 Both model dropdowns show suggestions only for the endpoint's provider and are
 directly editable: select a suggestion using the arrow or type your own model
@@ -81,7 +81,7 @@ OpenAI and Custom endpoints use their selected key.
 Microphone/file transcription and manual retries take the next key when their
 worker is constructed. In-flight workers keep their own credential snapshots.
 Changing the selected key or key pool restarts the cycle at the chosen key.
-Rephrasing/transformations and connection tests always use their explicitly
+Rephrasing prompts and connection tests always use their explicitly
 selected profile. Rotation does not add automatic retries or failure-based key
 switching. All configured Groq keys participate when rotation is enabled.
 

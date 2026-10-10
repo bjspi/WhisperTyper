@@ -61,8 +61,7 @@ class ApiPage(SettingsWindowBase):
         self._api_keys_tab.profiles_changed.connect(self._refresh_key_profile_selectors)
         self.model_dropdown.currentTextChanged.connect(lambda _text: self._update_prompt_token_counter())
         self.rephrasing_model_input.currentTextChanged.connect(self._refresh_api_state)
-        for checkbox in (self.liveprompt_enabled_checkbox, self.generic_rephrase_enabled_checkbox):
-            checkbox.stateChanged.connect(self._refresh_api_state)
+        self.liveprompt_enabled_checkbox.stateChanged.connect(self._refresh_api_state)
 
     def _task_widgets(self, task: str) -> _TaskWidgets:
         """The endpoint/provider/key/model controls of one API task (transcription or rephrasing)."""

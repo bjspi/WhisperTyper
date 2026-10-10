@@ -1,7 +1,7 @@
 """Default prompts per UI language + swap helpers. Pure data/logic."""
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 # --- Default Prompts ---
 # Each default prompt is provided per UI language. When the user switches the UI language
@@ -21,17 +21,9 @@ DEFAULT_LIVEPROMPT_SYSTEM_PROMPTS = {
     "fr": """Tu es un assistant utile. L'utilisateur fournira une instruction directe comme prompt et l'exécutera. Génère uniquement la réponse à l'instruction.""",
 }
 
-DEFAULT_GENERIC_REPHRASE_PROMPTS = {
-    "en": """Rephrase the following text to be more polite, professional, and clear. Correct any spelling or grammar mistakes. Return only the rephrased text.""",
-    "de": """Formuliere den folgenden Text höflicher, professioneller und klarer. Korrigiere alle Rechtschreib- und Grammatikfehler. Gib nur den umformulierten Text zurück.""",
-    "es": """Reformula el siguiente texto para que sea más educado, profesional y claro. Corrige cualquier error ortográfico o gramatical. Devuelve solo el texto reformulado.""",
-    "fr": """Reformule le texte suivant pour qu'il soit plus poli, professionnel et clair. Corrige toutes les fautes d'orthographe ou de grammaire. Renvoie uniquement le texte reformulé.""",
-}
-
 # English defaults remain available under the original names for backwards compatibility.
 DEFAULT_TRANSCRIPTION_PROMPT = DEFAULT_TRANSCRIPTION_PROMPTS["en"]
 DEFAULT_LIVEPROMPT_SYSTEM_PROMPT = DEFAULT_LIVEPROMPT_SYSTEM_PROMPTS["en"]
-DEFAULT_GENERIC_REPHRASE_PROMPT = DEFAULT_GENERIC_REPHRASE_PROMPTS["en"]
 
 
 def _default_prompt_for(prompt_map: Dict[str, str], lang_code: str) -> str:
@@ -45,20 +37,22 @@ def _is_known_default_prompt(prompt_map: Dict[str, str], text: str) -> bool:
     return any(normalized == value.strip() for value in prompt_map.values())
 
 
-def recording_prompt_entries(entries: Any) -> List[Dict[str, str]]:
-    """Return valid, explicitly enabled transformation templates in display order."""
-    if not isinstance(entries, list):
-        return []
+def recording_prompt_entries(entries: Any) -> List[Dict[str, Any]]:
+    """Return valid prompts enabled for the recording palette, in display order.
 
-    result: List[Dict[str, str]] = []
-    for entry in entries:
-        if not isinstance(entry, dict) or entry.get("show_during_recording") is not True:
-            continue
-        caption = str(entry.get("caption", "")).strip()
-        prompt_text = str(entry.get("text", "")).strip()
-        if caption and prompt_text:
-            result.append({"caption": caption, "text": prompt_text})
+    Each item carries ``auto_apply`` so the palette can preselect the automatic prompt.
+    """
+    result: List[Dict[str, Any]] = []
+    for entry in load_transformations(entries):
+        caption, prompt_text = entry["caption"].strip(), entry["text"].strip()
+        if entry["show_during_recording"] and caption and prompt_text:
+            result.append({"caption": caption, "text": prompt_text, "auto_apply": entry["auto_apply"]})
     return result
+
+
+def auto_apply_prompt(entries: Any) -> Optional[str]:
+    """Text of the prompt applied automatically to every transcription, if one is set."""
+    return next((entry["text"] for entry in recording_prompt_entries(entries) if entry["auto_apply"]), None)
 
 
 #: Maximum number of transformation templates (hotkey palette / recording palette).
@@ -72,14 +66,26 @@ def transformation_entry(entry: Any) -> Dict[str, Any]:
         "caption": str(source.get("caption", "")),
         "text": str(source.get("text", "")),
         "show_during_recording": source.get("show_during_recording") is True,
+        "auto_apply": source.get("auto_apply") is True,
     }
 
 
 def load_transformations(entries: Any) -> List[Dict[str, Any]]:
-    """Return the stored templates in canonical form, capped to ``MAX_TRANSFORMATIONS``."""
+    """Return the stored templates in canonical form, capped to ``MAX_TRANSFORMATIONS``.
+
+    At most one template applies automatically (the first one marked); it is always
+    shown during recording, so it can be deselected there.
+    """
     if not isinstance(entries, list):
         return []
-    return [transformation_entry(entry) for entry in entries if isinstance(entry, dict)][:MAX_TRANSFORMATIONS]
+    result = [transformation_entry(entry) for entry in entries if isinstance(entry, dict)][:MAX_TRANSFORMATIONS]
+    auto_seen = False
+    for entry in result:
+        if entry["auto_apply"]:
+            entry["auto_apply"] = not auto_seen
+            entry["show_during_recording"] = entry["show_during_recording"] or not auto_seen
+            auto_seen = True
+    return result
 
 
 def captioned_transformations(entries: Any) -> List[Dict[str, Any]]:

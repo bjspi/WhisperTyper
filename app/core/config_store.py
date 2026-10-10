@@ -83,6 +83,12 @@ class ConfigStore:
             del cfg["windows_fast_paste"]
             changed = True
 
+        # Automatic rephrasing is a per-prompt "apply automatically" flag; drop the global switch.
+        for removed_key in ("generic_rephrase_enabled", "generic_rephrase_prompt"):
+            if removed_key in cfg:
+                del cfg[removed_key]
+                changed = True
+
         # Check if input_language is a display name and convert to code
         if "input_language" in cfg:
             lang_value = cfg["input_language"]
