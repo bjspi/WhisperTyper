@@ -315,8 +315,16 @@ def _send_hedged(req: TranscriptionRequest, upload: _Upload, timing: OperationTi
         try:
             _index, text, error = results.get(timeout=remaining)
         except queue.Empty:
-            if not answered.is_set():
-                trigger = "response" if uploaded.is_set() else "upload"
+            # Hedge only once the deadline of the current phase has passed; an upload that finished
+            # while waiting starts the response deadline instead.
+            now = time.monotonic()
+            if answered.is_set():
+                continue
+            if uploaded.is_set():
+                if now >= uploaded_at[0] + response_wait:
+                    trigger = "response"
+            elif now >= started + upload_budget:
+                trigger = "upload"
             continue
         return _finish(timing, text, error, winner=1, trigger="")
 
