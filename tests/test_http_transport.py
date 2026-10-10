@@ -388,3 +388,18 @@ def test_dns_failure_logs_the_connect_phase_without_fake_completion(server, trac
     # DNS runs inside httpcore's connect_tcp, so a resolution failure ends at tcp_start.
     assert metadata["last_phase"] == "tcp_start" and metadata["error"] == "ConnectError"
     assert "tcp_end" not in events and "headers_sent" not in events
+
+
+def test_warmup_replaces_a_connection_that_died_while_idle(monkeypatch):
+    from app.services import http_warmup
+
+    calls = []
+
+    def flaky(method, url, **kwargs):
+        calls.append(url)
+        if len(calls) == 1:
+            raise httpx.ReadTimeout("dead pooled connection")
+
+    monkeypatch.setattr(http_warmup, "request", flaky)
+    http_warmup._probe("https://api.groq.com/openai/v1/models", None)
+    assert calls == ["https://api.groq.com/openai/v1/models"] * 2
