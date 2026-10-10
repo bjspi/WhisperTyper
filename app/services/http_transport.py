@@ -15,7 +15,7 @@ import threading
 import time
 import urllib.request
 import weakref
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 from urllib.parse import urlsplit
 
 import httpx
@@ -38,6 +38,8 @@ _CONNECTION_IDS = itertools.count(1)
 _STREAM_IDS: "weakref.WeakKeyDictionary[Any, int]" = weakref.WeakKeyDictionary()
 
 TimeoutValue = Union[None, float, tuple[float, float], httpx.Timeout]
+#: Receives transport phase names ("request_sent", "first_byte", ...) as they happen.
+PhaseCallback = Callable[[str], None]
 
 
 def is_tls_failure(error: BaseException) -> bool:
@@ -80,6 +82,8 @@ class _Exchange:
         self.events[phase] = now
         suffix = "" if self.number == 1 else f"_{self.number}"
         self.call.timing.mark(f"{self.call.stage}_http_{phase}{suffix}", now)
+        if self.call.on_phase is not None:
+            self.call.on_phase(phase)
 
     def finish(self, error: str = "none") -> None:
         """Queue the exchange with partial measurements on failure; never exception text."""
@@ -97,9 +101,11 @@ class _Exchange:
 class _CallTrace:
     """httpx ``trace`` callback for one logical API call (all its redirects)."""
 
-    def __init__(self, timing: OperationTiming, stage: str, proxied: bool) -> None:
+    def __init__(self, timing: OperationTiming, stage: str, proxied: bool,
+                 on_phase: Optional[PhaseCallback] = None) -> None:
         """Bind milestones to the caller's operation, or to a transport-only id."""
         self.timing = timing
+        self.on_phase = on_phase
         self.stage = stage
         self.proxied = proxied
         self.operation_id = timing.operation_id if timing is not NO_TIMING else f"http{next(_OPERATION_IDS)}"
@@ -225,24 +231,28 @@ def _no_cookie_jar() -> http.cookiejar.CookieJar:
     return http.cookiejar.CookieJar(http.cookiejar.DefaultCookiePolicy(allowed_domains=[]))
 
 
+def _new_client(proxy: Optional[str], verify: Union[bool, str]) -> httpx.Client:
+    """A thread-safe client with its own pool; no retries, no cookie persistence, no netrc."""
+    context = _ssl_context(verify)
+    # An HTTPS proxy is verified like the origin; httpx rejects a context for plain-HTTP proxies.
+    proxy_context = context if isinstance(context, ssl.SSLContext) and proxy and proxy.startswith("https:") else None
+    transport = httpx.HTTPTransport(
+        verify=context, limits=_LIMITS, retries=0, socket_options=_SOCKET_OPTIONS,
+        proxy=httpx.Proxy(proxy, ssl_context=proxy_context) if proxy else None,
+    )
+    return httpx.Client(
+        transport=transport, trust_env=False, timeout=None, cookies=_no_cookie_jar(),
+        event_hooks={"request": [_on_request], "response": [_on_response]},
+    )
+
+
 def _client(proxy: Optional[str], verify: Union[bool, str]) -> httpx.Client:
-    """One pooled, thread-safe client per route; no retries, no cookie persistence, no netrc."""
+    """The shared pooled client of a route."""
     key = (proxy, verify)
     with _CLIENTS_LOCK:
         client = _CLIENTS.get(key)
         if client is None:
-            context = _ssl_context(verify)
-            # An HTTPS proxy is verified like the origin; httpx rejects a context for plain-HTTP proxies.
-            proxy_context = context if isinstance(context, ssl.SSLContext) and proxy and proxy.startswith("https:") else None
-            transport = httpx.HTTPTransport(
-                verify=context, limits=_LIMITS, retries=0, socket_options=_SOCKET_OPTIONS,
-                proxy=httpx.Proxy(proxy, ssl_context=proxy_context) if proxy else None,
-            )
-            client = httpx.Client(
-                transport=transport, trust_env=False, timeout=None, cookies=_no_cookie_jar(),
-                event_hooks={"request": [_on_request], "response": [_on_response]},
-            )
-            _CLIENTS[key] = client
+            client = _CLIENTS[key] = _new_client(proxy, verify)
         return client
 
 
@@ -270,16 +280,21 @@ def _timeout(value: TimeoutValue) -> httpx.Timeout:
 
 def request(method: str, url: str, *, timing: OperationTiming = NO_TIMING, stage: str = "connection_test",
             proxies: Optional[dict[str, str]] = None, timeout: TimeoutValue = None,
-            verify: Union[bool, str] = True, follow_redirects: bool = True, **kwargs: Any) -> httpx.Response:
+            verify: Union[bool, str] = True, follow_redirects: bool = True,
+            fresh_connection: bool = False, on_phase: Optional[PhaseCallback] = None,
+            **kwargs: Any) -> httpx.Response:
     """Send one logical API call over the shared pools; the body is always read before returning.
 
     ``proxies`` uses the ``{"http": url, "https": url}`` mapping from ``services.net``.
+    ``fresh_connection`` sends over a one-off client, so the call never shares a (possibly
+    stalled) pooled connection. ``on_phase`` observes transport milestones from any thread.
     Remaining keyword arguments (headers, data, files, json, auth) go to ``httpx.Client.request``.
     """
     proxy = _select_proxy(url, proxies)
-    tracer = _CallTrace(timing, stage, proxied=proxy is not None)
+    tracer = _CallTrace(timing, stage, proxied=proxy is not None, on_phase=on_phase)
+    client = _new_client(proxy, verify) if fresh_connection else _client(proxy, verify)
     try:
-        return _client(proxy, verify).request(
+        return client.request(
             method, url, timeout=_timeout(timeout), follow_redirects=follow_redirects,
             extensions={"trace": tracer}, **kwargs,
         )
@@ -288,6 +303,8 @@ def request(method: str, url: str, *, timing: OperationTiming = NO_TIMING, stage
         raise
     finally:
         tracer.finish()
+        if fresh_connection:
+            client.close()
 
 
 def close_transport() -> None:

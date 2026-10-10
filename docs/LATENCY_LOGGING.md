@@ -152,6 +152,33 @@ Warm-up has short timeouts and never delays capture, upload or shutdown waiting
 for completion. The server can still close idle connections; httpcore detects that
 and reconnects. There is no guarantee of reuse during overlapping requests.
 
+## Parallel second attempt on a stalled connection
+
+With **Start a parallel second attempt when the connection stalls** (Transcription tab), a
+request that stalls is raced by a second one. A pooled connection that lost a packet waits in
+TCP retransmission backoff (about 1 s, 2 s, 4 s, …), which can hold an upload for several
+seconds even though the network is fine again; a fresh connection has no backoff.
+
+The second attempt starts when the upload is not finished after
+`max(0.5 s, upload size at 1.5 MB/s)`, or when no response byte has arrived
+`1.0 s + 0.5 s per uploaded MB` after the upload finished. "Upload finished" means the body
+was handed to the operating system's send buffer, so a small recording counts as uploaded at
+once and a stall then shows up as a missing response. The thresholds are named constants in
+`app/services/transcription.py`.
+
+The second attempt always opens a new connection (DNS, TCP, TLS) and uses the next Groq key
+when rotation is on, otherwise the same key. The first successful response wins and is
+processed exactly once — replacements, rephrasing or the instruction, insertion; the other
+attempt finishes in the background and is discarded. A failure that arrives before any stall
+is reported exactly as without the option; when one attempt fails after the hedge started,
+the other is awaited, and if both fail the first error is shown. Without the option a paid
+request is never sent twice.
+
+Logs: `transcription_hedge op=… trigger=upload|response winner=1|2|none`, the
+`transcription_hedge_started` and `transcription_hedge_won_<n>` milestones,
+`hedge_trigger_ms` in the summary, and an `http_transport` line with
+`stage=transcription_hedge` for the second attempt.
+
 HTTP and HTTPS proxies (including CONNECT tunnels) receive full measurements. SOCKS
 proxies are not supported by the default install (httpx needs the optional
 `socksio` package).

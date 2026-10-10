@@ -97,6 +97,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # loads without an immediate normalization rewrite.
     "hotkey": "<ctrl>+x" if is_MACOS else "<caps_lock>+<ctrl>",
     "push_to_talk": False,
+    "transcription_hedging": False,
     "windows_keep_mic_hot": is_WINDOWS,
     "windows_keep_mic_hot_idle_minutes": 15,
     # Recordings shorter than this (seconds) are treated as a mis-tap and discarded without

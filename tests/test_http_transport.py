@@ -129,6 +129,18 @@ def test_warmed_connection_reused_across_threads_and_rotating_keys(server, trace
     assert all(cookie is None for cookie in API.cookies)
 
 
+def test_fresh_connection_never_reuses_the_pool_and_reports_phases(server, traces):
+    assert transport.request("POST", url(server), content=b"audio").content == b"OK"
+    phases = []
+    response = transport.request("POST", url(server), content=b"audio", fresh_connection=True, on_phase=phases.append)
+    assert response.content == b"OK"
+    pooled, fresh = (metadata for metadata, _ in traces)
+    assert fresh["reused"] is False and fresh["connection"] != pooled["connection"]
+    assert {"request_sent", "first_byte"} <= set(phases)
+    assert transport.request("POST", url(server), content=b"audio").content == b"OK"
+    assert traces[-1][0]["reused"] is True and traces[-1][0]["connection"] == pooled["connection"]
+
+
 def test_first_byte_precedes_headers_and_complete_body(server, traces):
     timing = OperationTiming("recording")
     assert transport.request("POST", url(server, "/slow"), content=b"payload", timing=timing,

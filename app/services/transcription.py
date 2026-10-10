@@ -7,9 +7,14 @@ from __future__ import annotations
 
 import logging
 import os
+import queue
 import tempfile
+import threading
+import time
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
+
+import httpx
 
 from app.audio.aac_encoder import available_aac_bitrates, encode_wav_to_aac
 from app.core import audio_formats
@@ -29,6 +34,17 @@ _UPLINK_BYTES_PER_S = 64 * 1024
 _SEND_TIMEOUT_RANGE_S = (30.0, 600.0)
 #: The server may need a while to transcribe long audio.
 _READ_TIMEOUT_S = 300.0
+
+# Hedging thresholds. "Upload finished" means the body was handed to the OS send buffer, so a
+# small upload counts as finished at once and a stall then shows up as a missing response.
+#: A second attempt starts when the upload is not finished after this long, or after the time
+#: the upload size needs at the given rate (long recordings) ...
+_HEDGE_UPLOAD_MIN_S = 0.5
+_HEDGE_UPLOAD_BYTES_PER_S = 1.5 * 1024 * 1024
+#: ... or when no response byte arrives within this long after the upload finished (plus some
+#: time per uploaded MB, because the server transcribes longer audio for longer).
+_HEDGE_RESPONSE_MIN_S = 1.0
+_HEDGE_RESPONSE_S_PER_MB = 0.5
 
 
 class TranscriptionError(Exception):
@@ -59,6 +75,9 @@ class TranscriptionRequest:
     recording_format: Optional[str] = None
     recording_bitrate_kbps: int = 64
     ffmpeg_setting: str = ""
+    #: Key for a parallel second attempt over a fresh connection when the first one stalls
+    #: (the next Groq key when rotation is on, else the same key); None disables hedging.
+    hedge_api_key: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -194,8 +213,11 @@ def _send(req: TranscriptionRequest, upload: _Upload, timing: OperationTiming, t
 
     send_timeout, read_timeout = _timeouts(upload.size)
     content_type = audio_formats.upload_content_type(upload.path)
+    filename = audio_formats.upload_filename(upload.path)
+    if req.hedge_api_key is not None:
+        return _send_hedged(req, upload, timing, tr, data, filename, content_type, (send_timeout, read_timeout))
     with open(upload.path, 'rb') as audio_file:
-        files = {"file": (audio_formats.upload_filename(upload.path), audio_file, content_type)}
+        files = {"file": (filename, audio_file, content_type)}
         logging.debug(f"Sending POST request to API with file {files['file'][0]} "
                       f"({upload.size / (1024 * 1024):.1f} MB, send timeout {send_timeout:.0f}s)")
         timing.mark("transcription_request_start")
@@ -207,10 +229,112 @@ def _send(req: TranscriptionRequest, upload: _Upload, timing: OperationTiming, t
         # The transport returns only after reading the complete response body.
         timing.mark("transcription_response_received")
 
+    transcription = _parse(response, tr)
+    timing.mark("transcription_response_parsed")
+    logging.info(f"Transcription result: {redact_for_log(transcription)}")
+    return transcription
+
+
+def _parse(response: httpx.Response, tr: Translate) -> str:
+    """The transcription text of a complete response; any non-200 status is a user-facing error."""
     logging.debug(f"API response status: {response.status_code}")
     if response.status_code != 200:
         raise TranscriptionError(tr("transcription_api_error", status=response.status_code, details=response.text))
-    transcription: str = response.json().get("text", "")
+    text: str = response.json().get("text", "")
+    return text
+
+
+def hedge_thresholds(upload_bytes: int) -> Tuple[float, float]:
+    """(upload budget, response wait after the upload) before a second attempt starts, in seconds."""
+    megabytes = upload_bytes / (1024 * 1024)
+    return (max(_HEDGE_UPLOAD_MIN_S, upload_bytes / _HEDGE_UPLOAD_BYTES_PER_S),
+            _HEDGE_RESPONSE_MIN_S + megabytes * _HEDGE_RESPONSE_S_PER_MB)
+
+
+def _send_hedged(req: TranscriptionRequest, upload: _Upload, timing: OperationTiming, tr: Translate,
+                 data: Dict[str, object], filename: str, content_type: str,
+                 timeouts: Tuple[float, float]) -> str:
+    """Send like ``_send``; if the upload or the response stalls, race a second attempt.
+
+    The second attempt uses ``req.hedge_api_key`` over a fresh connection, so a pooled connection
+    stuck in TCP retransmission backoff cannot hold it up. The first successful response wins;
+    the other attempt finishes in the background and is discarded. A failure that arrives before
+    any stall is reported as without hedging.
+    """
+    with open(upload.path, 'rb') as audio_file:
+        body = audio_file.read()  # Each attempt sends this buffer; no file handle is shared.
+    results: "queue.SimpleQueue[Tuple[int, Optional[str], Optional[Exception]]]" = queue.SimpleQueue()
+    uploaded, answered = threading.Event(), threading.Event()
+    uploaded_at: List[float] = []
+
+    def watch(phase: str) -> None:
+        """Progress of the first attempt, reported from its transport thread."""
+        if phase == "request_sent" and not uploaded.is_set():
+            uploaded_at.append(time.monotonic())
+            uploaded.set()
+        elif phase == "first_byte":
+            answered.set()
+
+    def attempt(index: int, api_key: str, stage: str, fresh: bool) -> None:
+        """One POST; its outcome goes to the coordinator instead of being raised here."""
+        try:
+            response = request(
+                "POST", req.api_endpoint, timing=timing, stage=stage,
+                headers={"Authorization": f"Bearer {api_key}"},
+                files={"file": (filename, body, content_type)}, data=data,
+                proxies=req.proxies, timeout=timeouts, fresh_connection=fresh,
+                on_phase=watch if index == 1 else None,
+            )
+            results.put((index, _parse(response, tr), None))
+        except Exception as error:
+            results.put((index, None, error))
+
+    def launch(index: int, api_key: str, stage: str, fresh: bool) -> None:
+        threading.Thread(target=attempt, args=(index, api_key, stage, fresh),
+                         name=f"TranscriptionAttempt{index}", daemon=True).start()
+
+    upload_budget, response_wait = hedge_thresholds(upload.size)
+    timing.mark("transcription_request_start")
+    started = time.monotonic()
+    launch(1, req.api_key, "transcription", False)
+    trigger = ""
+    while not trigger:
+        if answered.is_set():
+            remaining: Optional[float] = None  # The response is arriving: nothing to hedge against.
+        elif uploaded.is_set():
+            remaining = max(0.0, uploaded_at[0] + response_wait - time.monotonic())
+        else:
+            remaining = max(0.0, started + upload_budget - time.monotonic())
+        try:
+            _index, text, error = results.get(timeout=remaining)
+        except queue.Empty:
+            if not answered.is_set():
+                trigger = "response" if uploaded.is_set() else "upload"
+            continue
+        return _finish(timing, text, error, winner=1, trigger="")
+
+    timing.mark("transcription_hedge_started")
+    launch(2, req.hedge_api_key or req.api_key, "transcription_hedge", True)
+    errors: List[Exception] = []
+    for _ in range(2):
+        index, text, error = results.get()
+        if error is None:
+            return _finish(timing, text, None, winner=index, trigger=trigger)
+        errors.append(error)
+    logging.info("transcription_hedge op=%s trigger=%s winner=none", timing.operation_id, trigger)
+    raise errors[0]
+
+
+def _finish(timing: OperationTiming, text: Optional[str], error: Optional[Exception],
+            winner: int, trigger: str) -> str:
+    """Complete the operation with the winning attempt's outcome (``trigger`` empty: no hedge ran)."""
+    timing.mark("transcription_response_received")
+    if trigger:
+        timing.mark(f"transcription_hedge_won_{winner}")
+        logging.info("transcription_hedge op=%s trigger=%s winner=%s", timing.operation_id, trigger, winner)
+    if error is not None:
+        raise error
+    transcription = text or ""
     timing.mark("transcription_response_parsed")
     logging.info(f"Transcription result: {redact_for_log(transcription)}")
     return transcription

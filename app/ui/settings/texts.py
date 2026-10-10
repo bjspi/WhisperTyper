@@ -68,6 +68,7 @@ TEXTS: Tuple[Text, ...] = (
     _field("hotkey_label", "hotkey_tooltip", "hotkey_label", "hotkey_display", "set_hotkey_button"),
     Text("set_hotkey_button", "set_hotkey_button"),
     _check("push_to_talk_checkbox", "push_to_talk_checkbox", "push_to_talk_tooltip"),
+    _check("transcription_hedging_checkbox", "transcription_hedging_checkbox", "transcription_hedging_tooltip"),
     _check("windows_keep_mic_hot_checkbox", "windows_keep_mic_hot_checkbox", "windows_keep_mic_hot_tooltip"),
     _field("windows_keep_mic_hot_idle_label", "windows_keep_mic_hot_idle_tooltip", "windows_keep_mic_hot_idle_label",
            "windows_keep_mic_hot_idle_input"),

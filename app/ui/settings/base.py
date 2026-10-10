@@ -113,6 +113,7 @@ class SettingsWindowBase(QWidget):
     hotkey_display: QLineEdit
     set_hotkey_button: QPushButton
     push_to_talk_checkbox: QCheckBox
+    transcription_hedging_checkbox: QCheckBox
     windows_keep_mic_hot_checkbox: QCheckBox
     windows_keep_mic_hot_idle_label: QLabel
     windows_keep_mic_hot_idle_input: QSpinBox
