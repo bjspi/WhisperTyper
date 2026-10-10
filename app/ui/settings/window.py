@@ -8,7 +8,7 @@ from typing import Callable
 from PyQt6 import uic
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QCloseEvent
-from PyQt6.QtWidgets import QApplication, QHBoxLayout, QMenuBar, QMessageBox, QSizePolicy, QStyle
+from PyQt6.QtWidgets import QApplication, QMenuBar, QMessageBox, QSizePolicy, QStyle
 
 from app.context import AppContext
 from app.controllers.file_actions import FileActions
@@ -150,17 +150,19 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
             setattr(self, attr, action)
 
     def _build_save_row(self) -> None:
-        """Compact, right-aligned Save button instead of a full-width one."""
+        """Footer row: the Prompts tab's add/remove buttons share the line with a compact Save button."""
         self.save_button.clicked.connect(self.save_settings)
         self.save_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.save_button.setMinimumWidth(150)
         self.save_button.setMaximumWidth(200)
-        self.main_layout.removeWidget(self.save_button)
-        save_row = QHBoxLayout()
-        save_row.setContentsMargins(0, 0, 16, 6)
-        save_row.addStretch()
-        save_row.addWidget(self.save_button)
-        self.main_layout.addLayout(save_row)
+        self.tabs.currentChanged.connect(self._update_footer_buttons)
+        self._update_footer_buttons()
+
+    def _update_footer_buttons(self, *_args: object) -> None:
+        """The add/remove buttons act on the prompt list, so they show only on the Prompts tab."""
+        on_prompts = self.tabs.currentWidget() is self.post_rephrasing_tab
+        self.post_rp_add_btn.setVisible(on_prompts)
+        self.post_rp_remove_btn.setVisible(on_prompts)
 
     def _init_transformations_page(self) -> None:
         """Prompt editor on the Prompts tab; edits are mirrored into the live config."""

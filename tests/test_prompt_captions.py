@@ -16,7 +16,6 @@ from app.ui.floating_buttons import compact_caption  # noqa: E402
     ("\U0001F468\u200d\U0001F4BB Code", "\U0001F468\u200d\U0001F4BB"),  # ZWJ sequence stays whole
     ("\U0001F44D\U0001F3FD", "\U0001F44D\U0001F3FD"),                    # skin tone modifier
     ("\U0001F1E9\U0001F1EA Deutsch", "\U0001F1E9\U0001F1EA"),            # flag (regional indicators)
-    ("1\ufe0f\u20e3 Eins", "1\ufe0f\u20e3"),                            # keycap
     ("Polish", "Pol"),
     ("Hi \U0001F44B", "Hi"),
 ])

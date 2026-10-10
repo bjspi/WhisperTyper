@@ -11,12 +11,9 @@ from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QVBo
 from app.core.env import is_MACOS, is_WINDOWS
 from app.ui import theme
 
-#: Emoji presentation selector and combining keycap: digits/letters drawn as emoji (1️⃣, ©️).
-_EMOJI_MARKS = frozenset("\ufe0f\u20e3")
-
 
 def graphemes(text: str) -> List[str]:
-    """User-perceived characters (emoji sequences, flags, keycaps stay whole), via Qt's UAX #29 rules."""
+    """User-perceived characters (emoji sequences and flags stay whole), via Qt's UAX #29 rules."""
     units = text.encode("utf-16-le")  # Qt reports boundaries in UTF-16 code units
     finder = QTextBoundaryFinder(QTextBoundaryFinder.BoundaryType.Grapheme, text)
     bounds = [0]
@@ -26,14 +23,12 @@ def graphemes(text: str) -> List[str]:
 
 
 def compact_caption(caption: str, length: int = 3) -> str:
-    """Short palette label: a leading emoji/symbol alone, otherwise the first ``length`` characters."""
+    """Short palette label: a caption starting with a symbol/emoji shows it alone, else ``length`` characters."""
     characters = graphemes(caption.strip())
-    if not characters:
-        return ""
-    first = characters[0]
-    if not first[0].isalnum() or _EMOJI_MARKS.intersection(first):
-        return first
+    if characters and not characters[0].isalnum():
+        return characters[0]
     return "".join(characters[:length]).strip()
+
 
 class FloatingButtonWindow(QWidget):
     """Cross‑platform floating button palette near the cursor."""
