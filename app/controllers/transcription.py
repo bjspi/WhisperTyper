@@ -116,6 +116,8 @@ class TranscriptionPipeline:
         logging.info("transcription_credential op=%s provider=%s profile_id=%s rotation=%s",
                      timing.operation_id, provider, self._key_rotation.last_profile_id,
                      bool(config["groq_key_rotation"] and provider == "groq"))
+        # Hedging: a stalled request is raced by a second one with the next key (rotation) or the same key.
+        hedge_api_key = self._key_rotation.next_key(config) if config.get("transcription_hedging", False) else None
         request = TranscriptionRequest(
             api_key=api_key, api_endpoint=config["api_endpoint"],
             audio_path=audio_path, prompt=config["prompt"],
@@ -128,6 +130,7 @@ class TranscriptionPipeline:
             recording_format=recording_format,
             recording_bitrate_kbps=int(config.get("recording_aac_bitrate_kbps", 64)),
             ffmpeg_setting=config.get("ffmpeg_path", ""),
+            hedge_api_key=hedge_api_key or None,
         )
         worker = TranscriptionWorker(request, timing=timing, tr=self._ctx.tr)
         worker.compressing.connect(self._on_compression_phase_started)

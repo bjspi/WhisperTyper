@@ -83,6 +83,7 @@ class OperationTiming:
         "upload_prepare_ms": ("upload_prepare_start", "upload_prepare_end"),
         "request_setup_ms": ("upload_prepare_end", "transcription_request_start"),
         "transcription_request_ms": ("transcription_request_start", "transcription_response_received"),
+        "hedge_trigger_ms": ("transcription_request_start", "transcription_hedge_started"),
         "stop_to_request_sent_ms": ("stop", "transcription_http_request_sent"),
         "stop_to_first_byte_ms": ("stop", "transcription_http_first_byte"),
         "response_parse_ms": ("transcription_response_received", "transcription_response_parsed"),

@@ -50,6 +50,10 @@ class RecordingPage(SettingsWindowBase):
         self._add_row(self.recording_format_label, self.recording_format_selector,
                       self.recording_bitrate_label, self.recording_bitrate_selector)
 
+        # Races a second request over a fresh connection when the first one stalls.
+        self.transcription_hedging_checkbox = QCheckBox(self)
+        layout.addWidget(self.transcription_hedging_checkbox)
+
         for name, code in LANGUAGES.items():
             self.language_input.addItem(name, code)
         self.language_input.setCurrentIndex(max(0, self.language_input.findData(self.config["input_language"].lower())))
