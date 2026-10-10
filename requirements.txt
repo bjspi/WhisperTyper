@@ -1,6 +1,6 @@
 # Runtime dependencies — kept in sync with [project.dependencies] in pyproject.toml.
 # For development (tests, lint, type-checks) use:  pip install -e ".[dev]"
-PyQt6
+PyQt6>=6.9 # 6.9+: QFontDatabase application emoji fonts
 pyaudio
 pynput
 pyautogui # Alternative to pynput for copy/paste on macOS
