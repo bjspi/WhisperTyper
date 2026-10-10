@@ -154,7 +154,7 @@ and reconnects. There is no guarantee of reuse during overlapping requests.
 
 ## Parallel second attempt on a stalled connection
 
-With **Start a parallel second attempt when the connection stalls** (Transcription tab), a
+With **Start a parallel second attempt when the connection stalls** (API Providers tab), a
 request that stalls is raced by a second one. A pooled connection that lost a packet waits in
 TCP retransmission backoff (about 1 s, 2 s, 4 s, …), which can hold an upload for several
 seconds even though the network is fine again; a fresh connection has no backoff.
@@ -174,10 +174,15 @@ is reported exactly as without the option; when one attempt fails after the hedg
 the other is awaited, and if both fail the first error is shown. Without the option a paid
 request is never sent twice.
 
-Logs: `transcription_hedge op=… trigger=upload|response winner=1|2|none`, the
-`transcription_hedge_started` and `transcription_hedge_won_<n>` milestones,
-`hedge_trigger_ms` in the summary, and an `http_transport` line with
-`stage=transcription_hedge` for the second attempt.
+Logs of a hedged request, in order:
+- `transcription_hedge op=… started trigger=upload|response after_ms=… upload_bytes=…
+  fresh_connection=true` when the second attempt starts;
+- `transcription_hedge op=… attempt=1|2 finished_ms=… outcome=ok|<error class>` for each
+  attempt when it ends (measured from the first attempt's start), including the discarded one;
+- `transcription_hedge op=… trigger=… winner=1|2|none winner_ms=…` for the result used;
+- the `transcription_hedge_started` and `transcription_hedge_won_<n>` milestones,
+  `hedge_trigger_ms` in the summary, and an `http_transport` line with
+  `stage=transcription_hedge` (connection setup, upload, response) for the second attempt.
 
 HTTP and HTTPS proxies (including CONNECT tunnels) receive full measurements. SOCKS
 proxies are not supported by the default install (httpx needs the optional

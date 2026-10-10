@@ -264,8 +264,9 @@ def _send_hedged(req: TranscriptionRequest, upload: _Upload, timing: OperationTi
     with open(upload.path, 'rb') as audio_file:
         body = audio_file.read()  # Each attempt sends this buffer; no file handle is shared.
     results: "queue.SimpleQueue[Tuple[int, Optional[str], Optional[Exception]]]" = queue.SimpleQueue()
-    uploaded, answered = threading.Event(), threading.Event()
+    uploaded, answered, hedged = threading.Event(), threading.Event(), threading.Event()
     uploaded_at: List[float] = []
+    finished_ms: Dict[int, float] = {}
 
     def watch(phase: str) -> None:
         """Progress of the first attempt, reported from its transport thread."""
@@ -285,9 +286,15 @@ def _send_hedged(req: TranscriptionRequest, upload: _Upload, timing: OperationTi
                 proxies=req.proxies, timeout=timeouts, fresh_connection=fresh,
                 on_phase=watch if index == 1 else None,
             )
-            results.put((index, _parse(response, tr), None))
+            outcome: Tuple[int, Optional[str], Optional[Exception]] = (index, _parse(response, tr), None)
         except Exception as error:
-            results.put((index, None, error))
+            outcome = (index, None, error)
+        finished_ms[index] = (time.monotonic() - started) * 1000
+        if hedged.is_set():
+            # Every attempt of a hedged request reports its own end, the discarded one included.
+            logging.info("transcription_hedge op=%s attempt=%s finished_ms=%.0f outcome=%s", timing.operation_id,
+                         index, finished_ms[index], "ok" if outcome[2] is None else type(outcome[2]).__name__)
+        results.put(outcome)
 
     def launch(index: int, api_key: str, stage: str, fresh: bool) -> None:
         threading.Thread(target=attempt, args=(index, api_key, stage, fresh),
@@ -313,25 +320,29 @@ def _send_hedged(req: TranscriptionRequest, upload: _Upload, timing: OperationTi
             continue
         return _finish(timing, text, error, winner=1, trigger="")
 
+    hedged.set()
     timing.mark("transcription_hedge_started")
+    logging.info("transcription_hedge op=%s started trigger=%s after_ms=%.0f upload_bytes=%s fresh_connection=true",
+                 timing.operation_id, trigger, (time.monotonic() - started) * 1000, upload.size)
     launch(2, req.hedge_api_key or req.api_key, "transcription_hedge", True)
     errors: List[Exception] = []
     for _ in range(2):
         index, text, error = results.get()
         if error is None:
-            return _finish(timing, text, None, winner=index, trigger=trigger)
+            return _finish(timing, text, None, winner=index, trigger=trigger, winner_ms=finished_ms.get(index))
         errors.append(error)
     logging.info("transcription_hedge op=%s trigger=%s winner=none", timing.operation_id, trigger)
     raise errors[0]
 
 
 def _finish(timing: OperationTiming, text: Optional[str], error: Optional[Exception],
-            winner: int, trigger: str) -> str:
+            winner: int, trigger: str, winner_ms: Optional[float] = None) -> str:
     """Complete the operation with the winning attempt's outcome (``trigger`` empty: no hedge ran)."""
     timing.mark("transcription_response_received")
     if trigger:
         timing.mark(f"transcription_hedge_won_{winner}")
-        logging.info("transcription_hedge op=%s trigger=%s winner=%s", timing.operation_id, trigger, winner)
+        logging.info("transcription_hedge op=%s trigger=%s winner=%s winner_ms=%s", timing.operation_id, trigger,
+                     winner, "?" if winner_ms is None else f"{winner_ms:.0f}")
     if error is not None:
         raise error
     transcription = text or ""
