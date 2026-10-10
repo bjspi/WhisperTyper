@@ -168,3 +168,34 @@ def test_aac_choice_without_pyav_uploads_wav_instead_of_failing(monkeypatch, tmp
     worker.finished.connect(finished.append)
     worker.run()
     assert finished == ["result"]
+
+
+@pytest.mark.parametrize("ffmpeg_path", [None, "ffmpeg-bin"])
+def test_voice_message_opus_is_converted_or_sent_as_ogg(monkeypatch, tmp_path, ffmpeg_path):
+    source = tmp_path / "voice.opus"
+    source.write_bytes(b"OggS-opus")
+    converted = tmp_path / "voice-converted.mp3"
+
+    def prepare(exe, src_path, *, transcode_source, max_bytes, min_bitrate_kbps):
+        assert transcode_source is bool(ffmpeg_path)
+        if not transcode_source:
+            return src_path, None
+        converted.write_bytes(b"mp3")
+        return str(converted), str(converted)
+
+    def request(_method, _url, **kwargs):
+        filename, handle, content_type = kwargs["files"]["file"]
+        if ffmpeg_path:
+            assert (filename, content_type, handle.read()) == ("voice-converted.mp3", "audio/mpeg", b"mp3")
+        else:
+            assert (filename, content_type, handle.read()) == ("voice.ogg", "audio/ogg", b"OggS-opus")
+        return Mock(status_code=200, json=lambda: {"text": "result"})
+
+    monkeypatch.setattr(service.ffmpeg, "prepare_upload", prepare)
+    monkeypatch.setattr(service, "request", request)
+    worker = make_worker(source, ffmpeg_path=ffmpeg_path)
+    finished = []
+    worker.finished.connect(finished.append)
+    worker.run()
+    assert finished == ["result"]
+    assert source.read_bytes() == b"OggS-opus"

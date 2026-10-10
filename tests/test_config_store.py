@@ -13,6 +13,7 @@ from app.core.constants import (
     DEFAULT_CONFIG,
     WINDOW_MIN_HEIGHT,
 )
+from app.core.env import is_MACOS
 from app.core.hotkeys import normalize_hotkey_string
 
 
@@ -54,6 +55,13 @@ class TestMigrations:
         assert changed is True
         assert config["input_language"] == "de"
         assert "language" not in config
+
+    def test_clipboard_shortcut_hotkey_is_reset_to_default(self, store: ConfigStore):
+        reserved = "<cmd>+c" if is_MACOS else "<ctrl>+c"
+        write_config(store, {"post_rephrase_hotkey": reserved})
+        config, changed = store.load()
+        assert changed is True
+        assert config["post_rephrase_hotkey"] == DEFAULT_CONFIG["post_rephrase_hotkey"]
 
     def test_windows_fast_paste_key_is_renamed(self, store: ConfigStore):
         write_config(store, {"windows_fast_paste": True})

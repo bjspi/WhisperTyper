@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Iterable, List, Optional, Set
 
-from app.core.env import is_WINDOWS
+from app.core.env import is_MACOS, is_WINDOWS
 from app.core.win32 import MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN
 
 #: Tokens that behave like modifiers when matching combos.
@@ -102,8 +102,14 @@ def normalize_hotkey_part(part: str) -> str:
 
 def normalize_hotkey_string(hotkey_str: str) -> str:
     """Normalize a user-entered hotkey like 'F9' or 'Cmd+Shift+K' into canonical tokens."""
+    text = hotkey_str.strip()
+    if text == "+":
+        return "<plus>"
+    # A typed plus key collides with the separator: 'Ctrl++', 'Ctrl+++Alt' and '++Ctrl' mean <plus>.
+    text = re.sub(r"\+\+(?=\+|$)", "+plus", text)
+    text = re.sub(r"^\+(?=\+)", "plus", text)
     normalized_parts: List[str] = []
-    for raw_part in hotkey_str.split("+"):
+    for raw_part in text.split("+"):
         token = normalize_hotkey_part(raw_part)
         if token and token not in normalized_parts:
             normalized_parts.append(token)
@@ -129,6 +135,17 @@ def format_hotkey_tokens(tokens: Iterable[str]) -> str:
         display_tokens.discard("<alt>")
     sorted_tokens = sorted(display_tokens, key=lambda token: (_TOKEN_ORDER.get(token, 50), token))
     return "+".join(sorted_tokens)
+
+
+def is_clipboard_shortcut(hotkey: str, *, macos: bool = is_MACOS) -> bool:
+    """True if ``hotkey`` is exactly the Select all/Copy/Paste shortcut the app simulates itself.
+
+    Bound globally, it would swallow the user's own copy/paste and the app's simulated
+    keystrokes (selection reading, paste after transcription) would re-trigger it.
+    """
+    modifier = "<cmd>" if macos else "<ctrl>"
+    tokens = set(normalize_hotkey_string(hotkey).split("+")) if hotkey else set()
+    return tokens in ({modifier, "a"}, {modifier, "c"}, {modifier, "v"})
 
 
 def pretty_hotkey(hotkey: str) -> str:
@@ -230,24 +247,20 @@ def parse_hotkey_binding(hotkey_str: str, action: str) -> Optional[Dict[str, Any
 
 
 def binding_matches_pressed(binding: Dict[str, Any], pressed_tokens: Set[str]) -> bool:
-    """Return whether the currently pressed token set still satisfies a binding."""
-    if not binding["modifiers"].issubset(pressed_tokens):
-        return False
-    trigger_tokens = binding["trigger_tokens"]
-    if trigger_tokens:
-        return any(token in pressed_tokens for token in trigger_tokens)
-    return bool(binding["modifiers"])
+    """Return whether every key of a binding (all modifiers and all trigger keys) is held."""
+    return bool(binding["tokens"]) and binding["tokens"].issubset(pressed_tokens)
+
+
+def binding_completing_tokens(binding: Dict[str, Any]) -> Set[str]:
+    """Keys whose press can complete a binding: its trigger keys, or all keys of a modifier-only combo."""
+    return binding["trigger_tokens"] or binding["tokens"]
 
 
 def binding_matches_current_press(binding: Dict[str, Any], pressed_tokens: Set[str],
                                   key_tokens: Set[str]) -> bool:
-    """Return whether the key press carried in ``key_tokens`` completes a binding."""
-    if not binding["modifiers"].issubset(pressed_tokens):
-        return False
-    trigger_tokens = binding["trigger_tokens"]
-    if trigger_tokens:
-        return bool(key_tokens.intersection(trigger_tokens))
-    return bool(key_tokens.intersection(binding["tokens"]))
+    """Return whether the key press carried in ``key_tokens`` completes a binding (chords need every key)."""
+    return (binding_matches_pressed(binding, pressed_tokens)
+            and bool(key_tokens.intersection(binding_completing_tokens(binding))))
 
 
 def binding_release_tokens(binding: Dict[str, Any]) -> Set[str]:

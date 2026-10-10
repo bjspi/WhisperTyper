@@ -173,10 +173,8 @@ class HotkeyController(QObject):
                     and bool((projected_tokens - {"<caps_lock>"}).intersection(binding["tokens"]))
                 ):
                     return True
-                if binding["modifiers"].issubset(projected_tokens):
-                    trigger_tokens = binding["trigger_tokens"] or binding["tokens"]
-                    if key_tokens.intersection(trigger_tokens):
-                        return True
+                if hotkeys.binding_matches_current_press(binding, projected_tokens, key_tokens):
+                    return True
             return False
 
         return self._is_push_to_talk_release(key_tokens)
@@ -195,6 +193,10 @@ class HotkeyController(QObject):
     def _win32_event_filter(self, msg: int, data: Any) -> bool:
         """Suppress Windows hotkey key events in-hook so they do not reach the active application."""
         listener = self._manual_listener
+        if getattr(data, "flags", 0) & 0x10:  # LLKHF_INJECTED: our own simulated Ctrl+C/V must pass
+            if listener:
+                listener._suppress = False
+            return True
         key_tokens = hotkeys.vk_to_hotkey_tokens(getattr(data, "vkCode", None))
         is_press = msg in (0x0100, 0x0104)  # WM_KEYDOWN / WM_SYSKEYDOWN
         is_release = msg in (0x0101, 0x0105)  # WM_KEYUP / WM_SYSKEYUP
@@ -308,13 +310,19 @@ class HotkeyController(QObject):
         if is_MACOS and event is not None and watched is not None and watched == self._capture_widget:
             if event.type() == QEvent.Type.ShortcutOverride:
                 return True
+            if isinstance(event, QKeyEvent) and event.isAutoRepeat():
+                return True
             if event.type() == QEvent.Type.KeyPress and isinstance(event, QKeyEvent):
-                tokens = qt_key_tokens(event.key(), event.modifiers(), event.text())
-                if tokens:
-                    self._capture_widget.setText(hotkeys.format_hotkey_tokens(tokens))
+                # Collect every key until the first release, as the pynput capture does, so
+                # chords such as F6+F7 can be recorded.
+                self._captured_keys.update(qt_key_tokens(event.key(), event.modifiers(), event.text()))
+                if self._captured_keys:
+                    self._capture_widget.setText(hotkeys.format_hotkey_tokens(self._captured_keys))
                     self._capture_widget.selectAll()
-                    if any(not hotkeys.is_modifier_token(token) for token in tokens):
-                        self.finish_capture()
+                return True
+            if event.type() == QEvent.Type.KeyRelease and isinstance(event, QKeyEvent):
+                if self._captured_keys:
+                    self.finish_capture()
                 return True
         return super().eventFilter(watched, event)
 

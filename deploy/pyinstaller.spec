@@ -157,6 +157,7 @@ app = BUNDLE(
     info_plist={
         'NSHighResolutionCapable': 'True',
         'CFBundleShortVersionString': APP_VERSION,
+        'CFBundleVersion': APP_VERSION,
         'NSMicrophoneUsageDescription': 'This app requires microphone access to record audio for transcription.',
         'NSAccessibilityUsageDescription': 'This app needs permission for global hotkeys and clipboard management (e.g., to start transcription and copy results).',
         'NSInputMonitoringUsageDescription': 'This app requires permission to monitor keyboard input to detect global hotkeys for starting and stopping transcription.',

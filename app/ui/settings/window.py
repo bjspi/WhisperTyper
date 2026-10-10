@@ -16,7 +16,7 @@ from app.controllers.hotkeys import HotkeyController
 from app.controllers.recording import RecordingController
 from app.core.constants import WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH
 from app.core.env import is_MACOS
-from app.core.hotkeys import normalize_hotkey_string
+from app.core.hotkeys import is_clipboard_shortcut, normalize_hotkey_string, pretty_hotkey
 from app.core.paths import resource_path
 from app.core.replacements import ReplacementError, Replacements
 from app.ui.api_keys import ApiKeysTab
@@ -200,6 +200,8 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
             self.tabs.setCurrentWidget(self._replacements_tab)
             self._replacements_tab.editor.setFocus()
             return
+        if not self._validate_hotkeys():
+            return
         warnings = self._collect_validation_warnings(self.model_dropdown.currentText().strip())
         if warnings:
             msg = QMessageBox(self)
@@ -223,6 +225,22 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         if hotkeys_changed:
             self.hotkeys_changed.emit()
         self.saved.emit()
+
+    def _validate_hotkeys(self) -> bool:
+        """Reject Select all/Copy/Paste as a global hotkey before anything is saved."""
+        for field in (self.hotkey_display, self.pr_hotkey_display):
+            if not is_clipboard_shortcut(field.text()):
+                continue
+            QMessageBox.warning(self, self.translator.tr("hotkey_clipboard_conflict_title"),
+                                self.translator.tr("hotkey_clipboard_conflict_text",
+                                                   hotkey=pretty_hotkey(normalize_hotkey_string(field.text()))))
+            for index in range(self.tabs.count()):
+                tab = self.tabs.widget(index)
+                if tab is not None and tab.isAncestorOf(field):
+                    self.tabs.setCurrentWidget(tab)
+            field.setFocus()
+            return False
+        return True
 
     def _apply_pending_hotkeys(self) -> bool:
         """Adopt edited hotkeys; True if the running listeners must restart."""

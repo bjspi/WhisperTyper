@@ -44,6 +44,12 @@ class TestNormalizeHotkeyString:
         assert hotkeys.normalize_hotkey_string("Ctrl+Plus") == "<ctrl>+<plus>"
         assert hotkeys.normalize_hotkey_string("<ctrl>+<plus>") == "<ctrl>+<plus>"
 
+    def test_typed_plus_key_is_not_lost(self):
+        assert hotkeys.normalize_hotkey_string("Ctrl++") == "<ctrl>+<plus>"
+        assert hotkeys.normalize_hotkey_string("+") == "<plus>"
+        assert hotkeys.normalize_hotkey_string("Ctrl+++Alt") == "<ctrl>+<plus>+<alt>"
+        assert hotkeys.normalize_hotkey_string("++Ctrl") == "<plus>+<ctrl>"
+
 
 class TestFormatHotkeyTokens:
     def test_modifiers_come_first_in_stable_order(self):
@@ -127,6 +133,20 @@ class TestBindingMatching:
         assert hotkeys.binding_matches_pressed(binding, {"<ctrl>", "<f9>"})
         assert not hotkeys.binding_matches_pressed(binding, {"<ctrl>"})
 
+    def test_chord_needs_every_trigger_key(self):
+        binding = self._binding("<f6>+<f7>")
+        assert not hotkeys.binding_matches_current_press(binding, {"<f6>"}, {"<f6>"})
+        assert hotkeys.binding_matches_current_press(binding, {"<f6>", "<f7>"}, {"<f7>"})
+        assert not hotkeys.binding_matches_pressed(binding, {"<f7>"})
+        chord = self._binding("<ctrl>+a+b")
+        assert not hotkeys.binding_matches_current_press(chord, {"<ctrl>", "a"}, {"a"})
+        assert hotkeys.binding_matches_current_press(chord, {"<ctrl>", "a", "b"}, {"b"})
+
+    def test_modifier_only_combo_completes_on_its_last_modifier(self):
+        binding = self._binding("<ctrl>+<alt>")
+        assert not hotkeys.binding_matches_current_press(binding, {"<ctrl>"}, {"<ctrl>"})
+        assert hotkeys.binding_matches_current_press(binding, {"<ctrl>", "<alt>"}, {"<alt>"})
+
     def test_release_tokens_expand_altgr(self):
         binding = self._binding("<alt_gr>+q")
         release = hotkeys.binding_release_tokens(binding)
@@ -136,3 +156,14 @@ class TestBindingMatching:
         assert hotkeys.binding_needs_manual_suppression(self._binding("<caps_lock>+<ctrl>"))
         assert hotkeys.binding_needs_manual_suppression(self._binding("<ctrl>+c"))
         assert not hotkeys.binding_needs_manual_suppression(self._binding("<ctrl>+<f9>"))
+
+
+class TestClipboardShortcuts:
+    def test_only_the_simulated_modifier_is_reserved(self):
+        assert hotkeys.is_clipboard_shortcut("Ctrl+C", macos=False)
+        assert hotkeys.is_clipboard_shortcut("<ctrl>+v", macos=False)
+        assert hotkeys.is_clipboard_shortcut("<cmd>+a", macos=True)
+        assert not hotkeys.is_clipboard_shortcut("<ctrl>+c", macos=True)  # macOS default stays valid
+        assert not hotkeys.is_clipboard_shortcut("<ctrl>+<shift>+c", macos=False)
+        assert not hotkeys.is_clipboard_shortcut("", macos=False)
+
