@@ -63,7 +63,6 @@ class ApiPage(SettingsWindowBase):
         self._custom_urls: Dict[str, str] = {}
         # Whether the key selector is shown for an official provider ("choose another key").
         self._key_choice_open: Dict[str, bool] = {}
-        profiles = self._api_keys_tab.profiles()
         for task in API_TASKS:
             widgets = self._task_widgets(task)
             provider = provider_for_url(widgets.endpoint.text())
@@ -72,10 +71,8 @@ class ApiPage(SettingsWindowBase):
             widgets.provider.setCurrentIndex(widgets.provider.findData(provider))
             self._custom_urls[task] = (self.config.get(TASK_CUSTOM_URL_FIELDS[task], "")
                                        or (widgets.endpoint.text() if provider == "custom" else ""))
-            usable = usable_profile_ids(profiles, provider)
-            saved_id = self.config[TASK_KEY_FIELDS[task][1]]
-            # A saved choice that differs from the automatic one stays visible.
-            self._key_choice_open[task] = bool(saved_id in usable and usable and saved_id != usable[0])
+            # The selector opens on demand; the status line names the key in use either way.
+            self._key_choice_open[task] = False
             for button in (widgets.key_choose, widgets.key_add):
                 set_style_state(button, "link", True)
                 button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -260,7 +257,15 @@ class ApiPage(SettingsWindowBase):
         self.config["groq_key_rotation"] = self._api_keys_tab.groq_rotation.isChecked()
         for task in API_TASKS:
             widgets = self._task_widgets(task)
-            self.config[TASK_KEY_FIELDS[task][1]] = widgets.key_profile.currentData() or ""
+            chosen = widgets.key_profile.currentData() or ""
+            usable = usable_profile_ids(profiles, provider_for_url(widgets.endpoint.text()))
+            if usable and chosen == usable[0]:
+                # Same key the automatic choice picks: store "automatic", so it follows a later reordering.
+                chosen = ""
+                widgets.key_profile.setCurrentIndex(0)
+            self.config[TASK_KEY_FIELDS[task][1]] = chosen
             self.config[TASK_CUSTOM_URL_FIELDS[task]] = self._custom_urls[task]
             self.config[widgets.model_field] = widgets.model.currentText().strip()
+            self._key_choice_open[task] = False
+        self._refresh_api_state()
         return True

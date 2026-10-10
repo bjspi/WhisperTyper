@@ -98,10 +98,11 @@ def test_chosen_key_persists_until_the_provider_changes(make_window):
     assert window._ui_api_key("rephrasing") == "gsk-test-two-0000"
     save(window)
     assert json.loads(path.read_text(encoding="utf-8"))["rephrasing_key_profile_id"] == "g2"
+    assert window.rephrasing_key_profile_selector.isHidden()  # saving closes the selector
 
     reloaded, _path = make_window()
-    assert not reloaded.rephrasing_key_profile_selector.isHidden()  # differs from the automatic key
-    assert reloaded._ui_api_key("rephrasing") == "gsk-test-two-0000"
+    assert reloaded.rephrasing_key_profile_selector.isHidden()
+    assert reloaded._ui_api_key("rephrasing") == "gsk-test-two-0000"  # the choice itself is kept
     reloaded.rephrasing_provider_selector.setCurrentIndex(reloaded.rephrasing_provider_selector.findData("openai"))
     reloaded.rephrasing_provider_selector.setCurrentIndex(reloaded.rephrasing_provider_selector.findData("groq"))
     assert reloaded.rephrasing_key_profile_selector.currentData() == ""
@@ -114,3 +115,13 @@ def test_both_api_sections_have_the_same_controls(make_window):
     transcription, rephrasing = (window._task_widgets(task) for task in ("transcription", "rephrasing"))
     assert [type(widget) for widget in transcription] == [type(widget) for widget in rephrasing]
     assert window.test_transcription_api_button.text() == window.test_rephrasing_api_button.text()
+
+
+def test_choosing_the_automatic_key_explicitly_is_stored_as_automatic(make_window):
+    window, path = make_window()
+    window.rephrasing_key_choose_button.click()
+    window.rephrasing_key_profile_selector.setCurrentIndex(window.rephrasing_key_profile_selector.findData("g1"))
+    save(window)
+    assert json.loads(path.read_text(encoding="utf-8"))["rephrasing_key_profile_id"] == ""
+    assert window.rephrasing_key_profile_selector.isHidden()
+

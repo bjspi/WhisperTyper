@@ -203,6 +203,22 @@
                </widget>
               </item>
               <item>
+               <spacer name="transcription_temp_test_gap">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>13</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
                <widget class="QPushButton" name="test_transcription_api_button">
                 <property name="text">
                  <string>Test connection</string>
@@ -505,6 +521,22 @@
                  <string>0.00</string>
                 </property>
                </widget>
+              </item>
+              <item>
+               <spacer name="rephrasing_temp_test_gap">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>13</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
               </item>
               <item>
                <widget class="QPushButton" name="test_rephrasing_api_button">
