@@ -15,8 +15,9 @@ from app.controllers.file_actions import FileActions
 from app.controllers.recording import RecordingController
 from app.controllers.transcription import TranscriptionPipeline
 from app.core.api_keys import transcription_configured
+from app.core.audio_formats import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, requires_ffmpeg
 from app.core.env import is_MACOS
-from app.services.ffmpeg import VIDEO_EXTENSIONS, is_video_file, resolve_ffmpeg
+from app.services.ffmpeg import resolve_ffmpeg
 from app.services.gitutil import git_available
 from app.services.updater import GitUpdater
 from app.ui import macos_icons
@@ -275,11 +276,11 @@ class TrayController(QObject):
         config, tr = self._ctx.config, self._ctx.tr
         # With ffmpeg available we can also accept video containers (audio is extracted first).
         ffmpeg_exe = resolve_ffmpeg(config.get("ffmpeg_path", ""))
-        audio_globs = "*.mp3 *.ogg *.wav *.m4a *.flac *.webm *.mp4 *.mpga *.mpeg"
+        audio_globs = " ".join(f"*{ext}" for ext in sorted(AUDIO_EXTENSIONS))
         audio_filter = f"{tr('audio_filter_label')} ({audio_globs})"
         all_files_filter = f"{tr('all_files_filter_label')} (*)"
         if ffmpeg_exe:
-            video_globs = " ".join(f"*{ext}" for ext in sorted(VIDEO_EXTENSIONS))
+            video_globs = " ".join(f"*{ext}" for ext in sorted(VIDEO_EXTENSIONS - AUDIO_EXTENSIONS))
             media_filter = f"{tr('media_filter_label')} ({audio_globs} {video_globs})"
             file_filter = f"{media_filter};;{audio_filter};;{all_files_filter}"
         else:
@@ -298,8 +299,8 @@ class TrayController(QObject):
             config["last_transcribe_dir"] = chosen_dir
             self._ctx.save_config()
 
-        # Guard: a video was picked but no ffmpeg is configured — point the user at the setting.
-        if not ffmpeg_exe and any(is_video_file(p) for p in paths):
+        # Guard: a video the APIs reject was picked but no ffmpeg is configured — point at the setting.
+        if not ffmpeg_exe and any(requires_ffmpeg(p) for p in paths):
             self._ctx.notifier.show(tr("video_needs_ffmpeg_message"), BALLOON_WARNING_MS)
             self._settings.show_window()
             return

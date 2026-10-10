@@ -19,12 +19,13 @@ from app.controllers.text_output import TextOutput
 from app.controllers.warmup import WarmupScheduler
 from app.controllers.workers import WorkerThreads
 from app.core.api_keys import GroqKeyRotation, provider_for_url, selected_api_key
+from app.core.audio_formats import is_video_file, needs_audio_normalization
 from app.core.constants import LANGUAGES
 from app.core.rephrase_routing import RephrasePlan, plan_rephrase, usable_transcript
 from app.core.replacements import ReplacementError, Replacements
 from app.core.textutil import shorten
 from app.core.timing import NO_TIMING, OperationTiming
-from app.services.ffmpeg import is_video_file, resolve_ffmpeg
+from app.services.ffmpeg import resolve_ffmpeg
 from app.services.net import proxies_for
 from app.services.rephrasing_worker import RephrasingWorker
 from app.services.transcription import TranscriptionRequest
@@ -90,18 +91,19 @@ class TranscriptionPipeline:
         # resolves ffmpeg only if a long recording still exceeds the upload limit.
         recording_format = config.get("recording_format", "wav") if self._ctx.recordings.owns(audio_path) else None
         ffmpeg_path = None if recording_format is not None else resolve_ffmpeg(config.get("ffmpeg_path", ""))
-        needs_extraction = bool(ffmpeg_path) and is_video_file(audio_path)
+        extracts_video = bool(ffmpeg_path) and is_video_file(audio_path)
+        converts_audio = bool(ffmpeg_path) and needs_audio_normalization(audio_path)
         # Snapshot the language together with the worker settings. A later settings change must
         # not make the status balloon disagree with the language used by this in-flight request.
         lang_code = config["input_language"]
 
         # Persistent spinner balloon: it stays until the result/error handler ends it, so the hint
         # tracks the real worker state instead of a fixed timeout. For videos it opens on the
-        # "extracting…" phase; the worker emits `transcribing` once ffmpeg is done.
+        # "extracting…"/"converting…" phase; the worker emits `transcribing` once ffmpeg is done.
         prefix = self._batch_progress_prefix()
-        if needs_extraction:
-            self._notifier.show(prefix + self._ctx.tr("extracting_video_audio_message",
-                                                      filename=os.path.basename(audio_path)), 0, spinner=True)
+        if extracts_video or converts_audio:
+            key = "extracting_video_audio_message" if extracts_video else "converting_audio_message"
+            self._notifier.show(prefix + self._ctx.tr(key, filename=os.path.basename(audio_path)), 0, spinner=True)
         else:
             self._notifier.show(prefix + self._transcription_progress_message(lang_code), 0, spinner=True)
 

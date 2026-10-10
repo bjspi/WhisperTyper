@@ -6,13 +6,13 @@ caller's callbacks and translation lookup, so this module needs no Qt.
 from __future__ import annotations
 
 import logging
-import mimetypes
 import os
 import tempfile
 from dataclasses import dataclass
 from typing import Callable, Dict, Optional, Tuple
 
 from app.audio.aac_encoder import available_aac_bitrates, encode_wav_to_aac
+from app.core import audio_formats
 from app.core.models import transcription_form_fields
 from app.core.redaction import redact_for_log
 from app.core.textutil import clean_model_name
@@ -154,13 +154,14 @@ def _prepare_recording(req: TranscriptionRequest, timing: OperationTiming, tr: T
 
 
 def _prepare_file(req: TranscriptionRequest, on_compressing: Callable[[str], None]) -> _Upload:
-    """Picked files: extract a video's audio and compress anything above the limit."""
-    is_video = ffmpeg.is_video_file(req.audio_path)
-    if not is_video and _file_size(req.audio_path) > req.max_upload_bytes:
+    """Picked files: extract a video's audio, convert rejected audio formats, compress above the limit."""
+    transcode = bool(req.ffmpeg_path) and (audio_formats.is_video_file(req.audio_path)
+                                           or audio_formats.needs_audio_normalization(req.audio_path))
+    if not transcode and _file_size(req.audio_path) > req.max_upload_bytes:
         on_compressing(os.path.basename(req.audio_path))
     path, temp = ffmpeg.prepare_upload(
         req.ffmpeg_path, req.audio_path,
-        transcode_source=bool(req.ffmpeg_path) and is_video,
+        transcode_source=transcode,
         max_bytes=req.max_upload_bytes, min_bitrate_kbps=req.min_bitrate_kbps,
     )
     return _Upload(path, temp, _file_size(path))
@@ -192,11 +193,9 @@ def _send(req: TranscriptionRequest, upload: _Upload, timing: OperationTiming, t
     logging.debug(f"Audio file path: {upload.path}")
 
     send_timeout, read_timeout = _timeouts(upload.size)
-    # M4A is consistently labelled across OS MIME databases.
-    content_type = ("audio/mp4" if upload.path.lower().endswith(".m4a")
-                    else mimetypes.guess_type(upload.path)[0] or "audio/wav")
+    content_type = audio_formats.upload_content_type(upload.path)
     with open(upload.path, 'rb') as audio_file:
-        files = {"file": (os.path.basename(upload.path), audio_file, content_type)}
+        files = {"file": (audio_formats.upload_filename(upload.path), audio_file, content_type)}
         logging.debug(f"Sending POST request to API with file {files['file'][0]} "
                       f"({upload.size / (1024 * 1024):.1f} MB, send timeout {send_timeout:.0f}s)")
         timing.mark("transcription_request_start")

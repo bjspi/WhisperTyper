@@ -23,12 +23,6 @@ from typing import List, Optional, Tuple
 from app.core.env import is_WINDOWS
 from app.platform.system import no_window_kwargs
 
-# Containers we treat as "video" — picking one requires ffmpeg to extract the audio track first.
-# Kept lowercase; compared against the file's lowercased extension.
-VIDEO_EXTENSIONS = frozenset({
-    ".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".flv", ".mpg", ".mpeg", ".ts", ".3gp",
-})
-
 # Encode target: mono, 16 kHz MP3. Whisper works at 16 kHz mono internally, so this is lossless for
 # transcription while keeping files small. The default bitrate is used unless the file must shrink
 # further to fit under the upload limit.
@@ -40,11 +34,6 @@ _SIZE_SAFETY = 0.95
 
 class AudioTooLargeError(RuntimeError):
     """The file can't be brought under the upload limit (too long even at the minimum bitrate)."""
-
-
-def is_video_file(path: str) -> bool:
-    """True if ``path``'s extension is a known video container that needs audio extraction."""
-    return os.path.splitext(path)[1].lower() in VIDEO_EXTENSIONS
 
 
 def resolve_ffmpeg(configured_path: str = "") -> Optional[str]:

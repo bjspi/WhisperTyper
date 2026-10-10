@@ -17,6 +17,7 @@ from app.core.constants import (
     LANGUAGES,
     WINDOW_MIN_HEIGHT,
 )
+from app.core.hotkeys import is_clipboard_shortcut
 from app.core.textutil import demojibake
 
 # A hotkey normalizer, e.g. HotkeyMixin.normalize_hotkey_string.
@@ -144,6 +145,11 @@ class ConfigStore:
             normalized = self._normalize_hotkey(hk_val)
             if hk_val and normalized and normalized != hk_val:
                 cfg[hk_key] = normalized
+                changed = True
+            # A hand-edited Select all/Copy/Paste hotkey would break the clipboard system-wide.
+            if isinstance(cfg.get(hk_key), str) and is_clipboard_shortcut(cfg[hk_key]):
+                logging.warning("Hotkey %s collides with a clipboard shortcut; using the default.", hk_key)
+                cfg[hk_key] = DEFAULT_CONFIG[hk_key]
                 changed = True
 
         return changed
