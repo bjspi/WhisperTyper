@@ -33,6 +33,7 @@ from app.core.models import (
 )
 from app.core.textutil import clean_model_name, estimate_tokens
 from app.ui.settings.base import SettingsWindowBase
+from app.ui.settings.widgets import show_temperature_support
 from app.ui.theme import set_style_state
 
 API_TASKS = ("transcription", "rephrasing")
@@ -200,9 +201,9 @@ class ApiPage(SettingsWindowBase):
 
     def _refresh_api_state(self, *_args: object) -> None:
         """Show the controls each provider needs, the key in use, and mark incomplete sections."""
-        temperature_supported = rephrasing_supports_temperature(self.rephrasing_model_input.currentText())
-        self.rephrasing_temp_slider.setEnabled(temperature_supported)
-        self.rephrasing_temp_label.setEnabled(temperature_supported)
+        show_temperature_support(self.rephrasing_temp_slider, self.rephrasing_temp_label,
+                                 rephrasing_supports_temperature(self.rephrasing_model_input.currentText()),
+                                 self.translator)
         form = self._form_api_config()
         for task in API_TASKS:
             self._refresh_key_controls(task, form)

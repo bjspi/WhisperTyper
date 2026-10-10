@@ -63,11 +63,18 @@ TEXTS: Tuple[Text, ...] = (
     _field("ffmpeg_label", "ffmpeg_tooltip", "ffmpeg_label", "ffmpeg_path_input"),
     Text("ffmpeg_browse_button", "ffmpeg_browse_button"),
     _field("transcription_prompt_label", "transcription_prompt_tooltip", "transcription_prompt_label", "prompt_input"),
-    # Recording
-    Text("recording_group_title", "recording_group"),
+    Text("transcription_prompt_section", "transcription_prompt_section"),
+    Text("ffmpeg_section", "ffmpeg_section"),
+    # Hotkeys
+    Text("hotkeys_group_title", "hotkeys_group"),
     _field("hotkey_label", "hotkey_tooltip", "hotkey_label", "hotkey_display", "set_hotkey_button"),
     Text("set_hotkey_button", "set_hotkey_button"),
     _check("push_to_talk_checkbox", "push_to_talk_checkbox", "push_to_talk_tooltip"),
+    Text("post_rephrase_hotkey_label", "pr_hotkey_label", "post_rephrase_hotkey_tooltip",
+         ("pr_hotkey_label", "pr_hotkey_display", "set_pr_hotkey_button")),
+    Text("set_hotkey_button", "set_pr_hotkey_button"),
+    # Recording
+    Text("recording_group_title", "recording_group"),
     _check("transcription_hedging_checkbox", "transcription_hedging_checkbox", "transcription_hedging_tooltip"),
     _check("windows_keep_mic_hot_checkbox", "windows_keep_mic_hot_checkbox", "windows_keep_mic_hot_tooltip"),
     _field("windows_keep_mic_hot_idle_label", "windows_keep_mic_hot_idle_tooltip", "windows_keep_mic_hot_idle_label",
@@ -79,7 +86,7 @@ TEXTS: Tuple[Text, ...] = (
     _field("input_language_label", "input_language_tooltip", "input_language_label", "language_input"),
     _field("gain_label", "gain_tooltip", "gain_label", "gain_input"),
     # Rephrasing API
-    Text("shared_api_group_title", "shared_api_group", "shared_api_group_tooltip", ("shared_api_group",)),
+    Text("shared_api_group_title", "shared_api_group"),
     *_api_group_texts("rephrasing_provider_label", "rephrasing_provider_selector", "rephrasing_model_label",
                       "rephrasing_model_input", "rephrasing_api_url_label", "rephrasing_api_url_input",
                       "rephrasing_api_key_label", "rephrasing_key_profile_selector",
@@ -104,10 +111,6 @@ TEXTS: Tuple[Text, ...] = (
     _check("rephrase_context_checkbox", "rephrase_context_checkbox", "rephrase_context_tooltip"),
     Text("add_button", "post_rp_add_btn"),
     Text("remove_button", "post_rp_remove_btn"),
-    Text("post_rephrase_hotkey_group_title", "pr_hotkey_group"),
-    Text("post_rephrase_hotkey_label", "pr_hotkey_label", "post_rephrase_hotkey_tooltip",
-         ("pr_hotkey_group", "pr_hotkey_display", "set_pr_hotkey_button")),
-    Text("set_hotkey_button", "set_pr_hotkey_button"),
     # General
     Text("ui_language_label", "ui_language_label"),
     Text("color_theme_label", "color_theme_label"),

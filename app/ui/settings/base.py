@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from app.controllers.recording import RecordingController
     from app.ui.api_keys import ApiKeysTab
     from app.ui.replacements import ReplacementsTab
+    from app.ui.settings.collapsible import CollapsibleSection
     from app.ui.transformations_tab import TransformationsEditor
 
 
@@ -72,15 +73,24 @@ class SettingsWindowBase(QWidget):
     tabs: QTabWidget
     save_button: QPushButton
     transcription_tab: QWidget
-    rephrasing_tab: QWidget
     post_rephrasing_tab: QWidget
     general_tab: QWidget
     transcription_scroll_area: QScrollArea
-    rephrasing_scroll_area: QScrollArea
 
     # Transcription page
     transcription_layout: QVBoxLayout
     transcription_api_group: QGroupBox
+    transcription_api_layout: QVBoxLayout
+    transcription_provider_model_row: QHBoxLayout
+    transcription_provider_col: QVBoxLayout
+    transcription_model_col: QVBoxLayout
+    transcription_temp_col: QVBoxLayout
+    rephrasing_provider_model_row: QHBoxLayout
+    rephrasing_provider_col: QVBoxLayout
+    rephrasing_model_col: QVBoxLayout
+    rephrasing_temp_col: QVBoxLayout
+    hotkeys_layout: QHBoxLayout
+    pr_hotkey_v_layout: QVBoxLayout
     api_key_label: QLabel
     transcription_key_profile_selector: QComboBox
     api_endpoint_label: QLabel
@@ -103,12 +113,16 @@ class SettingsWindowBase(QWidget):
     ffmpeg_path_input: QLineEdit
     ffmpeg_browse_button: QPushButton
     ffmpeg_status_label: QLabel
+    transcription_prompt_section: "CollapsibleSection"
+    ffmpeg_section: "CollapsibleSection"
     _ffmpeg_status_debounce: QTimer
 
     # Recording card
     recording_group: QGroupBox
     recording_group_layout: QVBoxLayout
     controls_layout: QHBoxLayout
+    hotkeys_group: QGroupBox
+    hotkey_v_layout: QVBoxLayout
     hotkey_label: QLabel
     hotkey_display: QLineEdit
     set_hotkey_button: QPushButton
@@ -171,7 +185,6 @@ class SettingsWindowBase(QWidget):
     post_rp_text_edit: QTextEdit
     post_rp_add_btn: QPushButton
     post_rp_remove_btn: QPushButton
-    pr_hotkey_group: QGroupBox
     pr_hotkey_label: QLabel
     pr_hotkey_display: QLineEdit
     set_pr_hotkey_button: QPushButton

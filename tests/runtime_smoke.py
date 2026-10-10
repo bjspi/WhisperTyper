@@ -528,18 +528,20 @@ def main() -> int:
         sw.tabs.setCurrentWidget(sw.transcription_tab)
 
     def probe_window_resize() -> None:
-        """Shrink the real settings window and check prompt allocation and control reachability."""
+        """Shrink the real settings window and check the collapsible prompt and control reachability."""
         original_size = sw.size()
         sw.tabs.setCurrentWidget(sw.transcription_tab)
         sw.resize(760, 1280)
         qapp.processEvents()
-        large_prompt_height = sw.prompt_input.height()
+        check("layout: transcription prompt and FFmpeg sections start collapsed",
+              not sw.transcription_prompt_section.is_expanded() and not sw.ffmpeg_section.is_expanded())
+        sw.transcription_prompt_section.set_expanded(True)
+        qapp.processEvents()
+        check("layout: the prompt section expands to show the prompt", sw.prompt_input.isVisible())
         controls_size = (sw.transcription_api_group.size(), sw.recording_group.size())
         prompt = sw.prompt_input.toPlainText()
         sw.resize(760, 1100)
         qapp.processEvents()
-        check("resize: prompt absorbs the height change", abs(large_prompt_height - sw.prompt_input.height() - 180) <= 2,
-              f"prompt={large_prompt_height}->{sw.prompt_input.height()}")
         check("resize: API and recording controls retain their sizes",
               controls_size == (sw.transcription_api_group.size(), sw.recording_group.size()))
         sw.resize(760, 600)
@@ -547,8 +549,6 @@ def main() -> int:
         check("resize: window reaches 600px height", sw.height() == 600, f"height={sw.height()}")
         check("resize: prompt content is preserved", sw.prompt_input.toPlainText() == prompt)
         check("resize: short transcription page scrolls", sw.transcription_scroll_area.verticalScrollBar().maximum() > 0)
-        sw.tabs.setCurrentWidget(sw.rephrasing_tab)
-        qapp.processEvents()
         from app.core.models import REPHRASING_MODEL_OPTIONS
         for width in (680, 760):
             sw.resize(width, 600)
@@ -558,17 +558,17 @@ def main() -> int:
                          for models in REPHRASING_MODEL_OPTIONS.values() for model in models)
             check(f"resize: rephrasing model names fit at {width}px window width",
                   editor.contentsRect().width() - 8 >= needed,
-                  f"available={editor.contentsRect().width() - 8}, needed={needed}, window={sw.width()}, page={sw.rephrasing_scroll_widget.width()}")
-            right = sw.rephrasing_model_input.mapTo(sw.rephrasing_scroll_area.viewport(),
+                  f"available={editor.contentsRect().width() - 8}, needed={needed}, window={sw.width()}, page={sw.transcription_scroll_widget.width()}")
+            right = sw.rephrasing_model_input.mapTo(sw.transcription_scroll_area.viewport(),
                                                     QPoint(sw.rephrasing_model_input.width(), 0)).x()
             check(f"resize: rephrasing dropdown stays inside the visible page at {width}px",
-                  right <= sw.rephrasing_scroll_area.viewport().width())
-        sw.rephrasing_scroll_area.ensureWidgetVisible(sw.rephrasing_provider_selector)
+                  right <= sw.transcription_scroll_area.viewport().width())
+        sw.transcription_scroll_area.ensureWidgetVisible(sw.rephrasing_provider_selector)
         qapp.processEvents()
         check("resize: rephrasing provider dropdown remain usable at 600px", sw.rephrasing_provider_selector.isVisible()
               and sw.rephrasing_provider_selector.height() >= sw.rephrasing_provider_selector.minimumSizeHint().height()
-              and sw.rephrasing_provider_selector.mapTo(sw.rephrasing_tab, QPoint(0, sw.rephrasing_provider_selector.height())).y()
-              <= sw.rephrasing_tab.height())
+              and sw.rephrasing_provider_selector.mapTo(sw.transcription_tab, QPoint(0, sw.rephrasing_provider_selector.height())).y()
+              <= sw.transcription_tab.height())
         sw.tabs.setCurrentWidget(sw.general_tab)
         qapp.processEvents()
         last_control = sw.quit_without_confirmation_checkbox
@@ -603,7 +603,7 @@ def main() -> int:
         original_profiles = tab.profiles()
         original_selection = (wt.ctx.config["transcription_key_profile_id"], wt.ctx.config["rephrasing_key_profile_id"])
         check("keys: table uses theme separators instead of the native grid", not table.showGrid())
-        check("keys: central tab is between Prompts and General", sw.tabs.indexOf(tab) == 3 and sw.tabs.indexOf(sw.general_tab) == 5)
+        check("keys: API keys tab follows the API providers tab", sw.tabs.indexOf(tab) == 1 and sw.tabs.indexOf(sw.general_tab) == 4)
         check("keys: legacy identical keys migrated into one profile", len(original_profiles) == 1
               and original_selection[0] == original_selection[1] and "api_key" not in wt.ctx.config and "rephrasing_api_key" not in wt.ctx.config)
         ids = []
@@ -804,7 +804,8 @@ def main() -> int:
         sw.rephrasing_model_input.setCurrentText("gpt-6-luna")
         check("models: OpenAI chat suggestions and fixed temperature", [sw.rephrasing_model_input.itemText(i) for i in range(sw.rephrasing_model_input.count())]
               == REPHRASING_MODEL_OPTIONS["openai"] and not sw.rephrasing_temp_slider.isEnabled())
-        sw.tabs.setCurrentWidget(sw.rephrasing_tab)
+        sw.tabs.setCurrentWidget(sw.transcription_tab)
+        sw.transcription_scroll_area.ensureWidgetVisible(sw.rephrasing_model_input)
         qapp.processEvents()
         selector = sw.rephrasing_model_input
         QTest.mouseClick(selector, Qt.MouseButton.LeftButton, pos=QPoint(selector.width() - 11, selector.height() // 2))

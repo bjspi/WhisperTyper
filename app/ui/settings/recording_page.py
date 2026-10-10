@@ -1,4 +1,4 @@
-"""Recording controls in the "Recording & Hotkey" card: push-to-talk, warm microphone, length, format."""
+"""Recording controls: push-to-talk (below the recording hotkey), warm microphone, length, format."""
 from __future__ import annotations
 
 import logging
@@ -16,10 +16,11 @@ class RecordingPage(SettingsWindowBase):
     """Recording controls, including the AAC format offered after a background encoder probe."""
 
     def _build_recording_controls(self) -> None:
-        """Create the recording widgets inside the card that holds hotkey, language and gain."""
+        """Create the recording widgets inside the recording card (language and gain come from the form)."""
         layout = self.recording_group_layout
+        # Push-to-talk changes how the recording hotkey works, so it sits below that hotkey.
         self.push_to_talk_checkbox = QCheckBox(self)
-        layout.addWidget(self.push_to_talk_checkbox)
+        self.hotkey_v_layout.addWidget(self.push_to_talk_checkbox)
         self.windows_keep_mic_hot_checkbox = QCheckBox(self)
         layout.addWidget(self.windows_keep_mic_hot_checkbox)
 
