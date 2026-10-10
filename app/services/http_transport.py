@@ -22,8 +22,10 @@ import httpx
 
 from app.core.timing import NO_TIMING, OperationTiming, queue_http_timing
 
-#: Idle pooled connections stay usable this long (the warmup re-touches them every 20 s).
-KEEPALIVE_EXPIRY_S = 300.0
+#: Idle pooled connections are discarded after this long. Routers and NATs silently drop idle
+#: connections after a few minutes; reusing such a connection hangs until the read timeout, so a
+#: fresh one is opened instead (the warmup re-touches active origins every 20 s).
+KEEPALIVE_EXPIRY_S = 60.0
 _LIMITS = httpx.Limits(max_connections=None, max_keepalive_connections=8, keepalive_expiry=KEEPALIVE_EXPIRY_S)
 # OS-level keepalive on top of httpcore's built-in TCP_NODELAY.
 _SOCKET_OPTIONS = [(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)]

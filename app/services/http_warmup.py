@@ -4,6 +4,7 @@ from __future__ import annotations
 import queue
 import threading
 import time
+from typing import Dict, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
@@ -28,6 +29,18 @@ def warm_url(endpoint: str) -> str:
         authority += f":{parts.port}"
     path = "/openai/v1/models" if host == "api.groq.com" else "/v1/models" if host == "api.openai.com" else "/"
     return urlunsplit((parts.scheme, authority, path, "", ""))
+
+
+def _probe(url: str, proxies: Optional[Dict[str, str]]) -> None:
+    """Warm one origin; a pooled connection that died while idle is replaced by a fresh one at once.
+
+    No headers or auth: httpx never adds netrc credentials, so the probe stays anonymous.
+    """
+    try:
+        request("HEAD", url, stage="prewarm", proxies=proxies, timeout=(3, 3), follow_redirects=False)
+    except httpx.TransportError:
+        # httpx discards the failed connection, so the retry connects (DNS, TCP, TLS) from scratch.
+        request("HEAD", url, stage="prewarm", proxies=proxies, timeout=(3, 3), follow_redirects=False)
 
 
 class HttpWarmup:
@@ -84,8 +97,7 @@ class HttpWarmup:
                     if not url or now - last.get(key, -float("inf")) < WARM_INTERVAL_S:
                         continue
                     last[key] = now
-                    # No headers/auth: httpx never adds netrc credentials, so the probe stays anonymous.
-                    request("HEAD", url, stage="prewarm", proxies=proxies, timeout=(3, 3), follow_redirects=False)
+                    _probe(url, proxies)
                 except (httpx.HTTPError, ValueError):
                     # Failure already has a transport trace; it must never block the actual request.
                     continue

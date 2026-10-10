@@ -133,7 +133,9 @@ Qt worker thread or a different Groq key. Headers are per request and no cookies
 stored. TLS verification (certifi, `SSL_CERT_FILE`/`SSL_CERT_DIR`, and a legacy
 `REQUESTS_CA_BUNDLE`), explicit/px proxies and system/environment proxies including
 `NO_PROXY` remain active. TCP_NODELAY and OS TCP keepalive are enabled; idle pooled
-connections are kept for 300 s; failed paid POSTs are not retried. Busy pools open
+connections are discarded after 60 s, because routers drop idle connections silently and
+reusing a dead one would hang until the read timeout; a warm-up that still hits a dead
+connection is repeated once on a fresh one. Failed paid POSTs are not retried. Busy pools open
 another connection instead of waiting for a warm-up request.
 
 A daemon performs auth-free HEAD requests at startup, after saving settings and
