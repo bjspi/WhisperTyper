@@ -74,7 +74,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
         <img src="screenshots/app/settings-rephrase-liveprompt.jpg" alt="Rephrase and LivePrompt settings: chat API, trigger words, system prompt" />
       </a>
       <br />
-      <sub><b>🚀 Rephrase / LivePrompt</b> — Configure the chat-completions API used for rephrasing, and define trigger words that turn your speech into a live AI command: start a recording with <i>“prompt, …”</i> and the AI's answer is typed right where your cursor is.</sub>
+      <sub><b>🚀 Rephrasing API</b> — Configure the chat-completions API used for rephrasing, prompts and the ✨ instruction (LivePrompt), whose trigger words turn your speech into a live AI command: start a recording with <i>“prompt, …”</i> and the AI's answer is typed right where your cursor is.</sub>
     </td>
   </tr>
   <tr>
@@ -118,7 +118,8 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 -   **AI-Powered**: Supports OpenAI (Whisper, GPT models), Groq and any other Whisper-API with identical API-design for fast and accurate transcription and rephrasing.
 -   **Central API Keys**: Named provider profiles, independent selections for transcription and rephrasing, and optional Groq transcription-key rotation. See [API key settings](docs/API_KEYS.md).
 -   **LivePrompting**: A revolutionary feature! Use trigger words to turn your speech directly into a prompt for an AI, which then types out the result.
-    -   *Example*: Speak `"prompt, write a short poem about rain"` and the AI will type the poem for you (based on your rephrasing prompt)
+    -   *Example*: Speak `"prompt, write a short poem about rain"` and the AI will type the poem for you (based on the instruction's system prompt)
+    -   The **✨ instruction** is the first entry of the Prompts tab: it holds the system prompt, trigger words, scan depth and the options to strip the trigger word and to add selected text as context. It can be moved and switched off, but not removed. Pick it in the recording palette to carry out a dictation without a trigger word, or in the rephrase window to carry out selected text.
 -   **Context-Aware Rephrasing**: Automatically use text you've highlighted on your screen as context for your voice prompts.
 -   **Transcribe Audio & Video Files**: Pick existing audio files (MP3, M4A, WAV, FLAC, OGG, WebM, and voice messages such as WhatsApp `.opus` or Telegram `.oga`) or, with **FFmpeg** installed, video files (MP4, MOV, MKV, …) from the tray menu. With FFmpeg, videos and formats the APIs reject (`.opus`, `.oga`, `.aac`) are converted to a temporary 128 kbps MP3 first; without it, Ogg voice messages are uploaded as `.ogg`. Set the FFmpeg path (or leave it empty to auto-detect on your `PATH`) on the Transcription settings page.
 -   **Clipboard Safe**: Your clipboard is sacred. The app restores its previous content after pasting, so you never lose what you had copied. This is a major advantage over other tools that hijack your clipboard.

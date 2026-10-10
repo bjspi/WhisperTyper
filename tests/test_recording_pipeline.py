@@ -126,7 +126,7 @@ def test_hotkey_stop_reaches_output_with_ordered_milestones(api, tmp_path, monke
         api_key_profiles=[{"id": "p", "name": "Local", "provider": "custom", "key": "test-key"}],
         transcription_key_profile_id="p", rephrasing_key_profile_id="p", rephrasing_model="test-model",
         min_recording_seconds=0, restore_clipboard=False, use_local_px_proxy=False, proxy_url="",
-        rephrase_use_selection_context=False, liveprompt_enabled=False,
+        # The instruction entry (added when missing) does not fire: the dictation has no trigger word.
         replacements_enabled=True, replacements_rules="wrold ; world",
         # The automatic prompt drives the rephrase branch (preselected in the recording palette).
         post_rephrasing_entries=[{"caption": "Fix", "text": "Fix it", "auto_apply": True}] if rephrase else [],
@@ -209,11 +209,14 @@ def test_palette_clicks_decide_between_explicit_automatic_and_raw():
     recording = RecordingController.__new__(RecordingController)
     recording._config = {"post_rephrasing_entries": [{"caption": "Fix", "text": "Fix it", "auto_apply": True}]}
     recording._warmup = Mock()
-    recording.current_prompt, recording.use_auto_prompt = None, True
+    recording._reset_prompt_choice()
     assert recording.rephrasing_expected()  # The preselected automatic prompt applies without a click.
     recording._on_prompt_selected(None)  # "None"
     assert (recording.current_prompt, recording.use_auto_prompt) == (None, False)
     assert not recording.rephrasing_expected()
-    recording._on_prompt_selected("Mail it")  # An explicit prompt beats LivePrompt and the automatic prompt.
+    recording._on_prompt_selected({"text": "Mail it", "kind": "prompt"})  # Beats LivePrompt and the automatic prompt.
     assert (recording.current_prompt, recording.use_auto_prompt) == ("Mail it", True)
-    recording._warmup.schedule.assert_called_once_with(activate=True)
+    assert not recording.current_prompt_is_instruction
+    recording._on_prompt_selected({"text": "Carry it out", "kind": "instruction"})  # The instruction runs as an order.
+    assert (recording.current_prompt, recording.current_prompt_is_instruction) == ("Carry it out", True)
+    assert recording._warmup.schedule.call_count == 2

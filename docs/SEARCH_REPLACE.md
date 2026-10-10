@@ -1,9 +1,9 @@
 # Search and replace
 
 The **Replacements** settings tab edits corrections applied once to every usable
-transcript, before LivePrompt trigger detection or any rephrasing. Microphone,
-file and batch transcriptions share this path. Rephrasing output and text selected
-for a separate transformation are not corrected again.
+transcript, before the trigger words of the ✨ instruction (LivePrompt) are checked
+and before any rephrasing. Microphone, file and batch transcriptions share this path.
+Rephrasing output and text selected for the rephrase window are not corrected again.
 
 Enable/disable corrections with the checkbox; save settings to activate edits.
 The editor colors search terms blue, replacement text green and the optional

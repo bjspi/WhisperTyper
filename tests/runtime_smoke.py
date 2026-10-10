@@ -30,7 +30,7 @@ import time
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
-from typing import Callable
+from typing import Any, Callable
 from unittest.mock import Mock, patch
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -109,6 +109,7 @@ def _seed_config(iso_home: str, port: int) -> None:
             "post_rephrase_hotkey": "<ctrl>+<shift>+<f11>",
             "windows_keep_mic_hot": False,      # never touch the microphone in this harness
             "quit_without_confirmation": True,  # allow programmatic quit_app()
+            # Older top-level LivePrompt key: the migration turns it into the instruction entry.
             "liveprompt_enabled": False,
         }, f)
 
@@ -207,6 +208,17 @@ def main() -> int:
         f.write(generate_test_wav_bytes())
     with open(fail_wav, "wb") as f:
         f.write(generate_test_wav_bytes() + b"FAILME")  # marker makes the fake server 500
+
+    def set_instruction(**fields: Any) -> None:
+        """Change the instruction (LivePrompt) entry of the live prompt list."""
+        entries = wt.ctx.config["post_rephrasing_entries"]
+        index = next(i for i, entry in enumerate(entries) if entry.get("kind") == "instruction")
+        entries[index] = {**entries[index], **fields}
+
+    check("startup: LivePrompt settings migrated into the inactive instruction entry",
+          [entry.get("kind") for entry in wt.ctx.config["post_rephrasing_entries"]][:1] == ["instruction"]
+          and wt.ctx.config["post_rephrasing_entries"][0]["enabled"] is False
+          and "liveprompt_enabled" not in wt.ctx.config)
 
     def poll(predicate: Callable[[], bool], timeout_s: float,
              on_ok: Callable[[], None], on_timeout: Callable[[], None]) -> None:
@@ -894,15 +906,14 @@ def main() -> int:
         with patch.object(wt.pipeline, "finalize_output") as output:
             wt.pipeline.on_transcription_finished("Krog und Croc", "clipboard")
             check("replacements: plain transcription is corrected", output.call_args.args[0] == "Groq und Groq")
-        wt.ctx.config["liveprompt_enabled"] = True
-        wt.ctx.config["liveprompt_trigger_words"] = "prompt,"
+        set_instruction(enabled=True, trigger_words="prompt,")
         with patch.object(wt.pipeline, "_start_post_transcription_rephrase") as rephrase:
             wt.pipeline.on_transcription_finished("Anweisung, erkläre Krog", "clipboard")
             check("replacements: correction precedes LivePrompt trigger detection", rephrase.call_args.args[0].user_prompt == "prompt, erkläre Groq")
             wt.pipeline.on_transcription_finished("Croc", "clipboard", "CUSTOM")
             check("replacements: explicit transformation receives corrected text", rephrase.call_args.args[0].user_prompt == "Groq"
                   and rephrase.call_args.args[1] == "Groq")
-        wt.ctx.config["liveprompt_enabled"] = False
+        set_instruction(enabled=False)
         with patch.object(wt.pipeline, "_start_post_transcription_rephrase") as rephrase:
             wt.pipeline.on_transcription_finished("Krog", "clipboard", None, None, "AUTO_PROMPT")
             check("replacements: the automatic prompt receives corrected text",
@@ -1008,9 +1019,7 @@ def main() -> int:
     def step3_liveprompt() -> None:
         """Drive a LivePrompt-triggered transcription through the rephrasing worker."""
         wt.pipeline.replacement_rules = Replacements("")
-        wt.ctx.config["liveprompt_enabled"] = True
-        wt.ctx.config["liveprompt_trigger_words"] = "prompt,"
-        wt.ctx.config["liveprompt_strip_trigger"] = True
+        set_instruction(enabled=True, trigger_words="prompt,", strip_trigger=True)
         wt.pipeline.on_transcription_finished("Prompt, please write hello world", "clipboard")
         poll(lambda: wt.pipeline.last_transcription == "REPHRASED_FAKE_RESULT", 10,
              lambda: (check("liveprompt: rephrased text delivered",
@@ -1021,8 +1030,7 @@ def main() -> int:
     def step4_recording_prompt() -> None:
         """An explicit recording-palette prompt must override automatic LivePrompting."""
         wt.pipeline.last_transcription = ""
-        wt.ctx.config["liveprompt_enabled"] = True
-        wt.ctx.config["liveprompt_system_prompt"] = "LIVEPROMPT_SHOULD_NOT_WIN"
+        set_instruction(enabled=True, text="LIVEPROMPT_SHOULD_NOT_WIN")
         wt.pipeline.on_transcription_finished(
             "prompt, keep this as ordinary transcript text",
             "clipboard",
@@ -1046,7 +1054,7 @@ def main() -> int:
     def probe1_rephrase_failure() -> None:
         """PROBE: a failing rephrase endpoint must fall back to the raw transcription."""
         wt.ctx.config["rephrasing_api_url"] = f"http://127.0.0.1:{port}/v1/chat/fail"
-        wt.ctx.config["liveprompt_strip_trigger"] = False
+        set_instruction(strip_trigger=False)
         wt.pipeline.on_transcription_finished("prompt, translate this text", "clipboard")
         expected = "prompt, translate this text"
         poll(lambda: wt.pipeline.last_transcription == expected, 10,
@@ -1057,7 +1065,7 @@ def main() -> int:
 
     def probe2_batch() -> None:
         """PROBE: a batch with one failing file must skip it and join the rest (no modal)."""
-        wt.ctx.config["liveprompt_enabled"] = False
+        set_instruction(enabled=False)
         wt.pipeline.start_batch([ok_wav, fail_wav, ok_wav])
         poll(lambda: not getattr(wt.pipeline, "_batch_active", True), 20,
              lambda: (check("PROBE batch skips failing file, joins rest",

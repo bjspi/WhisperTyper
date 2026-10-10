@@ -553,104 +553,6 @@
         </widget>
        </item>
        <item>
-        <widget class="QGroupBox" name="liveprompt_group">
-         <property name="title">
-          <string>LivePrompting (via Trigger Words)</string>
-         </property>
-         <layout class="QVBoxLayout" name="liveprompt_layout">
-          <item>
-           <layout class="QHBoxLayout" name="horizontalLayout_2">
-            <item>
-             <widget class="QCheckBox" name="liveprompt_enabled_checkbox">
-              <property name="text">
-               <string>Enable LivePrompting</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="liveprompt_help_button">
-              <property name="text">
-               <string>?</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <spacer name="horizontalSpacer_2">
-              <property name="orientation">
-               <enum>Qt::Horizontal</enum>
-              </property>
-              <property name="sizeHint" stdset="0">
-               <size>
-                <width>40</width>
-                <height>20</height>
-               </size>
-              </property>
-             </spacer>
-            </item>
-           </layout>
-          </item>
-          <item>
-           <widget class="QLabel" name="liveprompt_trigger_label">
-            <property name="text">
-             <string>Trigger Words (comma-separated):</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <layout class="QHBoxLayout" name="trigger_words_layout">
-            <item>
-             <widget class="QLineEdit" name="liveprompt_trigger_words_input"/>
-            </item>
-            <item>
-             <widget class="QLabel" name="liveprompt_trigger_scan_depth_label">
-              <property name="text">
-               <string>Scan first X words:</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QSpinBox" name="liveprompt_trigger_scan_depth_input">
-              <property name="minimum">
-               <number>1</number>
-              </property>
-              <property name="maximum">
-               <number>99</number>
-              </property>
-              <property name="value">
-               <number>5</number>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </item>
-          <item>
-           <widget class="QCheckBox" name="liveprompt_strip_trigger_checkbox">
-            <property name="text">
-             <string>Remove trigger word (and preceding text) before rephrasing</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QLabel" name="liveprompt_system_prompt_label">
-            <property name="text">
-             <string>System Prompt:</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QTextEdit" name="liveprompt_system_prompt_input"/>
-          </item>
-          <item>
-           <widget class="QCheckBox" name="rephrase_context_checkbox">
-            <property name="text">
-             <string>Use selected text as context</string>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </widget>
-       </item>
-       <item>
         <widget class="QGroupBox" name="pr_hotkey_group">
          <property name="title">
           <string>Post-Rephrase Hotkey</string>
@@ -813,10 +715,128 @@
              </widget>
             </item>
             <item>
-             <widget class="QCheckBox" name="post_rp_auto_apply_checkbox">
-              <property name="text">
-               <string>Apply automatically</string>
-              </property>
+             <widget class="QStackedWidget" name="post_rp_options_stack">
+              <widget class="QWidget" name="post_rp_prompt_options">
+               <layout class="QVBoxLayout" name="post_rp_prompt_options_layout">
+                <property name="leftMargin">
+                 <number>0</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>0</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>0</number>
+                </property>
+                <item>
+                 <widget class="QCheckBox" name="post_rp_auto_apply_checkbox">
+                  <property name="text">
+                   <string>Apply automatically</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+              <widget class="QWidget" name="post_rp_instruction_options">
+               <layout class="QVBoxLayout" name="post_rp_instruction_options_layout">
+                <property name="leftMargin">
+                 <number>0</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>0</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>0</number>
+                </property>
+                <property name="spacing">
+                 <number>8</number>
+                </property>
+                <item>
+                 <layout class="QHBoxLayout" name="instruction_enabled_row">
+                  <item>
+                   <widget class="QCheckBox" name="liveprompt_enabled_checkbox">
+                    <property name="text">
+                     <string>Enable LivePrompting</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="liveprompt_help_button">
+                    <property name="text">
+                     <string>?</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <spacer name="horizontalSpacer_2">
+                    <property name="orientation">
+                     <enum>Qt::Horizontal</enum>
+                    </property>
+                    <property name="sizeHint" stdset="0">
+                     <size>
+                      <width>40</width>
+                      <height>20</height>
+                     </size>
+                    </property>
+                   </spacer>
+                  </item>
+                 </layout>
+                </item>
+                <item>
+                 <widget class="QLabel" name="liveprompt_trigger_label">
+                  <property name="text">
+                   <string>Trigger Words (comma-separated):</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <layout class="QHBoxLayout" name="trigger_words_layout">
+                  <item>
+                   <widget class="QLineEdit" name="liveprompt_trigger_words_input"/>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="liveprompt_trigger_scan_depth_label">
+                    <property name="text">
+                     <string>Scan first X words:</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QSpinBox" name="liveprompt_trigger_scan_depth_input">
+                    <property name="minimum">
+                     <number>1</number>
+                    </property>
+                    <property name="maximum">
+                     <number>99</number>
+                    </property>
+                    <property name="value">
+                     <number>5</number>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </item>
+                <item>
+                 <widget class="QCheckBox" name="liveprompt_strip_trigger_checkbox">
+                  <property name="text">
+                   <string>Remove trigger word (and preceding text) before rephrasing</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QCheckBox" name="rephrase_context_checkbox">
+                  <property name="text">
+                   <string>Use selected text as context</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
              </widget>
             </item>
             <item>

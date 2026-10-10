@@ -23,14 +23,14 @@ from app.ui.api_keys import ApiKeysTab
 from app.ui.connection_tester import ConnectionTester
 from app.ui.replacements import ReplacementsTab
 from app.ui.settings.api_page import ApiPage
-from app.ui.settings.bindings import load_bindings, save_bindings
+from app.ui.settings.bindings import PLATFORMS, load_bindings, save_bindings
 from app.ui.settings.general_page import GeneralPage
 from app.ui.settings.recording_page import RecordingPage
 from app.ui.settings.texts import apply_texts
 from app.ui.settings.theme_page import ThemePage
 from app.ui.settings.transcription_page import TranscriptionPage
 from app.ui.settings.widgets import SliderWheelToScrollArea, fit_button_to_captions
-from app.ui.transformations_tab import TransformationsEditor
+from app.ui.transformations_tab import InstructionControls, TransformationsEditor
 from app.ui.tray_icons import app_icon
 
 #: Default window width on first launch (the height default lives in the config).
@@ -174,8 +174,16 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self._transformations = TransformationsEditor(
             self.config.get("post_rephrasing_entries", []), self.translator, splitter=self.splitter,
             list_placeholder=self.post_rp_list_placeholder, caption_edit=self.post_rp_caption_edit,
-            text_edit=self.post_rp_text_edit, show_during_recording=self.post_rp_show_during_recording_checkbox,
-            auto_apply=self.post_rp_auto_apply_checkbox, add_button=self.post_rp_add_btn, remove_button=self.post_rp_remove_btn,
+            text_label=self.text_label, text_edit=self.post_rp_text_edit,
+            show_during_recording=self.post_rp_show_during_recording_checkbox,
+            options_stack=self.post_rp_options_stack, auto_apply=self.post_rp_auto_apply_checkbox,
+            instruction=InstructionControls(
+                enabled=self.liveprompt_enabled_checkbox, trigger_words=self.liveprompt_trigger_words_input,
+                scan_depth=self.liveprompt_trigger_scan_depth_input,
+                strip_trigger=self.liveprompt_strip_trigger_checkbox, selection_context=self.rephrase_context_checkbox,
+            ),
+            add_button=self.post_rp_add_btn, remove_button=self.post_rp_remove_btn,
+            selection_context_supported=PLATFORMS["not_macos"],
         )
         self.post_rp_list = self._transformations.list
         self._transformations.changed.connect(self._sync_transformations_to_config)
@@ -279,6 +287,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
             self.tabs.setTabText(index, tr(title_key))
             self.tabs.setTabToolTip(index, tr(tooltip_key))
         self.transformations_info_label.setText(tr("transformations_info", max_entries=self._transformations.max_entries))
+        self._transformations.retranslate()
         self._api_keys_tab.retranslate_ui()
         self._replacements_tab.retranslate_ui()
         self._retranslate_api_settings()

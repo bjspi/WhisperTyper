@@ -9,7 +9,6 @@ from PyQt6.QtWidgets import QCheckBox, QMessageBox, QStyle
 from app.core.env import is_WINDOWS
 from app.core.i18n import UI_LANGUAGES
 from app.core.prompts import (
-    DEFAULT_LIVEPROMPT_SYSTEM_PROMPTS,
     DEFAULT_TRANSCRIPTION_PROMPTS,
     _default_prompt_for,
     _is_known_default_prompt,
@@ -93,16 +92,13 @@ class GeneralPage(SettingsWindowBase):
 
     def _maybe_swap_default_prompts(self, new_lang_code: str) -> None:
         """Replace prompts the user never edited (still a known default) with the new language's default."""
-        for widget, prompt_map in (
-            (self.prompt_input, DEFAULT_TRANSCRIPTION_PROMPTS),
-            (self.liveprompt_system_prompt_input, DEFAULT_LIVEPROMPT_SYSTEM_PROMPTS),
-        ):
-            current_text = widget.toPlainText()
-            if _is_known_default_prompt(prompt_map, current_text):
-                new_default = _default_prompt_for(prompt_map, new_lang_code)
-                if current_text.strip() != new_default:
-                    widget.setPlainText(new_default)
-                    logging.info("Swapped a default prompt to the new UI language.")
+        current_text = self.prompt_input.toPlainText()
+        if _is_known_default_prompt(DEFAULT_TRANSCRIPTION_PROMPTS, current_text):
+            new_default = _default_prompt_for(DEFAULT_TRANSCRIPTION_PROMPTS, new_lang_code)
+            if current_text.strip() != new_default:
+                self.prompt_input.setPlainText(new_default)
+                logging.info("Swapped a default prompt to the new UI language.")
+        self._transformations.apply_language_defaults(new_lang_code)
 
     def show_liveprompt_help(self) -> None:
         """Explain LivePrompting in a long balloon."""
