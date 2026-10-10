@@ -5,7 +5,7 @@ import logging
 from typing import Dict, List, Optional
 
 import copykitten
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QApplication, QWidget
 
 from app.context import AppContext
 from app.controllers.text_output import TextOutput
@@ -15,6 +15,7 @@ from app.core.env import is_MACOS
 from app.core.prompts import captioned_transformations
 from app.core.timing import NO_TIMING, OperationTiming
 from app.platform.macos import activate_app, frontmost_app_name
+from app.ui import theme
 from app.ui.durations import BALLOON_CONFIRM_MS, BALLOON_ERROR_MS, BALLOON_NOTICE_MS, BALLOON_SHORT_MS
 from app.ui.floating_buttons import FloatingButtonWindow
 
@@ -64,7 +65,11 @@ class PostRephraseController:
     def show_palette(self, entries: List[Dict[str, str]], selected_text: str) -> None:
         """Open the floating window with one button per transformation."""
         FloatingButtonWindow(buttons=entries, selected_text=selected_text,
-                             on_button_click_callback=self.on_button_clicked)
+                             on_button_click_callback=self.on_button_clicked,
+                             title=self._ctx.tr("rephrase_window_title"),
+                             close_tooltip=self._ctx.tr("rephrase_window_close_tooltip"),
+                             dark=theme.resolve_dark(self._ctx.config.get("color_theme", "system"),
+                                                     QApplication.instance()))
 
     def on_button_clicked(self, system_prompt: str, selected_text: str, window: QWidget) -> None:
         """Rephrase ``selected_text`` with the clicked transformation's prompt."""
