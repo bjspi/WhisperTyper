@@ -7,6 +7,7 @@ import wave
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from PyQt6.QtCore import QObject, QPoint, pyqtSignal
+from PyQt6.QtWidgets import QApplication
 
 from app.audio import macos_recorder
 from app.audio.capture import HotMicCapture, MicrophoneInput, OnDemandCapture
@@ -23,6 +24,7 @@ from app.core.prompts import INSTRUCTION, auto_apply_prompt, instruction_entry, 
 from app.core.redaction import redact_for_log
 from app.core.timing import OperationTiming
 from app.platform.windows import is_console_foreground_window
+from app.ui import theme
 from app.ui.durations import (
     BALLOON_ERROR_MS,
     BALLOON_INFO_MS,
@@ -400,6 +402,7 @@ class RecordingController(QObject):
             on_selection_changed=self._on_prompt_selected,
             use_system_position=use_system_position,
             system_anchor=self._palette_anchor(),
+            dark=theme.resolve_dark(self._config.get("color_theme", "system"), QApplication.instance()),
         )
         # A system-positioned palette can be far away from the user's current work. Keep the
         # original mouse-following recording status as a lightweight local reminder. When the

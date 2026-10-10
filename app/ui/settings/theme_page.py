@@ -64,13 +64,7 @@ class ThemePage(SettingsWindowBase):
 
     def apply_theme(self) -> None:
         """Apply the light/dark teal stylesheet (config 'color_theme': system/light/dark)."""
-        mode = self.config.get("color_theme", "system")
-        if mode == "light":
-            dark = False
-        elif mode == "dark":
-            dark = True
-        else:
-            dark = theme.is_dark_mode(QApplication.instance())
+        dark = theme.resolve_dark(self.config.get("color_theme", "system"), QApplication.instance())
         self._theme_palette = theme.palette(dark)
         qss = theme.build_stylesheet(dark)
         try:
