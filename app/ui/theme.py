@@ -111,7 +111,9 @@ QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus,
 QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid %(accent)s; }
 QLineEdit:hover, QComboBox:hover, QSpinBox:hover { border-color: %(muted)s; }
-QComboBox { padding-right: 36px; }
+QComboBox { padding-right: 32px; }
+/* An editable combo places its line edit left of the drop-down itself; extra padding would only add a gap. */
+QComboBox:editable { padding-right: 4px; }
 QComboBox::drop-down {
     subcontrol-origin: padding; subcontrol-position: top right; width: 28px;
     border: none; border-left: 1px solid %(field_border)s;

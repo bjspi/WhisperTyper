@@ -45,8 +45,9 @@ class TranscriptionPage(SettingsWindowBase):
         ):
             slider.setMinimumHeight(combo.sizeHint().height())
             row.setSpacing(_COLUMN_GAP)
-            for column in columns:
+            for index, column in enumerate(columns):
                 row.setAlignment(column, Qt.AlignmentFlag.AlignTop)
+                row.setStretch(index, 1)  # provider | model | temperature: a third each
         for column in (self.hotkey_v_layout, self.pr_hotkey_v_layout):
             self.hotkeys_layout.setAlignment(column, Qt.AlignmentFlag.AlignTop)
         # Language / gain row: the language name gets the room a two-digit gain does not need.
