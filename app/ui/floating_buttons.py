@@ -160,7 +160,7 @@ class RecordingPromptOverlay(QWidget):
     _instance: Optional['RecordingPromptOverlay'] = None
 
     def __init__(self, prompts: List[Dict[str, Any]], status_text: str, none_text: str,
-                 on_selection_changed: Callable[[Optional[str]], None],
+                 on_selection_changed: Callable[[Optional[Dict[str, Any]]], None],
                  use_system_position: bool = True,
                  system_anchor: Optional[QPoint] = None) -> None:
         """Build a fixed palette near the cursor without taking focus from the target app.
@@ -253,7 +253,7 @@ class RecordingPromptOverlay(QWidget):
             caption = prompt["caption"]
             button = self._build_prompt_button(compact_caption(caption), compact=True)
             button.setToolTip(caption)
-            button.clicked.connect(partial(self._select_prompt, prompt["text"], button))
+            button.clicked.connect(partial(self._select_prompt, prompt, button))
             prompt_row.addWidget(button)
             if prompt.get("auto_apply"):
                 preselected = button
@@ -274,11 +274,11 @@ class RecordingPromptOverlay(QWidget):
         self._prompt_buttons.append(button)
         return button
 
-    def _select_prompt(self, prompt_text: Optional[str], selected_button: QPushButton) -> None:
-        """Highlight one choice and report its immutable prompt text to the app."""
+    def _select_prompt(self, prompt: Optional[Dict[str, Any]], selected_button: QPushButton) -> None:
+        """Highlight one choice and report its palette entry (None for "None") to the app."""
         for button in self._prompt_buttons:
             button.setChecked(button is selected_button)
-        self._on_selection_changed(prompt_text)
+        self._on_selection_changed(prompt)
 
     def _position_for_platform(self, use_system_position: bool,
                                system_anchor: Optional[QPoint]) -> None:

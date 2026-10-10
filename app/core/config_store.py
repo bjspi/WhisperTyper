@@ -18,10 +18,21 @@ from app.core.constants import (
     WINDOW_MIN_HEIGHT,
 )
 from app.core.hotkeys import is_clipboard_shortcut
+from app.core.prompts import INSTRUCTION, default_instruction_entry, transformation_entry
 from app.core.textutil import demojibake
 
 # A hotkey normalizer, e.g. HotkeyMixin.normalize_hotkey_string.
 HotkeyNormalizer = Callable[[str], str]
+
+#: Top-level LivePrompt keys of older configs and the instruction-entry fields they fill.
+_LEGACY_LIVEPROMPT_FIELDS = {
+    "liveprompt_enabled": "enabled",
+    "liveprompt_trigger_words": "trigger_words",
+    "liveprompt_trigger_word_scan_depth": "scan_depth",
+    "liveprompt_strip_trigger": "strip_trigger",
+    "liveprompt_system_prompt": "text",
+    "rephrase_use_selection_context": "use_selection_context",
+}
 
 
 class ConfigStore:
@@ -136,6 +147,7 @@ class ConfigStore:
                 changed = True
 
         changed = migrate_api_keys(cfg) or changed
+        changed = self._migrate_instruction_entry(cfg) or changed
 
         # Self-heal hotkeys polluted by a captured control char. If "Set hotkey" was active while
         # the key's own global action fired, its simulated Ctrl+C (\x03) got captured too, saving
@@ -158,4 +170,30 @@ class ConfigStore:
                 cfg[hk_key] = DEFAULT_CONFIG[hk_key]
                 changed = True
 
+        return changed
+
+    @staticmethod
+    def _migrate_instruction_entry(cfg: Dict[str, Any]) -> bool:
+        """Keep LivePrompt as the instruction entry of the prompt list (added once, at the top).
+
+        Its settings come from the top-level LivePrompt keys of older configs, which are then
+        dropped; a fresh config gets the defaults in the UI language.
+        """
+        changed = False
+        entries = cfg.get("post_rephrasing_entries")
+        if not isinstance(entries, list):
+            entries = []
+            changed = True
+        if not any(isinstance(entry, dict) and entry.get("kind") == INSTRUCTION for entry in entries):
+            instruction = default_instruction_entry(str(cfg.get("ui_language", DEFAULT_CONFIG["ui_language"])))
+            for legacy_key, field in _LEGACY_LIVEPROMPT_FIELDS.items():
+                if legacy_key in cfg:
+                    instruction[field] = cfg[legacy_key]
+            entries = [transformation_entry(instruction), *entries]
+            changed = True
+        cfg["post_rephrasing_entries"] = entries
+        for legacy_key in _LEGACY_LIVEPROMPT_FIELDS:
+            if legacy_key in cfg:
+                del cfg[legacy_key]
+                changed = True
         return changed

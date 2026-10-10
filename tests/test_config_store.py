@@ -15,6 +15,7 @@ from app.core.constants import (
 )
 from app.core.env import is_MACOS
 from app.core.hotkeys import normalize_hotkey_string
+from app.core.prompts import default_instruction_entry
 
 
 @pytest.fixture
@@ -32,7 +33,10 @@ class TestLoad:
         config, changed = store.load()
         assert changed is True
         for key, value in DEFAULT_CONFIG.items():
-            assert config[key] == value
+            if key != "post_rephrasing_entries":
+                assert config[key] == value
+        # The prompt list starts with the instruction entry in the UI language.
+        assert config["post_rephrasing_entries"] == [default_instruction_entry(DEFAULT_CONFIG["ui_language"])]
 
     def test_corrupt_file_yields_defaults(self, store: ConfigStore):
         with open(store.config_file, "w", encoding="utf-8") as f:
@@ -69,6 +73,34 @@ class TestMigrations:
         assert changed is True
         assert "generic_rephrase_enabled" not in config and "generic_rephrase_prompt" not in config
 
+    def test_liveprompt_settings_become_the_first_prompt_entry(self, store: ConfigStore):
+        write_config(store, {
+            "ui_language": "en",
+            "liveprompt_enabled": False, "liveprompt_trigger_words": "befehl, ki",
+            "liveprompt_trigger_word_scan_depth": 7, "liveprompt_strip_trigger": True,
+            "liveprompt_system_prompt": "My own instruction prompt", "rephrase_use_selection_context": True,
+            "post_rephrasing_entries": [{"caption": "Polish", "text": "Polish it"}],
+        })
+        config, changed = store.load()
+        assert changed is True
+        instruction, template = config["post_rephrasing_entries"]
+        assert instruction == {
+            "kind": "instruction", "caption": "\u2728 Instruction", "text": "My own instruction prompt",
+            "show_during_recording": False, "auto_apply": False, "enabled": False,
+            "trigger_words": "befehl, ki", "scan_depth": 7, "strip_trigger": True, "use_selection_context": True,
+        }
+        assert template["caption"] == "Polish"
+        assert not any(key.startswith("liveprompt_") or key == "rephrase_use_selection_context" for key in config)
+
+    def test_instruction_migration_runs_once(self, store: ConfigStore):
+        config, _ = store.load()
+        config["post_rephrasing_entries"].append({"caption": "Mail", "text": "Write a mail",
+                                                  "show_during_recording": False})
+        store.save(config)
+        reloaded, changed = store.load()
+        assert changed is False
+        assert [entry.get("kind") for entry in reloaded["post_rephrasing_entries"]] == ["instruction", None]
+
     def test_windows_fast_paste_key_is_renamed(self, store: ConfigStore):
         write_config(store, {"windows_fast_paste": True})
         config, changed = store.load()
@@ -90,8 +122,8 @@ class TestMigrations:
     def test_mojibake_in_rephrase_entries_is_repaired(self, store: ConfigStore):
         write_config(store, {"post_rephrasing_entries": [{"caption": "HÃ¶flich", "text": "Sei hÃ¶flich"}]})
         config, _ = store.load()
-        assert config["post_rephrasing_entries"][0]["caption"] == "Höflich"
-        assert config["post_rephrasing_entries"][0]["text"] == "Sei höflich"
+        assert config["post_rephrasing_entries"][1]["caption"] == "Höflich"
+        assert config["post_rephrasing_entries"][1]["text"] == "Sei höflich"
 
     def test_old_rephrase_entries_opt_out_of_recording_palette(self, store: ConfigStore):
         write_config(store, {"post_rephrasing_entries": [{"caption": "Polish", "text": "Improve it"}]})

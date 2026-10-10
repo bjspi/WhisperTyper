@@ -5,6 +5,14 @@ recording is transcribed by an OpenAI-compatible Whisper endpoint, and the resul
 into whatever application has focus (or optionally routed through a chat-completion model
 first — LivePrompt / rephrasing).
 
+The prompt list (`post_rephrasing_entries`, edited on the Prompts tab) holds the user's
+rephrasing templates and exactly one **instruction entry** (LivePrompt, shown as ✨). The
+instruction carries the transcript out as an order; its trigger words, scan depth, trigger
+stripping and selection context are fields of that entry. `app/core/prompts.py` keeps the list
+canonical (one instruction, its position, the template limit) and `app/core/rephrase_routing.py`
+decides per transcription: explicit palette choice, then a trigger word of the active
+instruction, then the automatically applied prompt.
+
 This document describes the layering, the threading model, and the reasoning behind the
 less obvious design decisions.
 

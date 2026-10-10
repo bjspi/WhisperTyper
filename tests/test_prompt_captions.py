@@ -33,6 +33,6 @@ def test_emoji_captions_survive_save_and_load_unchanged(tmp_path):
     store.save(config)
     assert caption in path.read_text(encoding="utf-8")  # stored as UTF-8, not \u escapes
     reloaded, _changed = ConfigStore(str(path), normalize_hotkey_string).load()
-    entry = reloaded["post_rephrasing_entries"][0]
+    entry = reloaded["post_rephrasing_entries"][1]  # after the instruction entry the migration adds
     assert (entry["caption"], entry["text"]) == (caption, "Rewrite \U0001F44D\U0001F3FD")
     assert json.loads(path.read_text(encoding="utf-8"))["post_rephrasing_entries"][0]["caption"] == caption

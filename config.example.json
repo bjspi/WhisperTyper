@@ -19,16 +19,23 @@
   "windows_sendinput_text": false,
   "windows_sendinput_fallback": true,
   "fast_paste": false,
-  "liveprompt_enabled": true,
-  "liveprompt_trigger_words": "prompt, Befehl",
-  "liveprompt_trigger_word_scan_depth": 5,
-  "liveprompt_system_prompt": "Du bist ein Assistent, der Anweisungen präzise ausführt. Deine Antwort muss sich strikt auf das Ergebnis der Anweisung des Benutzers beschränken. Generiere ausschließlich die reine, direkte Antwort ohne jegliche Einleitungen, Erklärungen, Entschuldigungen oder zusammenfassende Bemerkungen. Sollte der Name des Verfasser nötig sein, ist das \"Joscha\". In seltenen Fällen wirst du auch die Firma des Verfassers nennen müssen. Diese ist \"Smartzone\"",
-  "rephrase_use_selection_context": false,
   "rephrasing_api_url": "https://api.groq.com/openai/v1/chat/completions",
   "rephrasing_api_key": "YOUR_API_KEY_HERE",
   "rephrasing_model": "openai/gpt-oss-120b",
   "rephrasing_temperature": 0.7,
   "post_rephrasing_entries": [
+    {
+      "kind": "instruction",
+      "caption": "✨ Anweisung",
+      "text": "Du bist ein Assistent, der Anweisungen präzise ausführt. Deine Antwort muss sich strikt auf das Ergebnis der Anweisung des Benutzers beschränken. Generiere ausschließlich die reine, direkte Antwort ohne jegliche Einleitungen, Erklärungen, Entschuldigungen oder zusammenfassende Bemerkungen. Sollte der Name des Verfasser nötig sein, ist das \"Joscha\". In seltenen Fällen wirst du auch die Firma des Verfassers nennen müssen. Diese ist \"Smartzone\"",
+      "show_during_recording": false,
+      "auto_apply": false,
+      "enabled": true,
+      "trigger_words": "prompt, Befehl",
+      "scan_depth": 5,
+      "strip_trigger": false,
+      "use_selection_context": false
+    },
     {
       "caption": "Korrigieren",
       "show_during_recording": true,

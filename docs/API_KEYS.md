@@ -31,8 +31,8 @@ and **Test connection** in the last row, and a status line in between.
   provider accordingly.
 
 Connection tests use the current unsaved form; normal requests use the saved
-settings. Rephrasing settings apply to LivePrompt and the prompts from the
-Prompts tab.
+settings. Rephrasing settings apply to all entries of the Prompts tab,
+including the ✨ instruction (LivePrompt).
 
 Both model dropdowns show suggestions only for the endpoint's provider and are
 directly editable: select a suggestion using the arrow or type your own model

@@ -61,15 +61,7 @@ BINDINGS: Tuple[Binding, ...] = (
     Binding("windows_keep_mic_hot_idle_input", "windows_keep_mic_hot_idle_minutes", "int", "windows",
             companions=("windows_keep_mic_hot_idle_label",)),
     Binding("min_recording_input", "min_recording_seconds", "float"),
-    # Rephrasing
-    Binding("liveprompt_enabled_checkbox", "liveprompt_enabled", "check"),
-    Binding("liveprompt_trigger_words_input", "liveprompt_trigger_words", "text"),
-    Binding("liveprompt_trigger_scan_depth_input", "liveprompt_trigger_word_scan_depth", "int"),
-    Binding("liveprompt_strip_trigger_checkbox", "liveprompt_strip_trigger", "check"),
-    Binding("liveprompt_system_prompt_input", "liveprompt_system_prompt", "plain"),
-    # Selected-text context needs permissions macOS does not grant reliably.
-    Binding("rephrase_context_checkbox", "rephrase_use_selection_context", "check", "not_macos",
-            unsupported_value=False),
+    # Rephrasing API (the instruction entry's settings live in the prompt list)
     Binding("rephrasing_api_url_input", "rephrasing_api_url", "text"),
     Binding("rephrasing_temp_slider", "rephrasing_temperature", "temperature",
             companions=("rephrasing_temp_label",)),

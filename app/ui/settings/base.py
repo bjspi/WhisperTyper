@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QSlider,
     QSpinBox,
     QSplitter,
+    QStackedWidget,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
     from app.controllers.recording import RecordingController
     from app.ui.api_keys import ApiKeysTab
     from app.ui.replacements import ReplacementsTab
+    from app.ui.transformations_tab import TransformationsEditor
 
 
 class SettingsWindowBase(QWidget):
@@ -54,6 +56,7 @@ class SettingsWindowBase(QWidget):
     _recording: RecordingController
     _api_keys_tab: ApiKeysTab
     _replacements_tab: ReplacementsTab
+    _transformations: TransformationsEditor
     _theme_palette: Optional[Dict[str, str]] = None
 
     # Window chrome
@@ -125,18 +128,7 @@ class SettingsWindowBase(QWidget):
     gain_label: QLabel
     gain_input: QLineEdit
 
-    # Rephrasing page
-    liveprompt_group: QGroupBox
-    liveprompt_enabled_checkbox: QCheckBox
-    liveprompt_help_button: QPushButton
-    liveprompt_trigger_label: QLabel
-    liveprompt_trigger_words_input: QLineEdit
-    liveprompt_trigger_scan_depth_label: QLabel
-    liveprompt_trigger_scan_depth_input: QSpinBox
-    liveprompt_strip_trigger_checkbox: QCheckBox
-    liveprompt_system_prompt_label: QLabel
-    liveprompt_system_prompt_input: QTextEdit
-    rephrase_context_checkbox: QCheckBox
+    # Rephrasing API page
     shared_api_group: QGroupBox
     rephrasing_api_url_label: QLabel
     rephrasing_api_url_input: QLineEdit
@@ -154,7 +146,7 @@ class SettingsWindowBase(QWidget):
     rephrasing_key_choose_button: QPushButton
     rephrasing_key_add_button: QPushButton
 
-    # Transformations page
+    # Prompts page
     transformations_tab_description_label: QLabel
     transformations_unavailable_label: QLabel
     transformations_info_label: QLabel
@@ -164,7 +156,18 @@ class SettingsWindowBase(QWidget):
     caption_label: QLabel
     post_rp_caption_edit: QLineEdit
     post_rp_show_during_recording_checkbox: QCheckBox
+    post_rp_options_stack: QStackedWidget
+    post_rp_prompt_options: QWidget
     post_rp_auto_apply_checkbox: QCheckBox
+    post_rp_instruction_options: QWidget
+    liveprompt_enabled_checkbox: QCheckBox
+    liveprompt_help_button: QPushButton
+    liveprompt_trigger_label: QLabel
+    liveprompt_trigger_words_input: QLineEdit
+    liveprompt_trigger_scan_depth_label: QLabel
+    liveprompt_trigger_scan_depth_input: QSpinBox
+    liveprompt_strip_trigger_checkbox: QCheckBox
+    rephrase_context_checkbox: QCheckBox
     text_label: QLabel
     post_rp_text_edit: QTextEdit
     post_rp_add_btn: QPushButton

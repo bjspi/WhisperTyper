@@ -14,7 +14,6 @@ from typing import Any, Dict
 from app.core.env import is_MACOS, is_WINDOWS
 from app.core.models import DEFAULT_REPHRASING_MODEL, DEFAULT_TRANSCRIPTION_MODEL
 from app.core.prompts import (
-    DEFAULT_LIVEPROMPT_SYSTEM_PROMPTS,
     DEFAULT_TRANSCRIPTION_PROMPTS,
     _default_prompt_for,
 )
@@ -125,15 +124,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "windows_sendinput_fallback": True,
     "fast_paste": False,
 
-    # Rephrasing / LivePrompt
-    "liveprompt_enabled": True,
-    "liveprompt_trigger_words": "prompt, ",
-    "liveprompt_trigger_word_scan_depth": 5,
-    # When True, strip everything up to and including the trigger word before rephrasing, so
-    # only the actual instruction after it is sent (e.g. "… als Anweisung. Schreib …" -> "Schreib …").
-    "liveprompt_strip_trigger": False,
-    "liveprompt_system_prompt": _default_prompt_for(DEFAULT_LIVEPROMPT_SYSTEM_PROMPTS, _DEFAULT_UI_LANG),
-    "rephrase_use_selection_context": False,
+    # Rephrasing. The prompt list always holds the instruction (LivePrompt) entry; the config
+    # migration adds it in the UI language.
     "rephrasing_api_url": "https://api.openai.com/v1/chat/completions",
     "rephrasing_model": DEFAULT_REPHRASING_MODEL,
     "rephrasing_temperature": 0.7,

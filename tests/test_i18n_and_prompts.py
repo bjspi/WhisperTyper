@@ -9,9 +9,12 @@ from app.core.i18n import TranslationManager
 from app.core.paths import resource_path
 from app.core.prompts import (
     DEFAULT_TRANSCRIPTION_PROMPTS,
+    MAX_TRANSFORMATIONS,
     _default_prompt_for,
     _is_known_default_prompt,
     auto_apply_prompt,
+    captioned_transformations,
+    instruction_entry,
     load_transformations,
     recording_prompt_entries,
 )
@@ -76,8 +79,8 @@ class TestRecordingPromptEntries:
             {"caption": "Second", "text": "Do second", "show_during_recording": True},
         ]
         assert recording_prompt_entries(entries) == [
-            {"caption": "First", "text": "Do first", "auto_apply": False},
-            {"caption": "Second", "text": "Do second", "auto_apply": False},
+            {"caption": "First", "text": "Do first", "auto_apply": False, "kind": "prompt"},
+            {"caption": "Second", "text": "Do second", "auto_apply": False, "kind": "prompt"},
         ]
 
     def test_rejects_non_lists_and_non_boolean_opt_in(self):
@@ -93,8 +96,8 @@ class TestAutoApplyPrompt:
             {"caption": "Fix", "text": "Fix it", "auto_apply": True, "show_during_recording": False},
             {"caption": "Mail", "text": "Write a mail", "auto_apply": True, "show_during_recording": True},
         ])
-        assert [(entry["auto_apply"], entry["show_during_recording"]) for entry in entries] == [
-            (True, True), (False, True)]
+        assert [(entry["auto_apply"], entry["show_during_recording"]) for entry in entries
+                if entry["kind"] == "prompt"] == [(True, True), (False, True)]
         assert auto_apply_prompt(entries) == "Fix it"
         assert [prompt["auto_apply"] for prompt in recording_prompt_entries(entries)] == [True, False]
 
@@ -102,4 +105,32 @@ class TestAutoApplyPrompt:
         assert auto_apply_prompt([{"caption": "Fix", "text": "Fix it", "show_during_recording": True}]) is None
         assert auto_apply_prompt([{"caption": "", "text": "No caption", "auto_apply": True}]) is None
         assert auto_apply_prompt(None) is None
+
+
+class TestInstructionEntry:
+    INSTRUCTION = {"kind": "instruction", "caption": "Go", "text": "Carry it out", "show_during_recording": True}
+
+    def test_exactly_one_instruction_entry_keeps_its_position(self):
+        entries = load_transformations([{"caption": "A", "text": "a"}, self.INSTRUCTION, dict(self.INSTRUCTION)])
+        assert [entry["kind"] for entry in entries] == ["prompt", "instruction"]
+        assert load_transformations([{"caption": "A", "text": "a"}])[0]["kind"] == "instruction"  # added when missing
+
+    def test_limit_counts_only_own_templates(self):
+        templates = [{"caption": f"P{i}", "text": "t"} for i in range(MAX_TRANSFORMATIONS + 3)]
+        entries = load_transformations([self.INSTRUCTION, *templates])
+        assert sum(entry["kind"] == "prompt" for entry in entries) == MAX_TRANSFORMATIONS
+        assert entries[0]["kind"] == "instruction"
+
+    def test_instruction_is_offered_only_while_active(self):
+        active = [self.INSTRUCTION, {"caption": "A", "text": "a", "show_during_recording": True}]
+        inactive = [{**self.INSTRUCTION, "enabled": False}, active[1]]
+        assert [entry["kind"] for entry in recording_prompt_entries(active)] == ["instruction", "prompt"]
+        assert [entry["kind"] for entry in captioned_transformations(active)] == ["instruction", "prompt"]
+        assert [entry["kind"] for entry in recording_prompt_entries(inactive)] == ["prompt"]
+        assert [entry["kind"] for entry in captioned_transformations(inactive)] == ["prompt"]
+
+    def test_instruction_never_applies_automatically(self):
+        entry = instruction_entry([{**self.INSTRUCTION, "auto_apply": True}])
+        assert entry["auto_apply"] is False
+        assert auto_apply_prompt([{**self.INSTRUCTION, "auto_apply": True}]) is None
 
