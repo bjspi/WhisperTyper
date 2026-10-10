@@ -67,14 +67,14 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
         <img src="screenshots/app/settings-transcription.jpg" alt="Transcription settings: API endpoint, model, hotkey, microphone options" />
       </a>
       <br />
-      <sub><b>🎤 Transcription</b> — Bring your own Whisper API (OpenAI, Groq, or any compatible endpoint), pick model &amp; temperature, set your global hotkey with optional push-to-talk, boost quiet microphones with volume gain, and keep the mic pre-warmed for instant recording starts. FFmpeg is auto-detected to enable transcribing video files.</sub>
+      <sub><b>🎤 API Providers</b> — Transcription and rephrasing API side by side (OpenAI, Groq, or any compatible endpoint) with model &amp; temperature, both hotkeys with optional push-to-talk, recording options such as volume gain and a pre-warmed mic, and a collapsible FFmpeg section (auto-detected) for video files.</sub>
     </td>
     <td align="center" width="50%" valign="top">
       <a href="screenshots/app/settings-rephrase-liveprompt.jpg" target="_blank">
         <img src="screenshots/app/settings-rephrase-liveprompt.jpg" alt="Rephrase and LivePrompt settings: chat API, trigger words, system prompt" />
       </a>
       <br />
-      <sub><b>🚀 Rephrasing API</b> — Configure the chat-completions API used for rephrasing, prompts and the ✨ instruction (LivePrompt), whose trigger words turn your speech into a live AI command: start a recording with <i>“prompt, …”</i> and the AI's answer is typed right where your cursor is.</sub>
+      <sub><b>🚀 Rephrasing &amp; LivePrompt</b> — The rephrasing API on the API Providers tab drives prompts and the ✨ instruction (LivePrompt), whose trigger words turn your speech into a live AI command: start a recording with <i>“prompt, …”</i> and the AI's answer is typed right where your cursor is.</sub>
     </td>
   </tr>
   <tr>

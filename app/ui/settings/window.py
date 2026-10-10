@@ -65,7 +65,8 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         # Pages and controls the .ui file does not contain.
         self._api_keys_tab = ApiKeysTab(self.config["api_key_profiles"], self.translator, self)
         self._api_keys_tab.groq_rotation.setChecked(self.config["groq_key_rotation"])
-        self.tabs.insertTab(self.tabs.indexOf(self.general_tab), self._api_keys_tab, "")
+        # Tab order: API providers, API keys, Prompts, Replacements, General.
+        self.tabs.insertTab(self.tabs.indexOf(self.transcription_tab) + 1, self._api_keys_tab, "")
         self._replacements_tab = ReplacementsTab(self.config["replacements_rules"], self.config["replacements_enabled"],
                                                  self.translator, self)
         self.tabs.insertTab(self.tabs.indexOf(self.general_tab), self._replacements_tab, "")
@@ -99,7 +100,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         if is_MACOS:
             # Trackpad scrolling over a slider should scroll the page, not change the temperature.
             SliderWheelToScrollArea(self.transcription_temp_slider, self.transcription_scroll_area)
-            SliderWheelToScrollArea(self.rephrasing_temp_slider, self.rephrasing_scroll_area)
+            SliderWheelToScrollArea(self.rephrasing_temp_slider, self.transcription_scroll_area)
         self._build_save_row()
         self.aac_bitrates_ready.connect(self._apply_aac_bitrates)
         ctx.files_changed.connect(self.refresh_actions)
@@ -278,7 +279,6 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         apply_texts(self, tr)
         for tab, title_key, tooltip_key in (
             (self.transcription_tab, "tab_transcription", "tooltip_tab_transcription"),
-            (self.rephrasing_tab, "tab_rephrase", "tooltip_tab_rephrase"),
             (self.post_rephrasing_tab, "tab_transformations", "tooltip_tab_transformations"),
             (self._api_keys_tab, "tab_api_keys", "tooltip_tab_api_keys"),
             (self._replacements_tab, "tab_replacements", "tooltip_tab_replacements"),
@@ -298,6 +298,9 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
             fit_button_to_captions(button, tr("api_test_testing_button"))
         self._update_recording_format_controls()
         self._refresh_ffmpeg_status()
+        # The texts table sets the general temperature tooltip; models without temperature say why.
+        self._update_prompt_token_counter()
+        self._refresh_api_state()
         self._update_prompt_token_counter()
         self.update_brand_header()
         self.language_changed.emit()

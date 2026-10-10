@@ -1,11 +1,11 @@
 """Small reusable behaviours for settings widgets."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from PyQt6.QtCore import QEvent, QObject
 from PyQt6.QtGui import QWheelEvent
-from PyQt6.QtWidgets import QPushButton, QScrollArea, QSlider
+from PyQt6.QtWidgets import QLabel, QPushButton, QScrollArea, QSlider
 
 #: Pixels scrolled per wheel notch, at least; trackpads report exact pixel deltas instead.
 _MIN_WHEEL_STEP_PX = 18
@@ -46,3 +46,20 @@ def fit_button_to_captions(button: QPushButton, *captions: str) -> None:
     metrics = button.fontMetrics()
     padding = button.sizeHint().width() - metrics.horizontalAdvance(button.text())
     button.setFixedWidth(max(metrics.horizontalAdvance(caption) for caption in (button.text(), *captions)) + padding)
+
+
+def show_temperature_support(slider: QSlider, value_label: QLabel, supported: bool, translator: Any) -> None:
+    """Disable a temperature slider for models that take no temperature; the stored value is kept.
+
+    While disabled, both the slider and its value say why, so the greyed-out control is not mistaken
+    for a broken one.
+    """
+    slider.setEnabled(supported)
+    value_label.setEnabled(supported)
+    if supported:
+        slider.setToolTip(translator.tr("temperature_tooltip"))
+        value_label.setToolTip("")
+    else:
+        reason = translator.tr("temperature_unsupported_tooltip")
+        slider.setToolTip(reason)
+        value_label.setToolTip(reason)

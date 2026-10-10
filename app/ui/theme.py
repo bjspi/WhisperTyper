@@ -158,6 +158,7 @@ QCheckBox::indicator {
 QCheckBox::indicator:hover { border-color: %(accent)s; }
 QCheckBox::indicator:checked { background: %(accent)s; border-color: %(accent)s; }
 
+QSlider { background: transparent; }
 QSlider::groove:horizontal { height: 4px; background: %(border)s; border-radius: 2px; }
 QSlider::sub-page:horizontal { background: %(accent)s; border-radius: 2px; }
 QSlider::handle:horizontal {
@@ -167,6 +168,16 @@ QSlider::handle:horizontal {
     width: 12px; margin: -6px 0; border-radius: 8px;
 }
 QSlider::handle:horizontal:hover { background: %(accent)s; }
+/* Models without temperature disable the slider: grey track and handle make that obvious. */
+QSlider::sub-page:horizontal:disabled { background: %(border)s; }
+QSlider::handle:horizontal:disabled { background: %(panel2)s; border-color: %(border)s; }
+QLabel:disabled { color: %(muted)s; }
+
+/* Collapsible section headers (prompt, FFmpeg): flat full-width caption with a separator line. */
+QWidget#collapsible_header, QWidget#collapsible_content { background: transparent; }
+QLabel#collapsible_title { color: %(accent)s; font-weight: 600; }
+QLabel#collapsible_title[hovered="true"] { color: %(accent_hover)s; }
+QFrame#collapsible_line { border: none; background: %(group_border)s; max-height: 1px; min-height: 1px; }
 
 QListWidget {
     background: %(field)s; color: %(text)s; border: 1px solid %(field_border)s;
