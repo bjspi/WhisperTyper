@@ -5,7 +5,7 @@ from typing import Any, Dict
 
 from app.core.textutil import clean_model_name
 
-# Curated provider catalogs, verified against official documentation on 2026-10-09.
+# Curated provider catalogs, verified against official documentation on 2026-10-10.
 TRANSCRIPTION_MODEL_OPTIONS = {
     "openai": ["gpt-transcribe", "gpt-4o-transcribe", "gpt-4o-mini-transcribe",
                "gpt-4o-mini-transcribe-2025-12-15", "gpt-4o-transcribe-diarize", "whisper-1"],
@@ -13,14 +13,19 @@ TRANSCRIPTION_MODEL_OPTIONS = {
 }
 REPHRASING_MODEL_OPTIONS = {
     "openai": ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-5.6-luna",
-               "gpt-5.6-terra", "gpt-5.6-sol", "gpt-4.1-mini", "gpt-4.1", "gpt-4.1-nano", "gpt-4o-mini", "gpt-4o"],
+               "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.2",
+               "gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-4.1-mini", "gpt-4.1", "gpt-4.1-nano",
+               "gpt-4o-mini", "gpt-4o"],
     "groq": ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
 }
 DEFAULT_TRANSCRIPTION_MODEL = "whisper-1"
 DEFAULT_REPHRASING_MODEL = "gpt-6-luna"
 
-# GPT-5.6/GPT-6 reasoning chat models accept only their default temperature.
-_FIXED_TEMPERATURE_REPHRASING_FAMILIES = ("gpt-5.6", "gpt-6")
+# Reasoning chat models that accept only their default temperature: GPT-5 (incl. mini/nano and
+# dated snapshots), GPT-5.1, GPT-5.6 and GPT-6. GPT-5.2/5.4/5.5 default to reasoning effort
+# "none" and accept a temperature.
+_FIXED_TEMPERATURE_REPHRASING_MODELS = ("gpt-5",)
+_FIXED_TEMPERATURE_REPHRASING_FAMILIES = ("gpt-5-", "gpt-5.1", "gpt-5.6", "gpt-6")
 # Approximate maximum token length of the Whisper initial prompt.
 WHISPER_PROMPT_TOKEN_LIMIT = 230
 _GPT_TRANSCRIBE = "gpt-transcribe"
@@ -29,7 +34,9 @@ _DIARIZE = "gpt-4o-transcribe-diarize"
 
 def rephrasing_supports_temperature(model: str) -> bool:
     """False for chat models that reject a configurable temperature (HTTP 400 otherwise)."""
-    return not clean_model_name(model).lower().startswith(_FIXED_TEMPERATURE_REPHRASING_FAMILIES)
+    model_id = clean_model_name(model).lower()
+    return not (model_id in _FIXED_TEMPERATURE_REPHRASING_MODELS
+                or model_id.startswith(_FIXED_TEMPERATURE_REPHRASING_FAMILIES))
 
 
 def transcription_supports_temperature(model: str) -> bool:
