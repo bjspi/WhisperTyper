@@ -377,8 +377,9 @@ def main() -> int:
         mouse_overlay = RecordingPromptOverlay._instance
         check(
             "startup: recording prompt overlay can use the original mouse-relative position",
-            bool(mouse_overlay and abs(mouse_overlay.x() - 135) <= 2 and abs(mouse_overlay.y() - 155) <= 2),
-            f"overlay=({mouse_overlay.x()},{mouse_overlay.y()})" if mouse_overlay else "missing overlay",
+            bool(mouse_overlay and abs(mouse_overlay.card.mapToGlobal(QPoint()).x() - 135) <= 2
+                 and abs(mouse_overlay.card.mapToGlobal(QPoint()).y() - 155) <= 2),
+            f"card={mouse_overlay.card.mapToGlobal(QPoint())}" if mouse_overlay else "missing overlay",
         )
         check(
             "startup: mouse-positioned prompt palette does not duplicate recording status",

@@ -38,6 +38,13 @@ def palette(dark: bool) -> Dict[str, str]:
     return DARK if dark else LIGHT
 
 
+def resolve_dark(mode: str, app: object) -> bool:
+    """Whether the configured colour theme ('system'/'light'/'dark') renders dark."""
+    if mode in ("light", "dark"):
+        return mode == "dark"
+    return is_dark_mode(app)
+
+
 def is_dark_mode(app: object) -> bool:
     """Best-effort OS dark-mode detection (Qt 6.5 colour scheme, palette fallback)."""
     try:
