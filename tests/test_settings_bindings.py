@@ -98,3 +98,32 @@ def test_temperature_slider_round_trips_two_decimals_and_updates_its_label():
     saved: Dict[str, Any] = {}
     save_bindings(window, saved, table)
     assert saved == {"temperature": 0.7}
+
+
+class FakeCombo:
+    """Item data list plus the current index, like a QComboBox."""
+
+    def __init__(self, *data: str) -> None:
+        """Hold the given item data with no current item."""
+        self.data = list(data)
+        self.index = -1
+
+    def findData(self, value: Any) -> int:  # noqa: N802 - Qt API
+        return self.data.index(value) if value in self.data else -1
+
+    def setCurrentIndex(self, index: int) -> None:  # noqa: N802 - Qt API
+        self.index = index
+
+    def currentData(self) -> Any:  # noqa: N802 - Qt API
+        return self.data[self.index]
+
+
+@pytest.mark.parametrize(("stored", "shown"), [("ipv4", "ipv4"), ("unknown", "auto")])
+def test_choice_selects_by_item_data_and_falls_back_to_the_first_item(stored, shown):
+    window = Window()
+    window.family = FakeCombo("auto", "ipv4", "ipv6")  # type: ignore[assignment]
+    table = (Binding("family", "network_ip_family", "choice"),)
+    load_bindings(window, {"network_ip_family": stored}, table)
+    saved: Dict[str, Any] = {}
+    save_bindings(window, saved, table)
+    assert saved == {"network_ip_family": shown}

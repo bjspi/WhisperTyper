@@ -121,6 +121,8 @@ TEXTS: Tuple[Text, ...] = (
     _check("redact_log_checkbox", "redact_log_checkbox", "redact_log_tooltip"),
     Text("proxy_url_label", "proxy_url_label", "proxy_url_tooltip", ("proxy_url_input",)),
     _check("use_px_proxy_checkbox", "use_px_proxy_checkbox", "use_px_proxy_tooltip"),
+    Text("network_ip_family_label", "network_ip_family_label", "network_ip_family_tooltip",
+         ("network_ip_family_selector",)),
     Text("test_internet_button", "test_internet_button", "test_internet_tooltip",
          ("test_internet_button",), template="🌐  {}"),
     Text("log_retention_label", "log_retention_label", "log_retention_tooltip", ("log_retention_input",)),

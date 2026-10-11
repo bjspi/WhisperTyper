@@ -90,7 +90,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
         <img src="screenshots/app/settings-general.jpg" alt="General settings: UI language, theme, proxy, clipboard and logging options" />
       </a>
       <br />
-      <sub><b>🔧 General</b> — UI language (EN/DE/ES/FR), light/dark/system theme, input device, proxy support, log retention, and the clipboard-safe mode that restores your clipboard after every paste.</sub>
+      <sub><b>🔧 General</b> — UI language (EN/DE/ES/FR), light/dark/system theme, input device, proxy support, IPv4/IPv6 connection choice, log retention, and the clipboard-safe mode that restores your clipboard after every paste.</sub>
     </td>
   </tr>
   <tr>

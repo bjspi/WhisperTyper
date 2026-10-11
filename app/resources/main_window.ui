@@ -888,6 +888,20 @@
            </widget>
           </item>
           <item>
+           <layout class="QHBoxLayout" name="network_ip_family_layout">
+            <item>
+             <widget class="QLabel" name="network_ip_family_label">
+              <property name="text">
+               <string>Connection:</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QComboBox" name="network_ip_family_selector"/>
+            </item>
+           </layout>
+          </item>
+          <item>
            <widget class="QCheckBox" name="restore_clipboard_checkbox">
             <property name="text">
              <string>Restore clipboard content after pasting</string>

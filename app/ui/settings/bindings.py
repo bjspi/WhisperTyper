@@ -46,6 +46,8 @@ _KINDS: Dict[str, Tuple[Callable[[Any, Any], None], Callable[[Any], Any]]] = {
     "int": (lambda w, v: w.setValue(int(v)), lambda w: int(w.value())),
     "float": (lambda w, v: w.setValue(float(v)), lambda w: float(w.value())),
     "temperature": (_load_temperature, lambda w: w.value() / 100.0),
+    # Combo box whose item data holds the config value.
+    "choice": (lambda w, v: w.setCurrentIndex(max(0, w.findData(v))), lambda w: w.currentData()),
 }
 
 BINDINGS: Tuple[Binding, ...] = (
@@ -68,6 +70,7 @@ BINDINGS: Tuple[Binding, ...] = (
             companions=("rephrasing_temp_label",)),
     # General
     Binding("proxy_url_input", "proxy_url", "stripped"),
+    Binding("network_ip_family_selector", "network_ip_family", "choice"),
     Binding("use_px_proxy_checkbox", "use_local_px_proxy", "check"),
     Binding("log_retention_input", "log_retention_days", "int"),
     Binding("restore_clipboard_checkbox", "restore_clipboard", "check"),

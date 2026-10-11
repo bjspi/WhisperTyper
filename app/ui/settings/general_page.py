@@ -17,6 +17,8 @@ from app.ui.durations import BALLOON_MAX_MS
 from app.ui.settings.base import SettingsWindowBase
 
 _COLOR_THEMES = (("system", "color_theme_system"), ("light", "color_theme_light"), ("dark", "color_theme_dark"))
+_IP_FAMILIES = (("auto", "network_ip_family_auto"), ("ipv4", "network_ip_family_ipv4"),
+                ("ipv6", "network_ip_family_ipv6"))
 
 
 class GeneralPage(SettingsWindowBase):
@@ -31,9 +33,12 @@ class GeneralPage(SettingsWindowBase):
             self.color_theme_selector.addItem("", theme)
         self.color_theme_selector.setCurrentIndex(max(0, self.color_theme_selector.findData(
             self.config.get("color_theme", "system"))))
+        for family, _key in _IP_FAMILIES:
+            self.network_ip_family_selector.addItem("", family)
         self.populate_input_devices()
         # The proxy field takes the row's free width; the test button keeps a fixed width.
         self.proxy_row_layout.setStretch(0, 1)
+        self.network_ip_family_layout.addStretch(1)
 
         self.post_rephrase_auto_select_all_checkbox = QCheckBox(self)
         self.misc_layout.insertWidget(self.misc_layout.indexOf(self.play_g_button),
@@ -57,6 +62,8 @@ class GeneralPage(SettingsWindowBase):
         """Translate the selector entries whose data stays fixed."""
         for index, (_theme, key) in enumerate(_COLOR_THEMES):
             self.color_theme_selector.setItemText(index, self.translator.tr(key))
+        for index, (_family, key) in enumerate(_IP_FAMILIES):
+            self.network_ip_family_selector.setItemText(index, self.translator.tr(key))
         if self.input_device_selector.count() > 0:
             self.input_device_selector.setItemText(0, self.translator.tr("input_device_default"))
 

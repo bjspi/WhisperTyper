@@ -415,3 +415,19 @@ def test_warmup_replaces_a_connection_that_died_while_idle(monkeypatch):
     monkeypatch.setattr(http_warmup, "request", flaky)
     http_warmup._probe("https://api.groq.com/openai/v1/models", None)
     assert calls == ["https://api.groq.com/openai/v1/models"] * 2
+
+
+def test_ip_family_restricts_new_connections_and_replaces_pooled_ones(server, traces):
+    try:
+        assert transport.request("POST", url(server), content=b"audio").content == b"OK"
+        transport.set_ip_family("ipv4")
+        assert transport.request("POST", url(server), content=b"audio").content == b"OK"
+        assert [metadata["reused"] for metadata, _ in traces] == [False, False]
+        transport.set_ip_family("ipv6")
+        with pytest.raises(httpx.ConnectError):
+            transport.request("POST", url(server), content=b"audio")
+        with pytest.raises(httpx.ConnectError):
+            transport.request("POST", url(server), content=b"audio", fresh_connection=True)
+    finally:
+        transport.set_ip_family("auto")
+    assert transport.request("POST", url(server), content=b"audio").content == b"OK"
