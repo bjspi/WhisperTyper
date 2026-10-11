@@ -6,7 +6,7 @@ import time
 import wave
 from typing import Any, Callable, Dict, List, Optional, Union
 
-from PyQt6.QtCore import QObject, QPoint, pyqtSignal
+from PyQt6.QtCore import QObject, QPoint, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QApplication
 
 from app.audio import macos_recorder
@@ -37,6 +37,9 @@ from app.ui.tooltip import MouseFollowerTooltip
 
 #: Sample rate of uploaded recordings.
 UPLOAD_SAMPLERATE = 16000
+#: How long the microphone may take to deliver its first block before the plain balloon shows.
+MIC_SIGNAL_GRACE_MS = 1500
+
 #: PyAudio frames per read.
 CHUNK_SIZE = 1024
 
@@ -48,6 +51,8 @@ class RecordingController(QObject):
     state_changed = pyqtSignal(bool)
     # The per-recording capture thread reports a failed stream open; the palette closes on the GUI thread.
     _capture_failed = pyqtSignal()
+    # The capture thread reports the first recorded block of a take; the palette opens on the GUI thread.
+    _recording_audio = pyqtSignal(int)
 
     def __init__(self, ctx: AppContext, *, permissions: MacPermissions, warmup: WarmupScheduler,
                  output: TextOutput, pipeline: TranscriptionPipeline, sounds: SoundPlayer,
@@ -74,16 +79,23 @@ class RecordingController(QObject):
         #: False once "None" is clicked: the automatic prompt is skipped for this recording.
         self.use_auto_prompt = True
         self._palette_status: Optional[MouseFollowerTooltip] = None
+        #: Counts started recordings, so a late "audio arrived" report of an older one is ignored.
+        self._take = 0
+        #: True until the running recording has shown its balloon or prompt palette.
+        self._feedback_pending = False
         self.latest_audio_level = 0.0
         self.last_activity_ts = time.monotonic()
         self.microphone = MicrophoneInput(lambda: self._config, UPLOAD_SAMPLERATE, CHUNK_SIZE,
                                           self._notify_input_device_fallback)
         self.hot_mic = HotMicCapture(self.microphone, idle_expired=self._hot_mic_idle_expired,
-                                     on_block=self._update_latest_audio_level)
+                                     on_block=self._update_latest_audio_level,
+                                     on_recording_audio=self._report_recording_audio)
         self.on_demand = OnDemandCapture(self.microphone, on_block=self._update_latest_audio_level,
-                                         on_failure=self._on_capture_open_failed)
+                                         on_failure=self._on_capture_open_failed,
+                                         on_recording_audio=self._report_recording_audio)
         self.mac_recorder = macos_recorder.MacRecorder()
         self._capture_failed.connect(self.abandon_prompt_selection)
+        self._recording_audio.connect(self._on_recording_audio)
 
     # --- Capture strategy ----------------------------------------------------------------
     def _update_latest_audio_level(self, pcm_chunk: bytes) -> None:
@@ -101,6 +113,10 @@ class RecordingController(QObject):
         """The per-recording stream could not be opened (capture thread): end the recording."""
         self.is_recording = False
         self._capture_failed.emit()
+
+    def _report_recording_audio(self) -> None:
+        """The first block of the take was recorded (capture thread): hand over to the GUI thread."""
+        self._recording_audio.emit(self._take)
 
     def _notify_input_device_fallback(self, device: str) -> None:
         """Tell the user the configured device failed and the default is used (capture thread; thread-safe)."""
@@ -207,6 +223,8 @@ class RecordingController(QObject):
         self._permissions.warn('microphone')
         self._warmup.schedule(activate=True)
         self.is_recording = True
+        self._take += 1
+        self._feedback_pending = True
         self.state_changed.emit(True)
 
         if self.keep_mic_hot():
@@ -226,8 +244,54 @@ class RecordingController(QObject):
 
         self._capture_selection_context()
         self._sounds.play('sound_start.wav')
-        self._show_feedback()
+        if self.mac_recorder.active:
+            # AVAudioRecorder.record() only returns success once the input is recording.
+            self._on_recording_audio(self._take)
+        else:
+            take = self._take
+            QTimer.singleShot(MIC_SIGNAL_GRACE_MS, lambda: self._on_no_recording_audio_yet(take))
         logging.info("Recording started.")
+
+    def _on_recording_audio(self, take: int) -> None:
+        """The microphone delivers audio for this take: show the recording feedback now."""
+        if take != self._take or not self.is_recording or not self._feedback_pending:
+            return
+        self._feedback_pending = False
+        self._show_feedback()
+
+    def _on_no_recording_audio_yet(self, take: int) -> None:
+        """No audio yet after the grace period: show the plain recording balloon meanwhile."""
+        if take != self._take or not self.is_recording or not self._feedback_pending:
+            return
+        self._notifier.show(self._ctx.tr("recording_running_message"), BALLOON_PERSISTENT_MS)
+
+    def restart(self) -> None:
+        """Start the running recording over: discard the take so far and keep recording.
+
+        The palette, its prompt choice and push-to-talk stay as they are; only the elapsed
+        time counts from zero again.
+        """
+        if not self.is_recording:
+            return
+        self.touch_activity()
+        if self.mac_recorder.active:
+            self.mac_recorder.stop(discard=True)
+            try:
+                self.mac_recorder.start(self._ctx.recordings.new_path())
+            except Exception as e:
+                logging.error(f"macOS: could not restart native audio recorder: {e}")
+                self.is_recording = False
+                self.push_to_talk_active = False
+                self.abandon_prompt_selection()
+                self.state_changed.emit(False)
+                self._notifier.show(self._ctx.tr("no_microphone_signal_message"), BALLOON_INFO_MS)
+                return
+        else:
+            self.active_capture().restart_recording()
+        overlay = RecordingPromptOverlay._instance
+        if overlay is not None:
+            overlay.restart_timer()
+        logging.info("Recording restarted by user.")
 
     def _capture_selection_context(self) -> None:
         """Remember selected text as rephrasing context, after the mic is already hot."""
@@ -247,6 +311,7 @@ class RecordingController(QObject):
         timing.mark("stop_handled")
         self.touch_activity()
         self.is_recording = False
+        self._feedback_pending = False
         # Stop the PyAudio capture first, so the block being read right now stays in the recording.
         collect: Optional[Callable[[], List[bytes]]] = None
         if not self.mac_recorder.active:
@@ -281,6 +346,7 @@ class RecordingController(QObject):
         logging.info("Recording canceled by user.")
         self.touch_activity()
         self.is_recording = False
+        self._feedback_pending = False
         self.abandon_prompt_selection()
         self.push_to_talk_active = False
 
@@ -403,6 +469,10 @@ class RecordingController(QObject):
             use_system_position=use_system_position,
             system_anchor=self._palette_anchor(),
             dark=theme.resolve_dark(self._config.get("color_theme", "system"), QApplication.instance()),
+            on_cancel=self.cancel,
+            on_restart=self.restart,
+            cancel_tooltip=self._ctx.tr("recording_cancel_tooltip"),
+            restart_tooltip=self._ctx.tr("recording_restart_tooltip"),
         )
         # A system-positioned palette can be far away from the user's current work. Keep the
         # original mouse-following recording status as a lightweight local reminder. When the

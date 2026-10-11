@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 
 QtWidgets = pytest.importorskip("PyQt6.QtWidgets")
+QtCore = pytest.importorskip("PyQt6.QtCore")
 
 from app.ui import floating_buttons  # noqa: E402
 from app.ui.floating_buttons import RecordingPromptOverlay  # noqa: E402
@@ -70,3 +71,36 @@ def test_long_caption_is_elided_and_keeps_the_full_text_as_tooltip(qapp):
     chip = palette._prompt_buttons[1]
     assert chip.text().endswith("…") and chip.toolTip() == caption.strip()
     assert palette.card.width() <= RecordingPromptOverlay.MAX_CARD_WIDTH
+
+
+def test_restart_counts_the_elapsed_time_from_zero_again(qapp, monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(floating_buttons.time, "monotonic", lambda: now[0])
+    palette = overlay([])
+    now[0] += 42
+    palette._update_elapsed()
+    palette.restart_timer()
+    assert palette.timer_label.text() == "0:00"
+    now[0] += 5
+    palette._update_elapsed()
+    assert palette.timer_label.text() == "0:05"
+
+
+def test_header_buttons_report_cancel_and_restart_without_taking_focus(qapp):
+    calls: list[str] = []
+    palette = RecordingPromptOverlay(PROMPTS, "Recording…", "None", lambda _prompt: None,
+                                     use_system_position=False, on_cancel=lambda: calls.append("cancel"),
+                                     on_restart=lambda: calls.append("restart"),
+                                     cancel_tooltip="Cancel recording", restart_tooltip="Restart recording")
+    assert palette.restart_button is not None and palette.cancel_button is not None
+    palette.restart_button.click()
+    palette.cancel_button.click()
+    assert calls == ["restart", "cancel"]
+    for button, tooltip in ((palette.restart_button, "Restart recording"), (palette.cancel_button, "Cancel recording")):
+        assert button.focusPolicy() == QtCore.Qt.FocusPolicy.NoFocus
+        assert button.toolTip() == tooltip and not button.icon().isNull()
+
+
+def test_header_buttons_are_left_out_without_callbacks(qapp):
+    palette = overlay([])
+    assert palette.restart_button is None and palette.cancel_button is None

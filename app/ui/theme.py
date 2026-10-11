@@ -247,6 +247,22 @@ def _arrow_svg(color: str, up: bool) -> str:
             f"stroke-linejoin='round' d='{d}'/></svg>")
 
 
+def trash_svg(color: str) -> str:
+    """SVG string for a trash can (discard) in the given stroke colour."""
+    return (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
+            f"<g fill='none' stroke='{color}' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'>"
+            f"<path d='M2.75 4.5h10.5M6.25 4.5V2.75h3.5V4.5M4.25 4.5l.6 8.75h6.3l.6-8.75M6.75 7v4M9.25 7v4'/>"
+            f"</g></svg>")
+
+
+def restart_svg(color: str) -> str:
+    """SVG string for a circular arrow (start over) in the given stroke colour."""
+    return (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
+            f"<g fill='none' stroke='{color}' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'>"
+            f"<path d='M12.9 9.2A5 5 0 1 1 11.6 4.4'/><path d='M12.25 1.9v2.85H9.4'/>"
+            f"</g></svg>")
+
+
 def write_icon_qss(dark: bool, cache_dir: str) -> str:
     """Write themed checkmark/arrow SVGs into cache_dir and return QSS referencing them.
 
