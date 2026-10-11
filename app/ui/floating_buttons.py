@@ -5,8 +5,9 @@ import time
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from PyQt6.QtCore import QEasingCurve, QPoint, Qt, QTimer, QVariantAnimation
-from PyQt6.QtGui import QColor, QCursor, QFont, QKeyEvent, QPainter
+from PyQt6.QtCore import QByteArray, QEasingCurve, QPoint, QSize, Qt, QTimer, QVariantAnimation
+from PyQt6.QtGui import QColor, QCursor, QFont, QIcon, QKeyEvent, QPainter, QPixmap
+from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -95,6 +96,16 @@ class _PromptCard(QWidget):
                 color: {pal['muted']};
             }}
             QPushButton[role="close"]:hover {{ color: {pal['accent']}; }}
+            QPushButton[role="icon"] {{
+                background-color: transparent;
+                border: 1px solid transparent;
+                border-radius: 12px;
+                padding: 0px;
+                min-width: 24px; max-width: 24px;
+                min-height: 24px; max-height: 24px;
+            }}
+            QPushButton[role="icon"]:hover {{ background-color: {pal['panel2']}; border-color: {pal['border']}; }}
+            QPushButton[role="icon"]:pressed {{ background-color: {pal['hover']}; }}
         """)
 
         card_layout = QVBoxLayout(self.card)
@@ -103,6 +114,17 @@ class _PromptCard(QWidget):
         card_layout.setSpacing(10)
         self._chips = FlowLayout(spacing=6)
         return card_layout, dark
+
+    def _add_icon_button(self, svg: str, tooltip: str) -> QPushButton:
+        """A round, mouse-only icon button drawn from an SVG (sharp on high-DPI screens)."""
+        button = QPushButton(self.card)
+        button.setProperty("role", "icon")
+        button.setIcon(_svg_icon(svg, 16, self.devicePixelRatioF()))
+        button.setIconSize(QSize(16, 16))
+        button.setToolTip(tooltip)
+        button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        return button
 
     def _add_chip(self, caption: str, checkable: bool) -> QPushButton:
         """Create one mouse-only chip showing the full caption."""
@@ -154,6 +176,18 @@ class _PromptCard(QWidget):
     def _move_card(self, x: int, y: int) -> None:
         """Move the window so the card itself (not its shadow margin) lands at ``x``, ``y``."""
         self.move(x - self.SHADOW_MARGIN, y - self.SHADOW_MARGIN)
+
+
+def _svg_icon(svg: str, size: int, device_pixel_ratio: float) -> QIcon:
+    """Render an SVG string into an icon at the screen's pixel density."""
+    scale = max(1.0, device_pixel_ratio)
+    pixmap = QPixmap(round(size * scale), round(size * scale))
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    QSvgRenderer(QByteArray(svg.encode("utf-8"))).render(painter)
+    painter.end()
+    pixmap.setDevicePixelRatio(scale)
+    return QIcon(pixmap)
 
 
 class FloatingButtonWindow(_PromptCard):
@@ -302,12 +336,16 @@ class RecordingPromptOverlay(_PromptCard):
                  on_selection_changed: Callable[[Optional[Dict[str, Any]]], None],
                  use_system_position: bool = True,
                  system_anchor: Optional[QPoint] = None,
-                 dark: Optional[bool] = None) -> None:
+                 dark: Optional[bool] = None,
+                 on_cancel: Optional[Callable[[], None]] = None,
+                 on_restart: Optional[Callable[[], None]] = None,
+                 cancel_tooltip: str = "", restart_tooltip: str = "") -> None:
         """Build the palette by the system status area or near the cursor without taking focus.
 
         The prompt marked ``auto_apply`` starts selected (otherwise "None"); only clicks report
         a selection, so the preselection itself leaves the automatic default in charge.
         ``dark`` follows the app's colour theme; None uses the operating system's scheme.
+        ``on_restart`` / ``on_cancel`` add header buttons to start the take over or discard it.
         """
         if RecordingPromptOverlay._instance:
             RecordingPromptOverlay._instance.close()
@@ -342,6 +380,17 @@ class RecordingPromptOverlay(_PromptCard):
         timer_font.setFeature(QFont.Tag("tnum"), 1)  # digits keep their width while counting
         self.timer_label.setFont(timer_font)
         header.addWidget(self.timer_label)
+        icon_color = theme.palette(dark)["muted"]
+        self.restart_button: Optional[QPushButton] = None
+        self.cancel_button: Optional[QPushButton] = None
+        if on_restart is not None:
+            self.restart_button = self._add_icon_button(theme.restart_svg(icon_color), restart_tooltip)
+            self.restart_button.clicked.connect(lambda _checked=False: on_restart())
+            header.addWidget(self.restart_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        if on_cancel is not None:
+            self.cancel_button = self._add_icon_button(theme.trash_svg(icon_color), cancel_tooltip)
+            self.cancel_button.clicked.connect(lambda _checked=False: on_cancel())
+            header.addWidget(self.cancel_button, 0, Qt.AlignmentFlag.AlignVCenter)
         card_layout.addLayout(header)
 
         card_layout.addLayout(self._chips, 1)  # the chips take the height their lines need
@@ -364,6 +413,11 @@ class RecordingPromptOverlay(_PromptCard):
         self._fit_card(card_layout, header)
         self._position_for_platform(use_system_position, system_anchor)
         self.show()
+
+    def restart_timer(self) -> None:
+        """Count the elapsed time from zero again (the take was started over)."""
+        self._started = time.monotonic()
+        self._update_elapsed()
 
     def _update_elapsed(self) -> None:
         """Show the time since the palette opened as m:ss."""

@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import threading
+import time
 
 import pytest
 
 pytest.importorskip("pyaudio")  # Exercised by the Windows audio/clipboard job, without native devices.
 
-from app.audio.capture import HotMicCapture
+from app.audio.capture import HotMicCapture, OnDemandCapture
 from app.core.timing import OperationTiming
 
 PREROLL = b"\x03\x00" * 1024
@@ -42,11 +43,12 @@ class Stream:
 
 
 class Microphone:
-    """The MicrophoneInput surface HotMicCapture uses, without PyAudio."""
+    """The MicrophoneInput surface the captures use, without PyAudio."""
 
     target_samplerate = 16000
     samplerate = 16000
     chunk_size = 1024
+    device_name = ""
 
     def __init__(self, stream):
         """Hand out the given fake stream."""
@@ -146,3 +148,63 @@ def test_cancel_does_not_attach_a_tail_or_save_pending_audio():
         assert capture._frames == [PREROLL]
     finally:
         finish(capture, stream)
+
+
+class CountingStream:
+    """Delivers numbered blocks; the test decides when the capture stops reading."""
+
+    def __init__(self):
+        """Start counting from the first block."""
+        self.blocks = 0
+
+    def read(self, frames, **_kwargs):
+        self.blocks += 1
+        time.sleep(0.002)
+        return bytes([min(self.blocks, 255), 0]) * frames
+
+    def get_read_available(self):
+        return 0
+
+
+def wait_for(condition):
+    deadline = time.monotonic() + 2
+    while not condition():
+        assert time.monotonic() < deadline
+        time.sleep(0.002)
+
+
+@pytest.mark.parametrize("hot", [True, False])
+def test_first_recorded_block_is_announced_once_and_restart_discards_the_take(hot):
+    announced = threading.Event()
+    calls: list[None] = []
+
+    def on_audio():
+        calls.append(None)
+        announced.set()
+
+    stream = CountingStream()
+    if hot:
+        capture = HotMicCapture(Microphone(stream), idle_expired=lambda: False, on_block=lambda _data: None,
+                                on_recording_audio=on_audio)
+        capture._preroll.append(PREROLL)
+        capture.start()
+        wait_for(lambda: stream.blocks > 0)  # The warm microphone reads before the recording starts.
+        assert calls == []
+        capture.start_recording()
+    else:
+        capture = OnDemandCapture(Microphone(stream), on_block=lambda _data: None, on_failure=lambda: None,
+                                  on_recording_audio=on_audio)
+        capture.start_recording()
+    assert announced.wait(2)
+    wait_for(lambda: len(capture._frames) > 3)
+
+    restarted_at = stream.blocks  # Only the block being read right now may still end up in the take.
+    capture.restart_recording()
+    wait_for(lambda: len(capture._frames) > 2)
+    frames = capture.stop_recording(OperationTiming("recording"))()
+    if hot:
+        capture.stop()
+
+    assert calls == [None]  # A restart keeps recording; the take is not announced again.
+    assert PREROLL not in frames  # Nothing from before the restart, not even the pre-roll.
+    assert frames and frames[0][0] >= restarted_at

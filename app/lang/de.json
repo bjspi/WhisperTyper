@@ -124,6 +124,8 @@
   "recording_prompt_api_missing": "Normale Aufnahme – Aufnahme-Prompts benötigen vollständige Umformulierungs-API-Einstellungen.",
   "recording_prompt_none": "Ohne",
   "recording_canceled_message": "Aufnahme abgebrochen.",
+  "recording_cancel_tooltip": "Aufnahme abbrechen",
+  "recording_restart_tooltip": "Aufnahme neu starten",
   "no_audio_captured_message": "Kein Ton aufgenommen.",
   "save_audio_failed_message": "Audio konnte nicht gespeichert werden.",
   "no_microphone_signal_message": "Kein Mikrofonsignal erkannt.",

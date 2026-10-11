@@ -159,11 +159,18 @@ class HotMicCapture:
     """Keep the microphone open with a pre-roll buffer; retain the in-flight block at stop."""
 
     def __init__(self, mic: MicrophoneInput, *, idle_expired: Callable[[], bool],
-                 on_block: Callable[[bytes], None]) -> None:
-        """Bind the microphone, the idle-timeout check and the level-meter callback."""
+                 on_block: Callable[[bytes], None],
+                 on_recording_audio: Optional[Callable[[], None]] = None) -> None:
+        """Bind the microphone, the idle-timeout check and the level-meter callback.
+
+        ``on_recording_audio`` is called once per recording (reader thread) when the first block
+        captured after the start lands in the recording: the microphone is really delivering.
+        """
         self._mic = mic
         self._idle_expired = idle_expired
         self._on_block = on_block
+        self._on_recording_audio = on_recording_audio
+        self._announce_audio = False
         self._lock = threading.Lock()
         self._recording = False
         self._frames: list[bytes] = []
@@ -199,6 +206,13 @@ class HotMicCapture:
         with self._lock:
             self._frames = list(self._preroll)
             self._recording = True
+            self._announce_audio = True
+
+    def restart_recording(self) -> None:
+        """Discard the take so far and keep recording; audio from before the restart is not kept."""
+        with self._lock:
+            if self._recording:
+                self._frames = []
 
     def stop_recording(self, timing: OperationTiming) -> Callable[[], list[bytes]]:
         """Stop now and attach the in-flight read; the returned function waits for it and yields the audio."""
@@ -248,11 +262,15 @@ class HotMicCapture:
                     self._read_pending = True
                 data = stream.read(self._mic.chunk_size, exception_on_overflow=False)
                 self._on_block(data)
+                announce = False
                 with self._lock:
                     self._preroll.append(data)
                     pending = self._pending_stop
                     if pending is None and self._recording:
                         self._frames.append(data)
+                        announce, self._announce_audio = self._announce_audio, False
+                if announce and self._on_recording_audio:
+                    self._on_recording_audio()
                 if pending is not None:
                     self._retain_tail(stream, data, pending)
             except Exception as e:
@@ -302,11 +320,17 @@ class OnDemandCapture:
     """Open the microphone per recording and read it on a dedicated thread."""
 
     def __init__(self, mic: MicrophoneInput, *, on_block: Callable[[bytes], None],
-                 on_failure: Callable[[], None]) -> None:
-        """Bind the microphone, the level-meter callback and the open-failure handler."""
+                 on_failure: Callable[[], None],
+                 on_recording_audio: Optional[Callable[[], None]] = None) -> None:
+        """Bind the microphone, the level-meter callback and the open-failure handler.
+
+        ``on_recording_audio`` is called once per recording (reader thread) with the first block.
+        """
         self._mic = mic
         self._on_block = on_block
         self._on_failure = on_failure
+        self._on_recording_audio = on_recording_audio
+        self._announce_audio = False
         self._recording = False
         self._frames: list[bytes] = []
         self._thread: Optional[threading.Thread] = None
@@ -314,9 +338,15 @@ class OnDemandCapture:
     def start_recording(self) -> None:
         """Start reading on a new thread."""
         self._frames = []
+        self._announce_audio = True
         self._recording = True
         self._thread = threading.Thread(target=self._read, name="OnDemandCapture", daemon=True)
         self._thread.start()
+
+    def restart_recording(self) -> None:
+        """Discard the take so far; the reader keeps appending to the fresh list."""
+        if self._recording:
+            self._frames = []
 
     def stop_recording(self, _timing: OperationTiming) -> Callable[[], list[bytes]]:
         """Stop now; the returned function waits for the reader and yields the audio."""
@@ -360,5 +390,9 @@ class OnDemandCapture:
                 break
             self._on_block(data)
             self._frames.append(data)
+            if self._announce_audio:
+                self._announce_audio = False
+                if self._on_recording_audio:
+                    self._on_recording_audio()
         self._mic.close()
         logging.info("Audio recording thread finished.")

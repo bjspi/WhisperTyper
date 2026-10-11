@@ -220,3 +220,99 @@ def test_palette_clicks_decide_between_explicit_automatic_and_raw():
     recording._on_prompt_selected({"text": "Carry it out", "kind": "instruction"})  # The instruction runs as an order.
     assert (recording.current_prompt, recording.current_prompt_is_instruction) == ("Carry it out", True)
     assert recording._warmup.schedule.call_count == 2
+
+
+class GatedMicrophone(FakeMicrophone):
+    """A microphone whose stream delivers nothing until ``open_gate`` is set."""
+
+    def __init__(self):
+        """Start with the gate closed."""
+        self.open_gate = threading.Event()
+
+    def open(self):
+        gate, stream = self.open_gate, FakeStream()
+
+        class Gated:
+            def read(self, frames, **kwargs):
+                gate.wait()
+                return stream.read(frames, **kwargs)
+
+            def get_read_available(self):
+                return 0
+
+        return Gated()
+
+
+def test_palette_waits_for_audio_and_its_buttons_restart_and_cancel(api, tmp_path, monkeypatch):
+    config = copy.deepcopy(DEFAULT_CONFIG)
+    config.update(
+        api_endpoint=f"{api}/v1/audio/transcriptions", rephrasing_api_url=f"{api}/v1/chat/completions",
+        api_key_profiles=[{"id": "p", "name": "Local", "provider": "custom", "key": "test-key"}],
+        transcription_key_profile_id="p", rephrasing_key_profile_id="p", rephrasing_model="test-model",
+        post_rephrasing_entries=[{"caption": "Fix", "text": "Fix it", "auto_apply": True}],
+        recording_prompt_overlay_system_position=False, windows_keep_mic_hot=True,
+        macos_microphone_info_shown=True, macos_accessibility_info_shown=True,
+    )
+    monkeypatch.setattr(recording_module, "is_WINDOWS", True)
+    monkeypatch.setattr(recording_module.RecordingPromptOverlay, "show", lambda self: None)
+    ctx = AppContext(MemoryConfigStore(config), RecordingStore(str(tmp_path)))
+    workers = WorkerThreads()
+    warmup = WarmupScheduler(config, is_recording=lambda: False, rephrasing_first=lambda: False)
+    warmup.http.schedule = Mock()
+    permissions = MacPermissions(ctx, dialog_parent=lambda: None)
+    output = Paster(config, ctx.tr, ctx.notifier.show, permissions.warn)
+    pipeline = TranscriptionPipeline(ctx, output, warmup, workers)
+    recording = RecordingController(ctx, permissions=permissions, warmup=warmup, output=output, pipeline=pipeline,
+                                    sounds=Mock(), open_settings=Mock(), palette_anchor=lambda: None)
+    recording._capture_selection_context = Mock()
+    microphone = GatedMicrophone()
+    recording.hot_mic = HotMicCapture(microphone, idle_expired=lambda: False,
+                                      on_block=recording._update_latest_audio_level,
+                                      on_recording_audio=recording._report_recording_audio)
+    overlay = recording_module.RecordingPromptOverlay
+    states: list[bool] = []
+    recording.state_changed.connect(states.append)
+    uploads = len(FakeApi.uploads)
+
+    def settle(condition):
+        deadline = time.monotonic() + 5
+        while not condition() and time.monotonic() < deadline:
+            QAPP.processEvents()
+            time.sleep(0.005)
+        assert condition()
+
+    try:
+        recording.toggle()
+        for _ in range(20):
+            QAPP.processEvents()
+            time.sleep(0.005)
+        assert recording.is_recording and overlay._instance is None  # The microphone delivered nothing yet.
+
+        microphone.open_gate.set()
+        settle(lambda: overlay._instance is not None)
+        palette = overlay._instance
+        assert palette.timer_label.text() == "0:00"
+
+        recording._on_prompt_selected({"text": "Mail it", "kind": "prompt"})
+        recording.push_to_talk_active = True
+        settle(lambda: len(recording.hot_mic._frames) > 5)
+        started = palette._started
+        palette.restart_button.click()
+        assert len(recording.hot_mic._frames) <= 1  # At most the block that was being read.
+        assert palette._started > started and overlay._instance is palette
+        assert recording.is_recording and recording.push_to_talk_active
+        assert (recording.current_prompt, recording.use_auto_prompt) == ("Mail it", True)
+
+        palette.cancel_button.click()
+        assert not recording.is_recording and overlay._instance is None
+        assert recording.current_prompt is None
+        for _ in range(20):
+            QAPP.processEvents()
+            time.sleep(0.005)
+    finally:
+        recording.hot_mic.stop()
+        workers.drain()
+        warmup.close()
+
+    assert states == [True, False]
+    assert len(FakeApi.uploads) == uploads  # Cancelled: nothing was sent.
