@@ -48,6 +48,9 @@ class _PromptCard(QWidget):
         if dark is None:
             dark = theme.is_dark_mode(QApplication.instance())
         pal = theme.palette(dark)
+        danger = "#ff5a52" if dark else "#e5484d"
+        danger_tint = "rgba(255, 90, 82, 0.18)" if dark else "rgba(229, 72, 77, 0.12)"
+        self._danger_color = danger
         self._prompt_buttons: List[QPushButton] = []
 
         outer = QVBoxLayout(self)
@@ -106,6 +109,9 @@ class _PromptCard(QWidget):
             }}
             QPushButton[role="icon"]:hover {{ background-color: {pal['panel2']}; border-color: {pal['border']}; }}
             QPushButton[role="icon"]:pressed {{ background-color: {pal['hover']}; }}
+            QPushButton[role="icon"][danger="true"]:hover {{
+                background-color: {danger_tint}; border-color: {danger};
+            }}
         """)
 
         card_layout = QVBoxLayout(self.card)
@@ -115,11 +121,13 @@ class _PromptCard(QWidget):
         self._chips = FlowLayout(spacing=6)
         return card_layout, dark
 
-    def _add_icon_button(self, svg: str, tooltip: str) -> QPushButton:
+    def _add_icon_button(self, svg: str, tooltip: str, hover_svg: Optional[str] = None,
+                         danger: bool = False) -> QPushButton:
         """A round, mouse-only icon button drawn from an SVG (sharp on high-DPI screens)."""
         button = QPushButton(self.card)
         button.setProperty("role", "icon")
-        button.setIcon(_svg_icon(svg, 16, self.devicePixelRatioF()))
+        button.setProperty("danger", danger)  # destructive actions turn red on hover
+        button.setIcon(_svg_icon(svg, 16, self.devicePixelRatioF(), hover_svg))
         button.setIconSize(QSize(16, 16))
         button.setToolTip(tooltip)
         button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -178,8 +186,8 @@ class _PromptCard(QWidget):
         self.move(x - self.SHADOW_MARGIN, y - self.SHADOW_MARGIN)
 
 
-def _svg_icon(svg: str, size: int, device_pixel_ratio: float) -> QIcon:
-    """Render an SVG string into an icon at the screen's pixel density."""
+def _svg_pixmap(svg: str, size: int, device_pixel_ratio: float) -> QPixmap:
+    """Render an SVG string at the screen's pixel density."""
     scale = max(1.0, device_pixel_ratio)
     pixmap = QPixmap(round(size * scale), round(size * scale))
     pixmap.fill(Qt.GlobalColor.transparent)
@@ -187,7 +195,15 @@ def _svg_icon(svg: str, size: int, device_pixel_ratio: float) -> QIcon:
     QSvgRenderer(QByteArray(svg.encode("utf-8"))).render(painter)
     painter.end()
     pixmap.setDevicePixelRatio(scale)
-    return QIcon(pixmap)
+    return pixmap
+
+
+def _svg_icon(svg: str, size: int, device_pixel_ratio: float, hover_svg: Optional[str] = None) -> QIcon:
+    """An icon from an SVG string; ``hover_svg`` is shown while the pointer is over the button."""
+    icon = QIcon(_svg_pixmap(svg, size, device_pixel_ratio))
+    if hover_svg is not None:
+        icon.addPixmap(_svg_pixmap(hover_svg, size, device_pixel_ratio), QIcon.Mode.Active)
+    return icon
 
 
 class FloatingButtonWindow(_PromptCard):
@@ -379,18 +395,30 @@ class RecordingPromptOverlay(_PromptCard):
         timer_font = self.timer_label.font()
         timer_font.setFeature(QFont.Tag("tnum"), 1)  # digits keep their width while counting
         self.timer_label.setFont(timer_font)
-        header.addWidget(self.timer_label)
+        # Timer and the take controls form one tight group at the right.
+        controls = QHBoxLayout()
+        controls.setSpacing(2)
+        controls.addWidget(self.timer_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        controls.addSpacing(4)
+        # Text is laid out by its baseline, so glyphs sit slightly below the line's middle;
+        # a 2 px top margin moves the centred icons down by 1 px onto the same optical line.
+        icons = QHBoxLayout()
+        icons.setSpacing(2)
+        icons.setContentsMargins(0, 2, 0, 0)
+        controls.addLayout(icons)
         icon_color = theme.palette(dark)["muted"]
         self.restart_button: Optional[QPushButton] = None
         self.cancel_button: Optional[QPushButton] = None
         if on_restart is not None:
             self.restart_button = self._add_icon_button(theme.restart_svg(icon_color), restart_tooltip)
             self.restart_button.clicked.connect(lambda _checked=False: on_restart())
-            header.addWidget(self.restart_button, 0, Qt.AlignmentFlag.AlignVCenter)
+            icons.addWidget(self.restart_button, 0, Qt.AlignmentFlag.AlignVCenter)
         if on_cancel is not None:
-            self.cancel_button = self._add_icon_button(theme.trash_svg(icon_color), cancel_tooltip)
+            self.cancel_button = self._add_icon_button(theme.trash_svg(icon_color), cancel_tooltip,
+                                                       hover_svg=theme.trash_svg(self._danger_color), danger=True)
             self.cancel_button.clicked.connect(lambda _checked=False: on_cancel())
-            header.addWidget(self.cancel_button, 0, Qt.AlignmentFlag.AlignVCenter)
+            icons.addWidget(self.cancel_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        header.addLayout(controls)
         card_layout.addLayout(header)
 
         card_layout.addLayout(self._chips, 1)  # the chips take the height their lines need
