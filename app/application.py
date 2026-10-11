@@ -35,7 +35,7 @@ from app.core.config_store import ConfigStore
 from app.core.constants import CONFIG_FILE
 from app.core.hotkeys import normalize_hotkey_string
 from app.core.paths import resource_path
-from app.services.http_transport import close_transport
+from app.services.http_transport import close_transport, set_ip_family
 from app.services.logging_config import apply_logging_config
 from app.ui.durations import BALLOON_INFO_MS, BALLOON_SHORT_MS
 from app.ui.settings.window import SettingsWindow
@@ -55,6 +55,7 @@ class WhisperTyperApp(QObject):
         self.ctx.recordings.cleanup_all()
         self._file_log_handler: Optional[Handler] = None
         self.apply_logging_configuration()
+        set_ip_family(config.get("network_ip_family", "auto"))
 
         self.workers = WorkerThreads()
         self.warmup = WarmupScheduler(config, is_recording=lambda: self.recording.is_recording,
@@ -128,6 +129,7 @@ class WhisperTyperApp(QObject):
         self.pipeline.reload_replacements()
         self.ctx.notifier.show(self.ctx.tr("settings_saved_message", hotkey=self.ctx.config["hotkey"]), BALLOON_SHORT_MS)
         self.apply_logging_configuration()
+        set_ip_family(self.ctx.config.get("network_ip_family", "auto"))
         self.warmup.schedule(activate=True)
         self.ctx.files_changed.emit()
 

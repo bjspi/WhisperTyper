@@ -184,6 +184,16 @@ Logs of a hedged request, in order:
   `hedge_trigger_ms` in the summary, and an `http_transport` line with
   `stage=transcription_hedge` (connection setup, upload, response) for the second attempt.
 
+## Connection: IPv4 or IPv6
+
+**Connection** (General tab) chooses the IP version of every API connection, including
+warm-up, connection tests and second attempts: *Automatic* leaves it to the operating
+system, *IPv4 only* and *IPv6 only* bind new connections to that address family. Changing it
+closes the pooled connections. *IPv4 only* helps when the IPv6 route loses packets, which
+shows up as recurring hedges, long `connect_ms` or `upload_ms` values and losses in a ping
+over IPv6 (`ping -6 api.groq.com`) but not over IPv4 (`ping -4 api.groq.com`). A proxy
+must be reachable over the chosen IP version.
+
 HTTP and HTTPS proxies (including CONNECT tunnels) receive full measurements. SOCKS
 proxies are not supported by the default install (httpx needs the optional
 `socksio` package).

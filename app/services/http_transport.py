@@ -30,8 +30,13 @@ _LIMITS = httpx.Limits(max_connections=None, max_keepalive_connections=8, keepal
 # OS-level keepalive on top of httpcore's built-in TCP_NODELAY.
 _SOCKET_OPTIONS = [(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)]
 
+#: Connection setting -> local bind address; binding to an IPv4/IPv6 wildcard restricts DNS
+#: results to that address family. "auto" lets the OS choose.
+IP_FAMILY_LOCAL_ADDRESSES: dict[str, Optional[str]] = {"auto": None, "ipv4": "0.0.0.0", "ipv6": "::"}
+
 _CLIENTS: dict[tuple[Optional[str], Any], httpx.Client] = {}
 _CLIENTS_LOCK = threading.Lock()
+_local_address: Optional[str] = None
 _OPERATION_IDS = itertools.count(1)
 _CONNECTION_IDS = itertools.count(1)
 # Final (post-TLS) network stream -> stable connection number for reuse diagnostics.
@@ -237,7 +242,7 @@ def _new_client(proxy: Optional[str], verify: Union[bool, str]) -> httpx.Client:
     # An HTTPS proxy is verified like the origin; httpx rejects a context for plain-HTTP proxies.
     proxy_context = context if isinstance(context, ssl.SSLContext) and proxy and proxy.startswith("https:") else None
     transport = httpx.HTTPTransport(
-        verify=context, limits=_LIMITS, retries=0, socket_options=_SOCKET_OPTIONS,
+        verify=context, limits=_LIMITS, retries=0, socket_options=_SOCKET_OPTIONS, local_address=_local_address,
         proxy=httpx.Proxy(proxy, ssl_context=proxy_context) if proxy else None,
     )
     return httpx.Client(
@@ -305,6 +310,17 @@ def request(method: str, url: str, *, timing: OperationTiming = NO_TIMING, stage
         tracer.finish()
         if fresh_connection:
             client.close()
+
+
+def set_ip_family(mode: str) -> None:
+    """Use ``"auto"``, ``"ipv4"`` or ``"ipv6"`` for new connections; pooled ones are closed on change."""
+    global _local_address
+    address = IP_FAMILY_LOCAL_ADDRESSES.get(mode)
+    with _CLIENTS_LOCK:
+        if address == _local_address:
+            return
+        _local_address = address
+    close_transport()
 
 
 def close_transport() -> None:

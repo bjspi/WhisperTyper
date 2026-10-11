@@ -200,6 +200,8 @@ class SettingsWindowBase(QWidget):
     proxy_url_label: QLabel
     proxy_url_input: QLineEdit
     use_px_proxy_checkbox: QCheckBox
+    network_ip_family_label: QLabel
+    network_ip_family_selector: QComboBox
     test_internet_button: QPushButton
     log_retention_label: QLabel
     log_retention_input: QSpinBox
@@ -215,6 +217,7 @@ class SettingsWindowBase(QWidget):
     text_insertion_group: QGroupBox
     logging_group: QGroupBox
     proxy_row_layout: QHBoxLayout
+    network_ip_family_layout: QHBoxLayout
     alt_clipboard_lib_checkbox: QCheckBox
     windows_sendinput_text_checkbox: QCheckBox
     windows_sendinput_fallback_checkbox: QCheckBox

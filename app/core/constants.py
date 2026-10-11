@@ -114,6 +114,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "log_retention_days": 3,
     "proxy_url": "",
     "use_local_px_proxy": False,
+    "network_ip_family": "auto",  # "auto" | "ipv4" | "ipv6"
     "gain_db": 10,
     "systray_double_click_copy": True,
     # Place the recording-prompt palette by the OS status area (Windows tray / macOS menu
