@@ -70,6 +70,8 @@ class RecordingController(QObject):
         self._open_settings = open_settings
         self._palette_anchor = palette_anchor
         self.is_recording = False
+        #: True while the running recording is paused from the palette; stopping still transcribes.
+        self.is_paused = False
         #: Set while the push-to-talk key is held; the hotkey listener reads and clears it.
         self.push_to_talk_active = False
         #: Prompt explicitly clicked in the palette for the running recording.
@@ -223,6 +225,7 @@ class RecordingController(QObject):
         self._permissions.warn('microphone')
         self._warmup.schedule(activate=True)
         self.is_recording = True
+        self.is_paused = False
         self._take += 1
         self._feedback_pending = True
         self.state_changed.emit(True)
@@ -288,10 +291,36 @@ class RecordingController(QObject):
                 return
         else:
             self.active_capture().restart_recording()
+        self.is_paused = False
         overlay = RecordingPromptOverlay._instance
         if overlay is not None:
+            overlay.set_paused(False)
             overlay.restart_timer()
         logging.info("Recording restarted by user.")
+
+    def toggle_pause(self) -> None:
+        """Pause the running recording or continue it; a paused recording can still be stopped and sent."""
+        if not self.is_recording:
+            return
+        self.touch_activity()
+        paused = not self.is_paused
+        if self.mac_recorder.active:
+            if paused:
+                self.mac_recorder.pause()
+            else:
+                self.mac_recorder.resume()
+        else:
+            self.active_capture().set_paused(paused)
+        self.is_paused = paused
+        overlay = RecordingPromptOverlay._instance
+        if overlay is not None:
+            overlay.set_paused(paused)
+        # The status by the mouse that accompanies a palette by the status area tells the same state.
+        if self._palette_status is not None and MouseFollowerTooltip._instance is self._palette_status:
+            message = "recording_paused_message" if paused else "recording_running_message"
+            self._notifier.show(self._ctx.tr(message), BALLOON_PERSISTENT_MS)
+            self._palette_status = MouseFollowerTooltip._instance
+        logging.info("Recording paused by user." if paused else "Recording resumed by user.")
 
     def _capture_selection_context(self) -> None:
         """Remember selected text as rephrasing context, after the mic is already hot."""
@@ -311,6 +340,7 @@ class RecordingController(QObject):
         timing.mark("stop_handled")
         self.touch_activity()
         self.is_recording = False
+        self.is_paused = False
         self._feedback_pending = False
         # Stop the PyAudio capture first, so the block being read right now stays in the recording.
         collect: Optional[Callable[[], List[bytes]]] = None
@@ -346,6 +376,7 @@ class RecordingController(QObject):
         logging.info("Recording canceled by user.")
         self.touch_activity()
         self.is_recording = False
+        self.is_paused = False
         self._feedback_pending = False
         self.abandon_prompt_selection()
         self.push_to_talk_active = False
@@ -474,6 +505,11 @@ class RecordingController(QObject):
             cancel_tooltip=self._ctx.tr("recording_cancel_tooltip"),
             restart_tooltip=self._ctx.tr("recording_restart_tooltip"),
             move_tooltip=self._ctx.tr("recording_move_tooltip"),
+            on_pause=self.toggle_pause,
+            paused_text=self._ctx.tr("recording_paused_message"),
+            pause_tooltip=self._ctx.tr("recording_pause_tooltip"),
+            resume_tooltip=self._ctx.tr("recording_resume_tooltip"),
+            digit_keys=bool(self._config.get("recording_prompt_overlay_digit_keys", True)),
         )
         # A system-positioned palette can be far away from the user's current work. Keep the
         # original mouse-following recording status as a lightweight local reminder. When the

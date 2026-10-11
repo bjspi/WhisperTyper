@@ -75,11 +75,13 @@ class MicrophoneInput:
         # after app replacement, permission changes or device switches.
         audio = self.pyaudio(refresh=is_MACOS)
         last_error: Optional[Exception] = None
+        failed: list[str] = []
         for candidate in self.devices.preferred_input_stream_candidates(audio):
             try:
                 self._stream = _open_input_stream(audio, candidate, self.chunk_size)
             except Exception as e:
                 last_error = e
+                failed.append(candidate["name"])
                 logging.warning(
                     "Could not open audio input stream on "
                     f"'{candidate['name']}' (index={candidate['index']}, rate={candidate['samplerate']} Hz): {e}"
@@ -92,7 +94,7 @@ class MicrophoneInput:
                 f"Opened audio input stream on '{self.device_name}' "
                 f"(index={self.device_index}, rate={self.samplerate} Hz)."
             )
-            self._report_fallback(candidate)
+            self._report_fallback(candidate, failed)
             return self._stream
 
         self.samplerate = self.target_samplerate
@@ -116,12 +118,18 @@ class MicrophoneInput:
         if is_MACOS:
             self.terminate()
 
-    def _report_fallback(self, candidate: Mapping[str, Any]) -> None:
-        """Notify once per configured device when it could not be opened and the default is used."""
+    def _report_fallback(self, candidate: Mapping[str, Any], failed: list[str]) -> None:
+        """Notify once per configured device when it is connected but failed to open.
+
+        A configured device that is not connected (a headset at another desk, a closed laptop)
+        quietly falls back to the system default; the device selector logs that.
+        """
         configured = str(self._config().get("input_device_name", "") or "").strip()
         if not (configured and candidate.get("index") is None):
             # Configured device opened (or none configured): a future fallback may notify again.
             self._fallback_notified = None
+            return
+        if configured not in failed:
             return
         if self._fallback_notified != configured:
             self._fallback_notified = configured
@@ -173,6 +181,7 @@ class HotMicCapture:
         self._announce_audio = False
         self._lock = threading.Lock()
         self._recording = False
+        self._paused = False
         self._frames: list[bytes] = []
         self._preroll: deque[bytes] = deque(maxlen=max(1, int(mic.target_samplerate * _PREROLL_S / mic.chunk_size)))
         self._read_pending = False
@@ -206,6 +215,7 @@ class HotMicCapture:
         with self._lock:
             self._frames = list(self._preroll)
             self._recording = True
+            self._paused = False
             self._announce_audio = True
 
     def restart_recording(self) -> None:
@@ -213,12 +223,20 @@ class HotMicCapture:
         with self._lock:
             if self._recording:
                 self._frames = []
+                self._paused = False
+
+    def set_paused(self, paused: bool) -> None:
+        """While paused, blocks are not kept; the audio before and after the pause is."""
+        with self._lock:
+            self._paused = paused
 
     def stop_recording(self, timing: OperationTiming) -> Callable[[], list[bytes]]:
         """Stop now and attach the in-flight read; the returned function waits for it and yields the audio."""
         with self._lock:
             self._recording = False
-            pending = _PendingStop(timing, self._frames) if self._read_pending else None
+            # A block read while paused does not belong to the take.
+            pending = _PendingStop(timing, self._frames) if self._read_pending and not self._paused else None
+            self._paused = False
             self._pending_stop = pending
 
         def collect() -> list[bytes]:
@@ -232,6 +250,7 @@ class HotMicCapture:
         """Stop without attaching the in-flight block."""
         with self._lock:
             self._recording = False
+            self._paused = False
 
     def _wait_for_tail(self, pending: _PendingStop) -> None:
         """Wait for the in-flight read; on timeout detach it so it can no longer modify the result."""
@@ -266,7 +285,7 @@ class HotMicCapture:
                 with self._lock:
                     self._preroll.append(data)
                     pending = self._pending_stop
-                    if pending is None and self._recording:
+                    if pending is None and self._recording and not self._paused:
                         self._frames.append(data)
                         announce, self._announce_audio = self._announce_audio, False
                 if announce and self._on_recording_audio:
@@ -332,6 +351,7 @@ class OnDemandCapture:
         self._on_recording_audio = on_recording_audio
         self._announce_audio = False
         self._recording = False
+        self._paused = False
         self._frames: list[bytes] = []
         self._thread: Optional[threading.Thread] = None
 
@@ -339,6 +359,7 @@ class OnDemandCapture:
         """Start reading on a new thread."""
         self._frames = []
         self._announce_audio = True
+        self._paused = False
         self._recording = True
         self._thread = threading.Thread(target=self._read, name="OnDemandCapture", daemon=True)
         self._thread.start()
@@ -347,6 +368,11 @@ class OnDemandCapture:
         """Discard the take so far; the reader keeps appending to the fresh list."""
         if self._recording:
             self._frames = []
+            self._paused = False
+
+    def set_paused(self, paused: bool) -> None:
+        """While paused, the reader drops its blocks; the audio before and after the pause is kept."""
+        self._paused = paused
 
     def stop_recording(self, _timing: OperationTiming) -> Callable[[], list[bytes]]:
         """Stop now; the returned function waits for the reader and yields the audio."""
@@ -389,6 +415,8 @@ class OnDemandCapture:
                 logging.error(f"Error while reading audio stream: {e}")
                 break
             self._on_block(data)
+            if self._paused:
+                continue
             self._frames.append(data)
             if self._announce_audio:
                 self._announce_audio = False

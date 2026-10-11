@@ -211,6 +211,7 @@ class SettingsWindowBase(QWidget):
     redact_log_checkbox: QCheckBox
     systray_double_click_copy_checkbox: QCheckBox
     recording_prompt_overlay_system_position_checkbox: QCheckBox
+    recording_prompt_overlay_digit_keys_checkbox: QCheckBox
     quit_without_confirmation_checkbox: QCheckBox
     misc_group: QGroupBox
     misc_layout: QVBoxLayout

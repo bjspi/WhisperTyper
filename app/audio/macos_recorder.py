@@ -58,6 +58,16 @@ class MacRecorder:
         self._recorder, self._path = recorder, path
         logging.info(f"macOS: started native recorder capture to '{path}' at {SAMPLERATE} Hz.")
 
+    def pause(self) -> None:
+        """Pause writing; the file keeps the audio recorded so far."""
+        if self._recorder:
+            self._recorder.pause()
+
+    def resume(self) -> None:
+        """Continue writing to the same file after a pause."""
+        if self._recorder and not self._recorder.record():
+            logging.warning("macOS: native recorder did not resume recording.")
+
     def stop(self, discard: bool = False) -> Optional[str]:
         """Stop recording; return the WAV path, or None if nothing was recorded or it was discarded."""
         recorder, path = self._recorder, self._path

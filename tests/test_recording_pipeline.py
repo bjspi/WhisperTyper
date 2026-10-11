@@ -303,6 +303,15 @@ def test_palette_waits_for_audio_and_its_buttons_restart_and_cancel(api, tmp_pat
         assert recording.is_recording and recording.push_to_talk_active
         assert (recording.current_prompt, recording.use_auto_prompt) == ("Mail it", True)
 
+        palette.pause_button.click()
+        assert recording.is_recording and recording.is_paused
+        held = len(recording.hot_mic._frames)
+        time.sleep(0.05)
+        assert len(recording.hot_mic._frames) <= held + 1  # At most the block that was being read.
+        palette.restart_button.click()  # Starting over records again right away.
+        assert not recording.is_paused and palette._paused_since is None
+        settle(lambda: len(recording.hot_mic._frames) > 2)
+
         palette.cancel_button.click()
         assert not recording.is_recording and overlay._instance is None
         assert recording.current_prompt is None

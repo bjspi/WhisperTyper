@@ -129,6 +129,8 @@ TEXTS: Tuple[Text, ...] = (
     _check("systray_double_click_copy_checkbox", "systray_double_click_copy_checkbox"),
     _check("recording_prompt_overlay_system_position_checkbox", "recording_prompt_overlay_system_position_checkbox",
            "recording_prompt_overlay_system_position_tooltip"),
+    _check("recording_prompt_overlay_digit_keys_checkbox", "recording_prompt_overlay_digit_keys_checkbox",
+           "recording_prompt_overlay_digit_keys_tooltip"),
     _check("quit_without_confirmation_checkbox", "quit_without_confirmation_checkbox", "quit_without_confirmation_tooltip"),
     _check("play_g_button", "play_last_recording_button", "play_last_recording_tooltip"),
     _check("post_rephrase_auto_select_all_checkbox", "post_rephrase_auto_select_all_checkbox",

@@ -108,21 +108,34 @@ def test_header_buttons_are_left_out_without_callbacks(qapp):
     assert palette.restart_button is None and palette.cancel_button is None
 
 
-def test_palette_near_the_cursor_moves_by_dragging_its_handle(qapp):
+def drag(widget, offset):
+    """Press on ``widget``, move the mouse by ``offset`` and release."""
+    press = widget.mapToGlobal(QtCore.QPoint(5, 5))
+    QtTest.QTest.mousePress(widget, QtCore.Qt.MouseButton.LeftButton, pos=QtCore.QPoint(5, 5))
+    move = QtGui.QMouseEvent(QtCore.QEvent.Type.MouseMove, QtCore.QPointF(5, 5),
+                             QtCore.QPointF(press + offset), QtCore.Qt.MouseButton.NoButton,
+                             QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.KeyboardModifier.NoModifier)
+    QtWidgets.QApplication.sendEvent(widget, move)
+    QtTest.QTest.mouseRelease(widget, QtCore.Qt.MouseButton.LeftButton, pos=QtCore.QPoint(5, 5))
+
+
+def test_palette_near_the_cursor_moves_by_dragging_its_header_or_handle(qapp):
     palette = RecordingPromptOverlay(PROMPTS, "Recording…", "None", lambda _prompt: None,
                                      use_system_position=False, move_tooltip="Drag to move")
     handle = palette.move_handle
     assert handle is not None and handle.toolTip() == "Drag to move"
     assert palette.card.rect().contains(handle.geometry())
+    size_all, pointing = QtCore.Qt.CursorShape.SizeAllCursor, QtCore.Qt.CursorShape.PointingHandCursor
+    assert palette.status_label.cursor().shape() == size_all == palette.timer_label.cursor().shape()
+    assert palette._prompt_buttons[0].cursor().shape() == pointing
     start = palette.pos()
-    press = handle.mapToGlobal(QtCore.QPoint(5, 5))
-    QtTest.QTest.mousePress(handle, QtCore.Qt.MouseButton.LeftButton, pos=QtCore.QPoint(5, 5))
-    move = QtGui.QMouseEvent(QtCore.QEvent.Type.MouseMove, QtCore.QPointF(5, 5),
-                             QtCore.QPointF(press + QtCore.QPoint(40, 25)), QtCore.Qt.MouseButton.NoButton,
-                             QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.KeyboardModifier.NoModifier)
-    QtWidgets.QApplication.sendEvent(handle, move)
-    QtTest.QTest.mouseRelease(handle, QtCore.Qt.MouseButton.LeftButton, pos=QtCore.QPoint(5, 5))
+    drag(handle, QtCore.QPoint(40, 25))
     assert palette.pos() == start + QtCore.QPoint(40, 25)
+    drag(palette.status_label, QtCore.QPoint(-10, 5))
+    drag(palette.timer_label, QtCore.QPoint(-10, 5))
+    assert palette.pos() == start + QtCore.QPoint(20, 35)
+    drag(palette._prompt_buttons[0], QtCore.QPoint(30, 30))  # Chips keep their clicks.
+    assert palette.pos() == start + QtCore.QPoint(20, 35)
 
 
 def test_palette_by_the_status_area_has_no_move_handle(qapp, monkeypatch):
@@ -130,3 +143,73 @@ def test_palette_by_the_status_area_has_no_move_handle(qapp, monkeypatch):
     palette = RecordingPromptOverlay(PROMPTS, "Recording…", "None", lambda _prompt: None,
                                      use_system_position=True, move_tooltip="Drag to move")
     assert palette.move_handle is None
+    assert palette.status_label.cursor().shape() == QtCore.Qt.CursorShape.ArrowCursor
+
+
+def test_pause_freezes_the_timer_and_offers_resume(qapp, monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(floating_buttons.time, "monotonic", lambda: now[0])
+    calls: list[str] = []
+    palette = RecordingPromptOverlay(PROMPTS, "Recording…", "None", lambda _prompt: None,
+                                     use_system_position=False, on_pause=lambda: calls.append("pause"),
+                                     paused_text="Paused", pause_tooltip="Pause", resume_tooltip="Resume")
+    assert palette.pause_button is not None and palette.pause_button.toolTip() == "Pause"
+    palette.pause_button.click()
+    assert calls == ["pause"]
+    width = palette.card.width()
+    now[0] += 10
+    palette.set_paused(True)
+    now[0] += 50
+    palette._update_elapsed()
+    assert palette.timer_label.text() == "0:10"
+    assert palette.status_label.text() == "Paused" and palette.pause_button.toolTip() == "Resume"
+    palette.set_paused(False)
+    now[0] += 5
+    palette._update_elapsed()
+    assert palette.timer_label.text() == "0:15"
+    assert palette.status_label.text() == "Recording" and palette.pause_button.toolTip() == "Pause"
+    assert palette.card.width() == width
+
+def test_digit_keys_are_taken_only_while_the_mouse_is_over_the_palette(qapp, monkeypatch):
+    registered: dict[int, int] = {}
+    monkeypatch.setattr(floating_buttons, "is_WINDOWS", True)
+    monkeypatch.setattr(floating_buttons, "register_window_hotkey",
+                        lambda _hwnd, hotkey_id, vk: registered.setdefault(hotkey_id, vk) is not None)
+    monkeypatch.setattr(floating_buttons, "unregister_window_hotkey",
+                        lambda _hwnd, hotkey_id: registered.pop(hotkey_id))
+    selected: list = []
+    palette = RecordingPromptOverlay(PROMPTS, "Recording…", "None", selected.append,
+                                     use_system_position=False, digit_keys=True)
+    assert registered == {}
+    QtWidgets.QApplication.sendEvent(palette, QtGui.QEnterEvent(QtCore.QPointF(), QtCore.QPointF(), QtCore.QPointF()))
+    # "None" and two prompts: 1-3 on the number row and the number pad.
+    assert sorted(registered.values()) == [0x31, 0x32, 0x33, 0x61, 0x62, 0x63]
+    palette.select_by_digit(3)
+    palette.select_by_digit(1)
+    palette.select_by_digit(7)  # No chip: ignored.
+    palette.select_by_digit(0)  # The tenth chip: there is none.
+    assert selected == [PROMPTS[1], None]
+    QtWidgets.QApplication.sendEvent(palette, QtCore.QEvent(QtCore.QEvent.Type.Leave))
+    assert registered == {}
+
+
+def test_digit_keys_stay_free_when_disabled(qapp, monkeypatch):
+    monkeypatch.setattr(floating_buttons, "is_WINDOWS", True)
+    monkeypatch.setattr(floating_buttons, "register_window_hotkey", lambda *_args: pytest.fail("registered"))
+    palette = RecordingPromptOverlay(PROMPTS, "Recording…", "None", lambda _prompt: None,
+                                     use_system_position=False, digit_keys=False)
+    QtWidgets.QApplication.sendEvent(palette, QtGui.QEnterEvent(QtCore.QPointF(), QtCore.QPointF(), QtCore.QPointF()))
+
+
+@pytest.mark.skipif(not floating_buttons.is_WINDOWS, reason="native Windows message")
+def test_hotkey_id_is_read_from_a_native_wm_hotkey_message():
+    import ctypes
+    from ctypes import wintypes
+
+    from app.platform.windows import hotkey_id_of
+    msg = wintypes.MSG(message=0x0312, wParam=0xB031)
+    address = ctypes.addressof(msg)
+    assert hotkey_id_of(b"windows_generic_MSG", address) == 0xB031
+    msg.message = 0x0200  # WM_MOUSEMOVE
+    assert hotkey_id_of(b"windows_generic_MSG", address) is None
+

@@ -65,7 +65,7 @@ class GeneralPage(SettingsWindowBase):
         for index, (_family, key) in enumerate(_IP_FAMILIES):
             self.network_ip_family_selector.setItemText(index, self.translator.tr(key))
         if self.input_device_selector.count() > 0:
-            self.input_device_selector.setItemText(0, self.translator.tr("input_device_default"))
+            self.populate_input_devices()
 
     def _on_color_theme_changed(self, *_args: object) -> None:
         """Persist the chosen colour theme and re-apply it immediately."""
@@ -80,8 +80,12 @@ class GeneralPage(SettingsWindowBase):
             self.input_device_selector.addItem(self.translator.tr("input_device_default"), "")
             for device in self._recording.selectable_input_devices():
                 self.input_device_selector.addItem(device["name"], device["name"])
-            index = self.input_device_selector.findData(self.config.get("input_device_name", "") or "")
-            self.input_device_selector.setCurrentIndex(max(0, index))
+            configured = self.config.get("input_device_name", "") or ""
+            if self.input_device_selector.findData(configured) < 0:
+                # Keep a device that is not connected right now selected instead of switching to the default.
+                self.input_device_selector.addItem(
+                    self.translator.tr("input_device_not_connected", device=configured), configured)
+            self.input_device_selector.setCurrentIndex(self.input_device_selector.findData(configured))
 
     def _on_input_device_changed(self, *_args: object) -> None:
         """Persist the chosen input device and reopen the capture stream on it."""

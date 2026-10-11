@@ -151,7 +151,7 @@ class InputDeviceSelector:
                 if native != self._samplerate:
                     candidates.append({"index": match["index"], "name": match["name"], "channels": 1, "samplerate": max(8000, native)})
             else:
-                logging.warning(f"Configured input device {configured!r} not found; using system default.")
+                logging.info(f"Configured input device {configured!r} is not connected; using the system default.")
         candidates.append({"index": None, "name": "default input", "channels": 1, "samplerate": self._samplerate})
         return candidates
 

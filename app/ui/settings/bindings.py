@@ -79,6 +79,7 @@ BINDINGS: Tuple[Binding, ...] = (
     Binding("redact_log_checkbox", "redact_transcription_in_log", "check"),
     Binding("systray_double_click_copy_checkbox", "systray_double_click_copy", "check"),
     Binding("recording_prompt_overlay_system_position_checkbox", "recording_prompt_overlay_system_position", "check"),
+    Binding("recording_prompt_overlay_digit_keys_checkbox", "recording_prompt_overlay_digit_keys", "check", "windows"),
     Binding("quit_without_confirmation_checkbox", "quit_without_confirmation", "check"),
     Binding("post_rephrase_auto_select_all_checkbox", "post_rephrase_auto_select_all", "check"),
     # Text insertion
