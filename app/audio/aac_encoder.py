@@ -55,3 +55,29 @@ def encode_wav_to_aac(source: str, destination: str, bitrate_kbps: int) -> None:
                 encode(frame)
             encode(None)
             container.mux(stream.encode(None))
+
+
+def warm_up_encoder(bitrate_kbps: int) -> None:
+    """Encode a short silent clip once, so loading the codec libraries does not delay the first recording.
+
+    The first encode after start-up maps PyAV's FFmpeg libraries, which the OS (and its virus
+    scanner) may make slow on a busy system; doing it in the background moves that cost away
+    from the first dictation. Failures are only logged.
+    """
+    import os
+    import tempfile
+    import time
+
+    from app.core import dsp
+
+    started = time.monotonic()
+    try:
+        with tempfile.TemporaryDirectory(prefix="whispertyper_aac_warmup_") as directory:
+            source = os.path.join(directory, "warmup.wav")
+            dsp.write_wav(source, bytes(16000 * 2 // 5), 16000)  # 0.2 s of silence
+            encode_wav_to_aac(source, os.path.join(directory, "warmup.m4a"), bitrate_kbps)
+    except Exception as error:
+        logging.warning("AAC encoder warm-up failed: %s", error)
+        return
+    logging.info("AAC encoder warmed up in %.0f ms", (time.monotonic() - started) * 1000)
+
