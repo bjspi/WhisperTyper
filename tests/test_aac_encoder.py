@@ -69,3 +69,12 @@ def test_missing_encoder_offers_wav_only(monkeypatch):
         assert aac_encoder.available_aac_bitrates() == ()
     finally:
         aac_encoder.available_aac_bitrates.cache_clear()
+
+
+def test_warm_up_encodes_a_short_clip_and_leaves_no_files(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(aac_encoder, "encode_wav_to_aac", lambda source, destination, bitrate: calls.append(bitrate))
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    aac_encoder.warm_up_encoder(64)
+    assert calls == [64]
+    assert list(tmp_path.iterdir()) == []
