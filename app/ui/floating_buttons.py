@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.core.env import is_MACOS, is_WINDOWS
+from app.platform.windows import hotkey_id_of, register_window_hotkey, unregister_window_hotkey
 from app.ui import theme
 from app.ui.flow_layout import FlowLayout
 
@@ -320,6 +321,14 @@ class _RecordingDot(QWidget):
         self._pulse.valueChanged.connect(self._set_opacity)
         self._pulse.start()
 
+    def set_paused(self, paused: bool) -> None:
+        """Hold the dot dimmed while the recording is paused; pulse again when it continues."""
+        if paused:
+            self._pulse.pause()
+            self._set_opacity(0.35)
+        else:
+            self._pulse.resume()
+
     def _set_opacity(self, value: Any) -> None:
         """Repaint with the animated opacity."""
         self._opacity = float(value)
@@ -340,43 +349,27 @@ class _RecordingDot(QWidget):
 
 
 class _MoveHandle(QLabel):
-    """Small four-way arrow in the card's corner; dragging it moves the window.
+    """Small four-way arrow in the card's corner that marks the palette as movable.
 
-    The drag follows the mouse inside Qt instead of handing it to the window manager, so the
-    non-activating window never takes the focus from the application that receives the text.
+    It does not handle the mouse itself: presses fall through to the palette, which drags.
     """
 
     SIZE = 13
     ICON_SIZE = 10
 
-    def __init__(self, color: str, tooltip: str, window: QWidget, parent: QWidget) -> None:
-        """Draw the arrow cross in ``color``; dragging moves ``window``."""
+    def __init__(self, color: str, tooltip: str, parent: QWidget) -> None:
+        """Draw the arrow cross in ``color``."""
         super().__init__(parent)
-        self._window = window
         self.setPixmap(_svg_pixmap(theme.move_svg(color), self.ICON_SIZE, self.devicePixelRatioF()))
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setFixedSize(self.SIZE, self.SIZE)
         self.setCursor(Qt.CursorShape.SizeAllCursor)
         self.setToolTip(tooltip)
-        self._grab_offset: Optional[QPoint] = None
 
-    def mousePressEvent(self, event: Optional[QMouseEvent]) -> None:  # noqa: N802 - Qt API
-        """Start dragging the window with the left button."""
-        if event is not None and event.button() == Qt.MouseButton.LeftButton:
-            self._grab_offset = event.globalPosition().toPoint() - self._window.pos()
-            event.accept()
 
-    def mouseMoveEvent(self, event: Optional[QMouseEvent]) -> None:  # noqa: N802 - Qt API
-        """Keep the grabbed point of the window under the mouse."""
-        if event is not None and self._grab_offset is not None:
-            self._window.move(event.globalPosition().toPoint() - self._grab_offset)
-            event.accept()
-
-    def mouseReleaseEvent(self, event: Optional[QMouseEvent]) -> None:  # noqa: N802 - Qt API
-        """Finish the drag."""
-        if event is not None and event.button() == Qt.MouseButton.LeftButton:
-            self._grab_offset = None
-            event.accept()
+#: First id of the overlay's digit hotkeys (application ids are 0x0000-0xBFFF).
+_DIGIT_HOTKEY_BASE = 0xB000
+_VK_0, _VK_NUMPAD0 = 0x30, 0x60
 
 
 class RecordingPromptOverlay(_PromptCard):
@@ -395,14 +388,21 @@ class RecordingPromptOverlay(_PromptCard):
                  dark: Optional[bool] = None,
                  on_cancel: Optional[Callable[[], None]] = None,
                  on_restart: Optional[Callable[[], None]] = None,
-                 cancel_tooltip: str = "", restart_tooltip: str = "", move_tooltip: str = "") -> None:
+                 cancel_tooltip: str = "", restart_tooltip: str = "", move_tooltip: str = "",
+                 on_pause: Optional[Callable[[], None]] = None, paused_text: str = "",
+                 pause_tooltip: str = "", resume_tooltip: str = "", digit_keys: bool = False) -> None:
         """Build the palette by the system status area or near the cursor without taking focus.
 
         The prompt marked ``auto_apply`` starts selected (otherwise "None"); only clicks report
         a selection, so the preselection itself leaves the automatic default in charge.
         ``dark`` follows the app's colour theme; None uses the operating system's scheme.
         ``on_restart`` / ``on_cancel`` add header buttons to start the take over or discard it.
-        A palette placed near the cursor gets a move handle in its bottom-right corner.
+        ``on_pause`` adds a pause/resume button; the app reports the state back via ``set_paused``.
+        ``digit_keys`` (Windows): while the mouse is over the palette, the number keys pick the chips
+        in their shown order (1 is "None", 0 the tenth chip, as on the keyboard); the keys are
+        registered as hotkeys, so the focus stays where it is.
+        A palette placed near the cursor can be dragged by its card; a handle in the bottom-right
+        corner shows that.
         """
         if RecordingPromptOverlay._instance:
             RecordingPromptOverlay._instance.close()
@@ -410,6 +410,9 @@ class RecordingPromptOverlay(_PromptCard):
         RecordingPromptOverlay._instance = self
         self._on_selection_changed = on_selection_changed
         self._started = time.monotonic()
+        # Paused time is left out of the elapsed time.
+        self._paused_since: Optional[float] = None
+        self._paused_total = 0.0
 
         window_kind = Qt.WindowType.Dialog if is_MACOS else Qt.WindowType.Tool
         flags = (
@@ -427,9 +430,15 @@ class RecordingPromptOverlay(_PromptCard):
         header.setSpacing(8)
         self._dot = _RecordingDot(QColor(recording_red), self.card)
         header.addWidget(self._dot, 0, Qt.AlignmentFlag.AlignVCenter)
-        status_label = QLabel(status_text.rstrip(" .\u2026"), self.card)
-        status_label.setProperty("role", "title")
-        header.addWidget(status_label)
+        self._status_text = status_text.rstrip(" .\u2026")
+        self._paused_text = paused_text.rstrip(" .\u2026") or self._status_text
+        self.status_label = QLabel(self._status_text, self.card)
+        self.status_label.setProperty("role", "title")
+        # Wide enough for either text, so the card keeps its size when the recording pauses.
+        metrics = self.status_label.fontMetrics()
+        self.status_label.setMinimumWidth(max(metrics.horizontalAdvance(self._status_text),
+                                              metrics.horizontalAdvance(self._paused_text)))
+        header.addWidget(self.status_label)
         header.addStretch()
         self.timer_label = QLabel(self.card)
         self.timer_label.setProperty("role", "muted")
@@ -448,6 +457,14 @@ class RecordingPromptOverlay(_PromptCard):
         icons.setContentsMargins(0, 2, 0, 0)
         controls.addLayout(icons)
         icon_color = theme.palette(dark)["muted"]
+        self.pause_button: Optional[QPushButton] = None
+        if on_pause is not None:
+            self._pause_icons = (_svg_icon(theme.pause_svg(icon_color), 16, self.devicePixelRatioF()),
+                                 _svg_icon(theme.play_svg(icon_color), 16, self.devicePixelRatioF()))
+            self._pause_tooltips = (pause_tooltip, resume_tooltip)
+            self.pause_button = self._add_icon_button(theme.pause_svg(icon_color), pause_tooltip)
+            self.pause_button.clicked.connect(lambda _checked=False: on_pause())
+            icons.addWidget(self.pause_button, 0, Qt.AlignmentFlag.AlignVCenter)
         self.restart_button: Optional[QPushButton] = None
         self.cancel_button: Optional[QPushButton] = None
         if on_restart is not None:
@@ -481,8 +498,13 @@ class RecordingPromptOverlay(_PromptCard):
 
         self._fit_card(card_layout, header)
         self.move_handle: Optional[_MoveHandle] = None
+        self._grab_offset: Optional[QPoint] = None
+        self._digit_keys = digit_keys and is_WINDOWS
+        self._registered_hotkeys: List[int] = []
         if not self._position_for_platform(use_system_position, system_anchor):
-            self.move_handle = _MoveHandle(icon_color, move_tooltip, self, self.card)
+            self.move_handle = _MoveHandle(icon_color, move_tooltip, self.card)
+            # The whole card drags; buttons and chips keep their own pointing-hand cursor.
+            self.card.setCursor(Qt.CursorShape.SizeAllCursor)
             # The handle sits in the card's bottom-right padding, clear of the rounded border.
             inset = 1
             self.move_handle.move(self.card.width() - _MoveHandle.SIZE - inset,
@@ -490,14 +512,106 @@ class RecordingPromptOverlay(_PromptCard):
             self.move_handle.raise_()
         self.show()
 
+    def mousePressEvent(self, event: Optional[QMouseEvent]) -> None:  # noqa: N802 - Qt API
+        """Start dragging a movable palette from anywhere on the card but its buttons.
+
+        Buttons and chips take their own clicks; everything else (status, timer, the move handle,
+        the free space) reaches the palette. The drag follows the mouse inside Qt instead of
+        handing it to the window manager, so the non-activating window never takes the focus
+        from the application that receives the text.
+        """
+        if (event is not None and self.move_handle is not None and event.button() == Qt.MouseButton.LeftButton
+                and self.card.geometry().contains(event.position().toPoint())):
+            self._grab_offset = event.globalPosition().toPoint() - self.pos()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: Optional[QMouseEvent]) -> None:  # noqa: N802 - Qt API
+        """Keep the grabbed point of the palette under the mouse."""
+        if event is not None and self._grab_offset is not None:
+            self.move(event.globalPosition().toPoint() - self._grab_offset)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: Optional[QMouseEvent]) -> None:  # noqa: N802 - Qt API
+        """Finish the drag."""
+        if event is not None and self._grab_offset is not None and event.button() == Qt.MouseButton.LeftButton:
+            self._grab_offset = None
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def enterEvent(self, event: Any) -> None:  # noqa: N802 - Qt API
+        """Take the digit keys for the chips while the mouse is over the palette."""
+        super().enterEvent(event)
+        if not self._digit_keys or self._registered_hotkeys:
+            return
+        hwnd = int(self.winId())
+        for index in range(min(10, len(self._prompt_buttons))):
+            digit = (index + 1) % 10
+            for vk in (_VK_0 + digit, _VK_NUMPAD0 + digit):
+                hotkey_id = _DIGIT_HOTKEY_BASE + vk
+                if register_window_hotkey(hwnd, hotkey_id, vk):
+                    self._registered_hotkeys.append(hotkey_id)
+
+    def leaveEvent(self, event: Any) -> None:  # noqa: N802 - Qt API
+        """Give the digit keys back to the other applications."""
+        super().leaveEvent(event)
+        self._release_digit_keys()
+
+    def _release_digit_keys(self) -> None:
+        """Unregister every digit hotkey of this palette."""
+        if not self._registered_hotkeys:
+            return
+        hwnd = int(self.winId())
+        for hotkey_id in self._registered_hotkeys:
+            unregister_window_hotkey(hwnd, hotkey_id)
+        self._registered_hotkeys = []
+
+    def nativeEvent(self, event_type: Any, message: Any) -> Any:  # noqa: N802 - Qt API
+        """Pick the chip of a pressed digit key."""
+        hotkey_id = hotkey_id_of(event_type, message) if self._registered_hotkeys else None
+        if hotkey_id is not None and hotkey_id in self._registered_hotkeys:
+            self.select_by_digit((hotkey_id - _DIGIT_HOTKEY_BASE) % 0x10)
+            return True, 0
+        # QWidget's own implementation only reports "not handled"; calling it from PyQt6 crashes.
+        return False, 0
+
+    def select_by_digit(self, digit: int) -> None:
+        """Pick a chip like a click: 1-9 the chips in their shown order, 0 the tenth."""
+        index = (digit - 1) % 10
+        if index < len(self._prompt_buttons):
+            self._prompt_buttons[index].click()
+
     def restart_timer(self) -> None:
         """Count the elapsed time from zero again (the take was started over)."""
         self._started = time.monotonic()
+        self._paused_total = 0.0
+        if self._paused_since is not None:
+            self._paused_since = self._started
+        self._update_elapsed()
+
+    def set_paused(self, paused: bool) -> None:
+        """Show the paused state: frozen timer, dimmed dot, resume button and paused status."""
+        now = time.monotonic()
+        if paused and self._paused_since is None:
+            self._paused_since = now
+        elif not paused and self._paused_since is not None:
+            self._paused_total += now - self._paused_since
+            self._paused_since = None
+        self._dot.set_paused(paused)
+        self.status_label.setText(self._paused_text if paused else self._status_text)
+        if self.pause_button is not None:
+            self.pause_button.setIcon(self._pause_icons[paused])
+            self.pause_button.setToolTip(self._pause_tooltips[paused])
         self._update_elapsed()
 
     def _update_elapsed(self) -> None:
-        """Show the time since the palette opened as m:ss."""
-        seconds = int(time.monotonic() - self._started)
+        """Show the recorded time since the palette opened as m:ss, without paused time."""
+        end = self._paused_since if self._paused_since is not None else time.monotonic()
+        seconds = int(end - self._started - self._paused_total)
         self.timer_label.setText(f"{seconds // 60}:{seconds % 60:02d}")
 
     def _select_prompt(self, prompt: Optional[Dict[str, Any]], selected_button: QPushButton) -> None:
@@ -548,6 +662,7 @@ class RecordingPromptOverlay(_PromptCard):
         """Stop the clock and the pulse, and clear the singleton instance."""
         self._clock.stop()
         self._dot.stop()
+        self._release_digit_keys()
         if RecordingPromptOverlay._instance is self:
             RecordingPromptOverlay._instance = None
         super().closeEvent(event)

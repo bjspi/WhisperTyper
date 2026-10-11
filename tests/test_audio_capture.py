@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 
 pytest.importorskip("pyaudio")  # Exercised by the Windows audio/clipboard job, without native devices.
 
-from app.audio.capture import HotMicCapture, OnDemandCapture
+from app.audio import capture as capture_module
+from app.audio.capture import HotMicCapture, MicrophoneInput, OnDemandCapture
 from app.core.timing import OperationTiming
 
 PREROLL = b"\x03\x00" * 1024
@@ -208,3 +210,71 @@ def test_first_recorded_block_is_announced_once_and_restart_discards_the_take(ho
     assert calls == [None]  # A restart keeps recording; the take is not announced again.
     assert PREROLL not in frames  # Nothing from before the restart, not even the pre-roll.
     assert frames and frames[0][0] >= restarted_at
+
+
+def capture_recording(hot, stream):
+    """A running capture of numbered blocks that already holds a few of them."""
+    if hot:
+        capture = HotMicCapture(Microphone(stream), idle_expired=lambda: False, on_block=lambda _data: None)
+        capture.start()
+        capture.start_recording()
+    else:
+        capture = OnDemandCapture(Microphone(stream), on_block=lambda _data: None, on_failure=lambda: None)
+        capture.start_recording()
+    wait_for(lambda: len(capture._frames) > 2)
+    return capture
+
+
+@pytest.mark.parametrize("hot", [True, False])
+def test_paused_blocks_are_dropped_and_resuming_continues_the_take(hot):
+    stream = CountingStream()
+    capture = capture_recording(hot, stream)
+    capture.set_paused(True)
+    paused_at = stream.blocks  # The block being read right now may still be kept.
+    wait_for(lambda: stream.blocks > paused_at + 5)
+    resumed_at = stream.blocks  # The block being read when resuming may already count again.
+    capture.set_paused(False)
+    wait_for(lambda: stream.blocks > resumed_at + 3)
+    frames = capture.stop_recording(OperationTiming("recording"))()
+    if hot:
+        capture.stop()
+    numbers = [frame[0] for frame in frames]
+    assert not [n for n in numbers if paused_at + 1 < n < resumed_at]
+    assert numbers[0] <= paused_at and numbers[-1] > resumed_at
+
+
+@pytest.mark.parametrize("hot", [True, False])
+def test_stopping_while_paused_sends_the_audio_before_the_pause(hot):
+    stream = CountingStream()
+    capture = capture_recording(hot, stream)
+    capture.set_paused(True)
+    paused_at = stream.blocks
+    wait_for(lambda: stream.blocks > paused_at + 5)
+    frames = capture.stop_recording(OperationTiming("recording"))()
+    if hot:
+        capture.stop()
+    assert frames and all(frame[0] <= paused_at + 1 for frame in frames)
+
+
+@pytest.mark.parametrize(("connected", "notified"), [(False, []), (True, ["Headset"])])
+def test_device_fallback_is_reported_only_when_a_connected_device_fails(monkeypatch, connected, notified):
+    """A device that is simply not plugged in falls back quietly; a connected one that fails is reported once."""
+    reports: list[str] = []
+    mic = MicrophoneInput(lambda: {"input_device_name": "Headset"}, 16000, 1024, reports.append)
+    default = {"index": None, "name": "default input", "channels": 1, "samplerate": 16000}
+    configured = {"index": 3, "name": "Headset", "channels": 1, "samplerate": 16000}
+    candidates = [configured, default] if connected else [default]
+    monkeypatch.setattr(mic, "pyaudio", lambda refresh=False: object())
+    monkeypatch.setattr(mic.devices, "preferred_input_stream_candidates", lambda _audio: candidates)
+
+    def open_stream(_audio, candidate, _chunk):
+        if candidate["index"] is not None:
+            raise OSError("device busy")
+        return SimpleNamespace(stop_stream=lambda: None, close=lambda: None)
+
+    monkeypatch.setattr(capture_module, "_open_input_stream", open_stream)
+    for _ in range(2):
+        mic.open()
+        mic.close()
+    assert reports == notified
+

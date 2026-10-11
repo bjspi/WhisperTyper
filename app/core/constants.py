@@ -120,6 +120,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # Place the recording-prompt palette by the OS status area (Windows tray / macOS menu
     # bar). When disabled it appears once near the mouse pointer, matching older overlays.
     "recording_prompt_overlay_system_position": True,
+    # Windows: while the mouse is over the recording palette, the number keys pick its chips in order.
+    "recording_prompt_overlay_digit_keys": True,
     "quit_without_confirmation": False,
     "alt_clipboard_lib": is_MACOS,
     "windows_sendinput_text": False,

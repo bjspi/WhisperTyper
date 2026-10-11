@@ -263,6 +263,22 @@ def restart_svg(color: str) -> str:
             f"</g></svg>")
 
 
+def pause_svg(color: str) -> str:
+    """SVG string for two vertical bars (pause) in the given stroke colour."""
+    return (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
+            f"<g fill='none' stroke='{color}' stroke-width='1.75' stroke-linecap='round'>"
+            f"<path d='M5.75 3.5v9M10.25 3.5v9'/>"
+            f"</g></svg>")
+
+
+def play_svg(color: str) -> str:
+    """SVG string for a right-pointing triangle (resume) in the given stroke colour."""
+    return (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
+            f"<g fill='none' stroke='{color}' stroke-width='1.5' stroke-linejoin='round'>"
+            f"<path d='M5 3.25v9.5L12.75 8z'/>"
+            f"</g></svg>")
+
+
 def move_svg(color: str) -> str:
     """SVG string for a four-way arrow cross (drag to move) in the given stroke colour."""
     return (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
