@@ -126,6 +126,7 @@
   "recording_canceled_message": "Recording canceled.",
   "recording_cancel_tooltip": "Cancel recording",
   "recording_restart_tooltip": "Restart recording",
+  "recording_move_tooltip": "Drag to move",
   "no_audio_captured_message": "No audio captured.",
   "save_audio_failed_message": "Failed to save audio.",
   "no_microphone_signal_message": "No microphone signal detected.",

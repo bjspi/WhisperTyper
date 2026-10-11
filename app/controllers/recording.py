@@ -473,6 +473,7 @@ class RecordingController(QObject):
             on_restart=self.restart,
             cancel_tooltip=self._ctx.tr("recording_cancel_tooltip"),
             restart_tooltip=self._ctx.tr("recording_restart_tooltip"),
+            move_tooltip=self._ctx.tr("recording_move_tooltip"),
         )
         # A system-positioned palette can be far away from the user's current work. Keep the
         # original mouse-following recording status as a lightweight local reminder. When the

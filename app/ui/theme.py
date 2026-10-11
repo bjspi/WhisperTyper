@@ -263,6 +263,14 @@ def restart_svg(color: str) -> str:
             f"</g></svg>")
 
 
+def move_svg(color: str) -> str:
+    """SVG string for a four-way arrow cross (drag to move) in the given stroke colour."""
+    return (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
+            f"<g fill='none' stroke='{color}' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'>"
+            f"<path d='M8 1.75v12.5M1.75 8h12.5M6 3.75l2-2 2 2M6 12.25l2 2 2-2M3.75 6l-2 2 2 2M12.25 6l2 2-2 2'/>"
+            f"</g></svg>")
+
+
 def write_icon_qss(dark: bool, cache_dir: str) -> str:
     """Write themed checkmark/arrow SVGs into cache_dir and return QSS referencing them.
 
