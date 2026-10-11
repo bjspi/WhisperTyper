@@ -126,6 +126,7 @@
   "recording_canceled_message": "Grabación cancelada.",
   "recording_cancel_tooltip": "Cancelar grabación",
   "recording_restart_tooltip": "Reiniciar grabación",
+  "recording_move_tooltip": "Arrastra para mover",
   "no_audio_captured_message": "No se capturó audio.",
   "save_audio_failed_message": "No se pudo guardar el audio.",
   "no_microphone_signal_message": "No se detectó señal del micrófono.",

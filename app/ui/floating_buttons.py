@@ -6,7 +6,7 @@ from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import QByteArray, QEasingCurve, QPoint, QSize, Qt, QTimer, QVariantAnimation
-from PyQt6.QtGui import QColor, QCursor, QFont, QIcon, QKeyEvent, QPainter, QPixmap
+from PyQt6.QtGui import QColor, QCursor, QFont, QIcon, QKeyEvent, QMouseEvent, QPainter, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
@@ -339,6 +339,46 @@ class _RecordingDot(QWidget):
         painter.drawEllipse(1, 1, 10, 10)
 
 
+class _MoveHandle(QLabel):
+    """Small four-way arrow in the card's corner; dragging it moves the window.
+
+    The drag follows the mouse inside Qt instead of handing it to the window manager, so the
+    non-activating window never takes the focus from the application that receives the text.
+    """
+
+    SIZE = 13
+    ICON_SIZE = 10
+
+    def __init__(self, color: str, tooltip: str, window: QWidget, parent: QWidget) -> None:
+        """Draw the arrow cross in ``color``; dragging moves ``window``."""
+        super().__init__(parent)
+        self._window = window
+        self.setPixmap(_svg_pixmap(theme.move_svg(color), self.ICON_SIZE, self.devicePixelRatioF()))
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setFixedSize(self.SIZE, self.SIZE)
+        self.setCursor(Qt.CursorShape.SizeAllCursor)
+        self.setToolTip(tooltip)
+        self._grab_offset: Optional[QPoint] = None
+
+    def mousePressEvent(self, event: Optional[QMouseEvent]) -> None:  # noqa: N802 - Qt API
+        """Start dragging the window with the left button."""
+        if event is not None and event.button() == Qt.MouseButton.LeftButton:
+            self._grab_offset = event.globalPosition().toPoint() - self._window.pos()
+            event.accept()
+
+    def mouseMoveEvent(self, event: Optional[QMouseEvent]) -> None:  # noqa: N802 - Qt API
+        """Keep the grabbed point of the window under the mouse."""
+        if event is not None and self._grab_offset is not None:
+            self._window.move(event.globalPosition().toPoint() - self._grab_offset)
+            event.accept()
+
+    def mouseReleaseEvent(self, event: Optional[QMouseEvent]) -> None:  # noqa: N802 - Qt API
+        """Finish the drag."""
+        if event is not None and event.button() == Qt.MouseButton.LeftButton:
+            self._grab_offset = None
+            event.accept()
+
+
 class RecordingPromptOverlay(_PromptCard):
     """Persistent, non-activating prompt selector shown for one microphone recording.
 
@@ -355,13 +395,14 @@ class RecordingPromptOverlay(_PromptCard):
                  dark: Optional[bool] = None,
                  on_cancel: Optional[Callable[[], None]] = None,
                  on_restart: Optional[Callable[[], None]] = None,
-                 cancel_tooltip: str = "", restart_tooltip: str = "") -> None:
+                 cancel_tooltip: str = "", restart_tooltip: str = "", move_tooltip: str = "") -> None:
         """Build the palette by the system status area or near the cursor without taking focus.
 
         The prompt marked ``auto_apply`` starts selected (otherwise "None"); only clicks report
         a selection, so the preselection itself leaves the automatic default in charge.
         ``dark`` follows the app's colour theme; None uses the operating system's scheme.
         ``on_restart`` / ``on_cancel`` add header buttons to start the take over or discard it.
+        A palette placed near the cursor gets a move handle in its bottom-right corner.
         """
         if RecordingPromptOverlay._instance:
             RecordingPromptOverlay._instance.close()
@@ -439,7 +480,14 @@ class RecordingPromptOverlay(_PromptCard):
         self._clock.start()
 
         self._fit_card(card_layout, header)
-        self._position_for_platform(use_system_position, system_anchor)
+        self.move_handle: Optional[_MoveHandle] = None
+        if not self._position_for_platform(use_system_position, system_anchor):
+            self.move_handle = _MoveHandle(icon_color, move_tooltip, self, self.card)
+            # The handle sits in the card's bottom-right padding, clear of the rounded border.
+            inset = 1
+            self.move_handle.move(self.card.width() - _MoveHandle.SIZE - inset,
+                                  self.card.height() - _MoveHandle.SIZE - inset)
+            self.move_handle.raise_()
         self.show()
 
     def restart_timer(self) -> None:
@@ -459,8 +507,8 @@ class RecordingPromptOverlay(_PromptCard):
         self._on_selection_changed(prompt)
 
     def _position_for_platform(self, use_system_position: bool,
-                               system_anchor: Optional[QPoint]) -> None:
-        """Place the visible card by the OS status area or once near the cursor."""
+                               system_anchor: Optional[QPoint]) -> bool:
+        """Place the visible card by the OS status area or once near the cursor; True for the status area."""
         self.adjustSize()
         card_width, card_height = self.card.width(), self.card.height()
         if use_system_position and (is_WINDOWS or is_MACOS):
@@ -491,9 +539,10 @@ class RecordingPromptOverlay(_PromptCard):
                 x = min(max(x, available.left()), max(available.left(), available.right() - card_width))
                 y = min(max(y, available.top()), max(available.top(), available.bottom() - card_height))
                 self._move_card(x, y)
-                return
+                return True
 
         self._place_near_cursor()
+        return False
 
     def closeEvent(self, event: Any) -> None:
         """Stop the clock and the pulse, and clear the singleton instance."""

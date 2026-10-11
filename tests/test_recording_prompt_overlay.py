@@ -5,6 +5,8 @@ import pytest
 
 QtWidgets = pytest.importorskip("PyQt6.QtWidgets")
 QtCore = pytest.importorskip("PyQt6.QtCore")
+QtGui = pytest.importorskip("PyQt6.QtGui")
+QtTest = pytest.importorskip("PyQt6.QtTest")
 
 from app.ui import floating_buttons  # noqa: E402
 from app.ui.floating_buttons import RecordingPromptOverlay  # noqa: E402
@@ -104,3 +106,27 @@ def test_header_buttons_report_cancel_and_restart_without_taking_focus(qapp):
 def test_header_buttons_are_left_out_without_callbacks(qapp):
     palette = overlay([])
     assert palette.restart_button is None and palette.cancel_button is None
+
+
+def test_palette_near_the_cursor_moves_by_dragging_its_handle(qapp):
+    palette = RecordingPromptOverlay(PROMPTS, "Recording…", "None", lambda _prompt: None,
+                                     use_system_position=False, move_tooltip="Drag to move")
+    handle = palette.move_handle
+    assert handle is not None and handle.toolTip() == "Drag to move"
+    assert palette.card.rect().contains(handle.geometry())
+    start = palette.pos()
+    press = handle.mapToGlobal(QtCore.QPoint(5, 5))
+    QtTest.QTest.mousePress(handle, QtCore.Qt.MouseButton.LeftButton, pos=QtCore.QPoint(5, 5))
+    move = QtGui.QMouseEvent(QtCore.QEvent.Type.MouseMove, QtCore.QPointF(5, 5),
+                             QtCore.QPointF(press + QtCore.QPoint(40, 25)), QtCore.Qt.MouseButton.NoButton,
+                             QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.KeyboardModifier.NoModifier)
+    QtWidgets.QApplication.sendEvent(handle, move)
+    QtTest.QTest.mouseRelease(handle, QtCore.Qt.MouseButton.LeftButton, pos=QtCore.QPoint(5, 5))
+    assert palette.pos() == start + QtCore.QPoint(40, 25)
+
+
+def test_palette_by_the_status_area_has_no_move_handle(qapp, monkeypatch):
+    monkeypatch.setattr(floating_buttons, "is_WINDOWS", True)
+    palette = RecordingPromptOverlay(PROMPTS, "Recording…", "None", lambda _prompt: None,
+                                     use_system_position=True, move_tooltip="Drag to move")
+    assert palette.move_handle is None
