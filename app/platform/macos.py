@@ -6,7 +6,7 @@ The native symbols are imported once and exposed as None where unavailable.
 from __future__ import annotations
 
 import subprocess
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 from app.core.env import is_MACOS
 
@@ -72,6 +72,23 @@ def make_nonactivating(widget: Any) -> None:
         window.setStyleMask_(window.styleMask() | (1 << 7))  # NSWindowStyleMaskNonactivatingPanel
     except Exception:
         pass
+
+
+def frontmost_window_center() -> Optional[Tuple[int, int]]:
+    """Centre of the frontmost app's front window in global coordinates, or None."""
+    try:
+        from AppKit import NSWorkspace
+        from Quartz import CGWindowListCopyWindowInfo, kCGNullWindowID, kCGWindowListOptionOnScreenOnly
+
+        pid = NSWorkspace.sharedWorkspace().frontmostApplication().processIdentifier()
+        for info in CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID):
+            bounds = info.get("kCGWindowBounds", {})
+            # Fullscreen apps also own a thin title-bar strip; skip such small windows.
+            if info.get("kCGWindowOwnerPID") == pid and info.get("kCGWindowLayer") == 0 and bounds.get("Height", 0) >= 100:
+                return int(bounds["X"] + bounds["Width"] / 2), int(bounds["Y"] + bounds["Height"] / 2)
+    except Exception:
+        pass
+    return None
 
 
 def activate_app(app_name: str) -> None:
