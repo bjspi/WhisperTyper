@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.core.env import is_MACOS, is_WINDOWS
+from app.platform.macos import make_nonactivating
 from app.platform.windows import hotkey_id_of, register_window_hotkey, unregister_window_hotkey
 from app.ui import theme
 from app.ui.flow_layout import FlowLayout
@@ -510,6 +511,8 @@ class RecordingPromptOverlay(_PromptCard):
             self.move_handle.move(self.card.width() - _MoveHandle.SIZE - inset,
                                   self.card.height() - _MoveHandle.SIZE - inset)
             self.move_handle.raise_()
+        if is_MACOS:
+            make_nonactivating(self)  # after setWindowFlags, which recreates the native window
         self.show()
 
     def mousePressEvent(self, event: Optional[QMouseEvent]) -> None:  # noqa: N802 - Qt API

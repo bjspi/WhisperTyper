@@ -58,6 +58,22 @@ def frontmost_app_name() -> str:
     return subprocess.check_output(['osascript', '-e', script]).decode().strip()
 
 
+def make_nonactivating(widget: Any) -> None:
+    """Make a Qt panel non-activating: clicks keep the user's app in front (Qt has no flag for it).
+
+    Such a panel also shows on other apps' fullscreen spaces.
+    """
+    from PyQt6.QtGui import QGuiApplication
+
+    if objc is None or QGuiApplication.platformName() != "cocoa":
+        return  # e.g. the offscreen platform in tests has no NSView behind winId()
+    try:
+        window = objc.objc_object(c_void_p=int(widget.winId())).window()
+        window.setStyleMask_(window.styleMask() | (1 << 7))  # NSWindowStyleMaskNonactivatingPanel
+    except Exception:
+        pass
+
+
 def activate_app(app_name: str) -> None:
     """Bring the named macOS application back to the foreground."""
     script = f'tell application "{app_name}" to activate'
