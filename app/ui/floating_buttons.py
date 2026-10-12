@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.core.env import is_MACOS, is_WINDOWS
-from app.platform.macos import make_nonactivating
+from app.platform.macos import frontmost_window_center, make_nonactivating
 from app.platform.windows import hotkey_id_of, register_window_hotkey, unregister_window_hotkey
 from app.ui import theme
 from app.ui.flow_layout import FlowLayout
@@ -629,6 +629,10 @@ class RecordingPromptOverlay(_PromptCard):
         self.adjustSize()
         card_width, card_height = self.card.width(), self.card.height()
         if use_system_position and (is_WINDOWS or is_MACOS):
+            # macOS reports the status item on one display only; use the display the user works on.
+            window_center = frontmost_window_center() if is_MACOS else None
+            if window_center:
+                system_anchor = QPoint(*window_center)
             screen = QApplication.screenAt(system_anchor) if system_anchor is not None else None
             screen = screen or QApplication.primaryScreen()
             if screen:
