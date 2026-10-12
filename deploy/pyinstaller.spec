@@ -63,7 +63,6 @@ excludes = [
     'PyQt6.QtOpenGLWidgets',
     'PyQt6.QtPrintSupport',
     'PyQt6.QtSql',
-    'PyQt6.QtSvg',
     'PyQt6.QtTest',
     'PyQt6.QtWebEngineCore',
     'PyQt6.QtWebEngineWidgets',
