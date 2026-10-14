@@ -445,7 +445,7 @@ class RecordingController(QObject):
             timing.finish("save_failed")
             return
         logging.info(f"Recording saved to: {filepath}")
-        self._ctx.recordings.keep_only_latest()
+        self._ctx.prune_recordings()
         self._pipeline.start(filepath, transformation_prompt=transformation_prompt,
                              use_auto_prompt=use_auto_prompt, instruction_selected=instruction_selected,
                              timing=timing)

@@ -11,8 +11,8 @@ from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 from app.core.textutil import clean_model_name
 
-#: Approximate maximum token length of the Whisper initial prompt.
-WHISPER_PROMPT_TOKEN_LIMIT = 230
+#: Maximum token length of the Whisper prompt (Groq documents 224 and rejects more than 896 characters).
+WHISPER_PROMPT_TOKEN_LIMIT = 224
 
 
 class ModelSpec(NamedTuple):

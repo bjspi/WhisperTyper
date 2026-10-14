@@ -52,7 +52,7 @@ class WhisperTyperApp(QObject):
         super().__init__()
         self.ctx = AppContext(ConfigStore(CONFIG_FILE, normalize_hotkey_string), RecordingStore())
         config = self.ctx.config
-        self.ctx.recordings.cleanup_all()
+        self.ctx.prune_recordings(startup=True)
         self._file_log_handler: Optional[Handler] = None
         self.apply_logging_configuration()
         set_ip_family(config.get("network_ip_family", "auto"))

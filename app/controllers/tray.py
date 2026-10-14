@@ -16,7 +16,9 @@ from app.controllers.recording import RecordingController
 from app.controllers.transcription import TranscriptionPipeline
 from app.core.api_keys import transcription_configured
 from app.core.audio_formats import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, requires_ffmpeg
+from app.core.constants import APP_DATA_DIR
 from app.core.env import is_MACOS
+from app.services import bad_recordings
 from app.services.ffmpeg import resolve_ffmpeg
 from app.services.gitutil import git_available
 from app.services.updater import GitUpdater
@@ -185,6 +187,7 @@ class TrayController(QObject):
                                        self.retranscribe_last_recording)
         add(sp.SP_DialogOpenButton, "tray_transcribe_file_action", "f", self.transcribe_audio_files)
         self.play_action = add(sp.SP_MediaPlay, "tray_play_action", "p", self._files.play_latest_recording)
+        self.mark_bad_action = add(sp.SP_MessageBoxWarning, "tray_mark_bad_action", "b", self.mark_last_recording_bad)
         # Discards the running recording (no transcription, no clipboard change, the stored
         # "last recording" stays). Enabled only while recording.
         self.cancel_action = add(sp.SP_DialogCancelButton, "tray_cancel_action", "x", self._recording.cancel)
@@ -220,6 +223,7 @@ class TrayController(QObject):
         exists = self._ctx.recordings.exists()
         self.play_action.setEnabled(exists)
         self.retranscribe_action.setEnabled(exists)
+        self.mark_bad_action.setEnabled(exists)
         self.open_log_action.setEnabled(self._files.log_file_exists())
 
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
@@ -268,6 +272,23 @@ class TrayController(QObject):
         # No fresh selection context on a manual re-transcribe of an existing file.
         self._pipeline.selection_context = ""
         self._pipeline.start(latest, output_mode="clipboard")
+
+    def mark_last_recording_bad(self) -> None:
+        """Copy the latest recording with its sent request and raw transcript for later analysis."""
+        latest = self._ctx.recordings.latest()
+        if not latest or not os.path.isfile(latest):
+            self._ctx.notifier.show(self._ctx.tr("no_recording_found_message"), BALLOON_SHORT_MS)
+            self.refresh_actions()
+            return
+        dest = self._ctx.config.get("bad_recordings_dir") or os.path.join(APP_DATA_DIR, "bad_recordings")
+        try:
+            saved = bad_recordings.save(dest, latest, self._pipeline.recording_request(latest))
+        except OSError as error:
+            logging.error("bad_recording_save_failed dest=%s error=%s", dest, error)
+            self._ctx.notifier.show(self._ctx.tr("recording_mark_bad_failed_message", error=error), BALLOON_WARNING_MS)
+            return
+        logging.info("bad_recording_saved path=%s", saved)
+        self._ctx.notifier.show(self._ctx.tr("recording_marked_bad_message", path=saved), BALLOON_INFO_MS)
 
     def transcribe_audio_files(self) -> None:
         """Pick audio (or, with ffmpeg, video) files and transcribe them; results go to the clipboard."""

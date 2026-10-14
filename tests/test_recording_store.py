@@ -49,12 +49,27 @@ class TestRecordingStore:
         (tmp_path / "whispertyper_recording_x.txt").write_bytes(b"x")
         assert store.list() == []
 
-    def test_keep_only_latest(self, store: RecordingStore):
+    def test_prune_zero_keeps_only_newest(self, store: RecordingStore):
         now = time.time()
         create_recording(store, datetime(2026, 1, 1, 10, 0, 0), now - 100)
         newest = create_recording(store, datetime(2026, 1, 1, 11, 0, 0), now)
-        store.keep_only_latest()
+        store.prune(0)
         assert store.list() == [newest]
+
+    def test_prune_keeps_recordings_within_retention(self, store: RecordingStore):
+        now = time.time()
+        create_recording(store, datetime(2026, 1, 1, 9, 0, 0), now - 20 * 60)
+        recent = create_recording(store, datetime(2026, 1, 1, 10, 0, 0), now - 5 * 60)
+        newest = create_recording(store, datetime(2026, 1, 1, 11, 0, 0), now)
+        store.prune(15 * 60)
+        assert store.list() == [newest, recent]
+
+    def test_prune_keeps_newest_even_if_expired(self, store: RecordingStore):
+        newest = create_recording(store, datetime(2026, 1, 1, 11, 0, 0), time.time() - 3600)
+        store.prune(60)
+        assert store.list() == [newest]
+        store.prune(60, keep_newest=False)
+        assert store.list() == []
 
     def test_cleanup_all(self, store: RecordingStore):
         now = time.time()

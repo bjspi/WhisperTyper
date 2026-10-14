@@ -365,4 +365,4 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         if event is not None:
             event.ignore()
         self.hide()
-        self.ctx.recordings.keep_only_latest()
+        self.ctx.prune_recordings()

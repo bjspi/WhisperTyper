@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+import time
 from datetime import datetime
 from typing import List, Optional
 
@@ -63,10 +64,12 @@ class RecordingStore:
         """True if at least one recording is present."""
         return self.latest() is not None
 
-    def keep_only_latest(self) -> None:
-        """Delete every recording except the newest one."""
-        for path in self.list()[1:]:
-            self._remove(path)
+    def prune(self, max_age_seconds: float, keep_newest: bool = True) -> None:
+        """Delete recordings older than ``max_age_seconds``; the newest one stays if ``keep_newest``."""
+        now = time.time()
+        for path in self.list()[1 if keep_newest else 0:]:
+            if now - self._mtime(path) > max_age_seconds:
+                self._remove(path)
 
     def cleanup_all(self) -> None:
         """Delete all recordings (used on startup)."""

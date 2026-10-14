@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Callable, List, Optional
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional
 
 import copykitten
 from PyQt6.QtWidgets import QMessageBox
@@ -21,7 +22,8 @@ from app.controllers.workers import WorkerThreads
 from app.core.api_keys import GroqKeyRotation, provider_for_url, rephrasing_configured, selected_api_key
 from app.core.audio_formats import is_video_file, needs_audio_normalization
 from app.core.constants import LANGUAGES
-from app.core.prompts import auto_apply_prompt
+from app.core.models import transcription_form_fields
+from app.core.prompts import auto_apply_prompt, transcription_prompt_for
 from app.core.rephrase_routing import RephrasePlan, plan_rephrase, usable_transcript
 from app.core.replacements import ReplacementError, Replacements
 from app.core.textutil import shorten
@@ -57,6 +59,9 @@ class TranscriptionPipeline:
         self.last_transcription = ""
         #: Selected text captured when the current recording started (LivePrompt context).
         self.selection_context = ""
+        #: Sent form fields and raw result of the latest request per retained recording, for
+        #: "mark last recording as bad"; entries go with their pruned files.
+        self._recording_requests: Dict[str, Dict[str, Any]] = {}
         self.replacement_rules = Replacements("")
         self.reload_replacements()
         self._batch_files: List[str] = []
@@ -120,7 +125,7 @@ class TranscriptionPipeline:
         hedge_api_key = self._key_rotation.next_key(config) if config.get("transcription_hedging", False) else None
         request = TranscriptionRequest(
             api_key=api_key, api_endpoint=config["api_endpoint"],
-            audio_path=audio_path, prompt=config["prompt"],
+            audio_path=audio_path, prompt=self._sent_prompt(),
             model=config["model"], language=lang_code,
             temperature=config["transcription_temperature"],
             proxies=proxies_for(config),
@@ -133,6 +138,11 @@ class TranscriptionPipeline:
             hedge_api_key=hedge_api_key or None,
         )
         worker = TranscriptionWorker(request, timing=timing, tr=self._ctx.tr)
+        if recording_format is not None:
+            self._remember_request(request, transformation_prompt)
+            # Connected before the delivery handlers, so the raw result is stored first.
+            worker.finished.connect(lambda text, path=audio_path: self._remember_outcome(path, transcription=text))
+            worker.error.connect(lambda message, path: self._remember_outcome(path, error=message))
         worker.compressing.connect(self._on_compression_phase_started)
         worker.transcribing.connect(lambda language=lang_code: self._on_transcription_phase_started(language))
         # Bind this request's output mode into the result handlers so a concurrently started
@@ -151,6 +161,41 @@ class TranscriptionPipeline:
         )
         self._workers.start(worker, (worker.finished, worker.error),
                             queued=lambda: timing.mark("transcription_worker_queued"))
+
+    def _sent_prompt(self) -> str:
+        """The transcription prompt for the configured input language (see ``transcription_prompt_for``)."""
+        return transcription_prompt_for(self._config["prompt"], self._config["input_language"])
+
+    def _remember_request(self, request: TranscriptionRequest, transformation_prompt: Optional[str]) -> None:
+        """Store what is sent for a recording (no API key); a retry of the same file replaces its entry."""
+        fields = transcription_form_fields(request.model, request.prompt, request.temperature,
+                                           request.language.lower() if request.language else "")
+        # Retained recordings are pruned by age; drop the entries of files that are gone.
+        self._recording_requests = {path: entry for path, entry in self._recording_requests.items()
+                                    if os.path.exists(path)}
+        self._recording_requests[request.audio_path] = {
+            "requested_at": datetime.now().isoformat(timespec="seconds"),
+            "api_endpoint": request.api_endpoint,
+            "form_fields": fields,
+            "recording_format": request.recording_format,
+            "recording_bitrate_kbps": request.recording_bitrate_kbps if request.recording_format == "aac" else None,
+            "gain_db": self._config.get("gain_db"),
+            "rephrasing_prompt": transformation_prompt,
+            "transcription": None,
+            "error": None,
+        }
+
+    def _remember_outcome(self, audio_path: str, transcription: Optional[str] = None,
+                          error: Optional[str] = None) -> None:
+        """Attach the raw transcript (before replacements/rephrasing) or the error to the request."""
+        entry = self._recording_requests.get(audio_path)
+        if entry is not None:
+            entry.update(transcription=transcription, error=error)
+
+    def recording_request(self, audio_path: str) -> Optional[Dict[str, Any]]:
+        """The latest request sent for a retained recording, if it ran in this session."""
+        entry = self._recording_requests.get(audio_path)
+        return dict(entry) if entry is not None else None
 
     def auto_prompt(self) -> Optional[str]:
         """The prompt applied automatically to transcriptions, when rephrasing can run."""
@@ -192,7 +237,7 @@ class TranscriptionPipeline:
         """
         timing = timing or OperationTiming("transcription_result")
         timing.mark("transcription_result_received")
-        processed = usable_transcript(text, self._config["prompt"])
+        processed = usable_transcript(text, self._sent_prompt())
         if processed is None:
             timing.finish("no_speech")
             if self._batch_active:

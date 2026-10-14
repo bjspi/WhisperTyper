@@ -117,6 +117,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "network_ip_family": "auto",  # "auto" | "ipv4" | "ipv6"
     "gain_db": 10,
     "systray_double_click_copy": True,
+    # Target of "Mark last recording as bad" (audio + JSON with the sent request). Empty = <app data>/bad_recordings.
+    "bad_recordings_dir": "",
+    # Minutes older recordings stay in the temp folder (pruned on each new recording and at startup).
+    # 0 = keep only the newest recording, and none across restarts.
+    "recording_retention_minutes": 15,
     # Place the recording-prompt palette by the OS status area (Windows tray / macOS menu
     # bar). When disabled it appears once near the mouse pointer, matching older overlays.
     "recording_prompt_overlay_system_position": True,
