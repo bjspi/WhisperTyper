@@ -68,6 +68,17 @@ class AppContext(QObject):
         """Translate ``key`` in the current UI language."""
         return self.translator.tr(key, **kwargs)
 
+    def prune_recordings(self, startup: bool = False) -> None:
+        """Delete recordings past ``recording_retention_minutes``; outside startup the newest always stays."""
+        try:
+            minutes = max(0.0, float(self.config.get("recording_retention_minutes", 0)))
+        except (TypeError, ValueError):
+            minutes = 0.0
+        if startup and minutes == 0:
+            self.recordings.cleanup_all()
+        else:
+            self.recordings.prune(minutes * 60, keep_newest=not startup)
+
     def save_config(self) -> None:
         """Persist the current configuration."""
         self._store.save(self.config)

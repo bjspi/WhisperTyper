@@ -17,6 +17,7 @@ from app.core.prompts import (
     instruction_entry,
     load_transformations,
     recording_prompt_entries,
+    transcription_prompt_for,
 )
 
 
@@ -134,3 +135,18 @@ class TestInstructionEntry:
         assert entry["auto_apply"] is False
         assert auto_apply_prompt([{**self.INSTRUCTION, "auto_apply": True}]) is None
 
+
+
+class TestTranscriptionPromptFor:
+
+    def test_unedited_default_follows_spoken_language(self):
+        assert transcription_prompt_for(DEFAULT_TRANSCRIPTION_PROMPTS["en"], "de") == DEFAULT_TRANSCRIPTION_PROMPTS["de"]
+        assert transcription_prompt_for(DEFAULT_TRANSCRIPTION_PROMPTS["de"], "FR") == DEFAULT_TRANSCRIPTION_PROMPTS["fr"]
+
+    def test_edited_or_empty_prompt_is_sent_unchanged(self):
+        assert transcription_prompt_for("Meine Begriffe: Groq, PyQt.", "en") == "Meine Begriffe: Groq, PyQt."
+        assert transcription_prompt_for("", "de") == ""
+
+    def test_language_without_default_keeps_prompt(self):
+        assert transcription_prompt_for(DEFAULT_TRANSCRIPTION_PROMPTS["en"], "it") == DEFAULT_TRANSCRIPTION_PROMPTS["en"]
+        assert transcription_prompt_for(DEFAULT_TRANSCRIPTION_PROMPTS["en"], "") == DEFAULT_TRANSCRIPTION_PROMPTS["en"]

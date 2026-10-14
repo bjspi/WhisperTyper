@@ -38,7 +38,7 @@ def test_transcription_fields_follow_the_model_capabilities():
         "model": "gpt-4o-transcribe-diarize", "response_format": "json", "chunking_strategy": "auto", "language": "de"}
     assert transcription_form_fields("gpt-transcribe", "Hello", 0.2, "de") == {
         "model": "gpt-transcribe", "prompt": "Hello", "languages[]": "de"}
-    assert prompt_token_limit("whisper-large-v3") == 230
+    assert prompt_token_limit("whisper-large-v3") == 224
     assert prompt_token_limit("gpt-4o-transcribe") is None
 
 

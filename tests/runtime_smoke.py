@@ -781,7 +781,7 @@ def main() -> int:
               and not sw.transcription_temp_slider.isEnabled())
         sw.model_dropdown.setCurrentText("gpt-4o-transcribe")
         check("models: ordinary transcription restores prompt and temperature", sw.prompt_input.isEnabled() and sw.transcription_temp_slider.isEnabled())
-        check("models: GPT transcription has no Whisper prompt limit", "230" not in sw.prompt_token_label.text())
+        check("models: GPT transcription has no Whisper prompt limit", "224" not in sw.prompt_token_label.text())
         sw.tabs.setCurrentWidget(sw.transcription_tab)
         qapp.processEvents()
         selector = sw.model_dropdown

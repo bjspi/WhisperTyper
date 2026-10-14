@@ -125,6 +125,19 @@ def _is_known_default_prompt(prompt_map: Dict[str, str], text: str) -> bool:
     return any(normalized == value.strip() for value in prompt_map.values())
 
 
+def transcription_prompt_for(prompt: str, input_language: str) -> str:
+    """The transcription prompt to send: an unedited default follows the spoken language.
+
+    Whisper reads the prompt as preceding transcript, so a prompt in another language than the
+    speech makes it drift towards that language (an English prompt on German speech came back
+    largely translated). Edited prompts and languages without a default are sent unchanged.
+    """
+    language = (input_language or "").lower()
+    if language in DEFAULT_TRANSCRIPTION_PROMPTS and _is_known_default_prompt(DEFAULT_TRANSCRIPTION_PROMPTS, prompt):
+        return DEFAULT_TRANSCRIPTION_PROMPTS[language].strip()
+    return prompt
+
+
 #: Entry kinds: a template that rewrites the text, and the instruction (LivePrompt) entry that
 #: carries the text out as an order.
 PROMPT = "prompt"
