@@ -2,14 +2,16 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
-from typing import Callable
+from typing import Callable, Optional
 
 from PyQt6 import uic
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QCloseEvent
 from PyQt6.QtWidgets import QApplication, QMenuBar, QMessageBox, QSizePolicy, QStyle
 
+from app.audio.playback import WavPlayer
 from app.context import AppContext
 from app.controllers.file_actions import FileActions
 from app.controllers.hotkeys import HotkeyController
@@ -29,7 +31,7 @@ from app.ui.settings.recording_page import RecordingPage
 from app.ui.settings.texts import apply_texts
 from app.ui.settings.theme_page import ThemePage
 from app.ui.settings.transcription_page import TranscriptionPage
-from app.ui.settings.widgets import SliderWheelToScrollArea, fit_button_to_captions
+from app.ui.settings.widgets import SliderWheelToScrollArea, compact_layouts, fit_button_to_captions
 from app.ui.transformations_tab import InstructionControls, TransformationsEditor
 from app.ui.tray_icons import app_icon
 
@@ -93,7 +95,6 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
             lambda: self._hotkeys.start_capture(self.hotkey_display, self.set_hotkey_button))
         self.set_pr_hotkey_button.clicked.connect(
             lambda: self._hotkeys.start_capture(self.pr_hotkey_display, self.set_pr_hotkey_button))
-        self.play_g_button.clicked.connect(self._files.play_latest_recording)
         self.liveprompt_help_button.setFixedSize(22, 22)  # Rendered as a round "?" badge by the theme.
         self.liveprompt_help_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.liveprompt_help_button.clicked.connect(self.show_liveprompt_help)
@@ -111,6 +112,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
             icon = style.standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
         self.setWindowIcon(icon)
         self.apply_theme()
+        compact_layouts(self)
         self.retranslate_ui()
         self.refresh_actions()
 
@@ -129,6 +131,13 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self.main_layout.insertWidget(0, self.menu_bar)
         self.main_layout.setContentsMargins(0, 0, 0, 5)
         self._install_brand_header()
+        self._player = WavPlayer()
+        self._playback_generation = 0
+        self._playing_path: Optional[str] = None
+        self.brand_play_button.clicked.connect(self._toggle_playback)
+        self.playback_finished.connect(self._on_playback_finished)
+        # The microphone would record the playback from the speakers: stop it when a recording starts.
+        self._recording.state_changed.connect(self._stop_playback_for_recording)
         file_menu = self.menu_bar.addMenu("")
         help_menu = self.menu_bar.addMenu("")
         assert file_menu is not None and help_menu is not None
@@ -198,6 +207,47 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
     def refresh_actions(self) -> None:
         """Enable the file actions only when their files exist."""
         self.play_last_recording_action.setEnabled(self.ctx.recordings.exists())
+        latest = self.ctx.recordings.latest()
+        self.brand_play_button.setEnabled(latest is not None)
+        if self._playing_path is not None and self._playing_path != latest:
+            # A new recording replaced the one playing: the button belongs to the newest recording.
+            self._stop_playback()
+
+    # --- Playback of the last recording (header button) ---------------------------------
+    def _toggle_playback(self) -> None:
+        """Play the newest recording in the app, or stop the running playback."""
+        if self._playing_path is not None:
+            self._stop_playback()
+            return
+        latest = self.ctx.recordings.latest()
+        if latest is None:
+            return
+        self._playback_generation += 1
+        generation = self._playback_generation
+        self._playing_path = latest
+        self.set_playback_active(True)
+        logging.info("recording_playback start file=%s", os.path.basename(latest))
+        self._player.play(latest, lambda: self.playback_finished.emit(generation))
+
+    def _stop_playback(self) -> None:
+        """Stop playing and show Play again."""
+        if self._playing_path is not None:
+            logging.info("recording_playback stop file=%s", os.path.basename(self._playing_path))
+        self._player.stop()
+        self._playback_generation += 1  # the stopped playback's completion no longer applies
+        self._playing_path = None
+        self.set_playback_active(False)
+
+    def _stop_playback_for_recording(self, recording: bool) -> None:
+        """Stop a running playback as soon as a recording starts."""
+        if recording and self._playing_path is not None:
+            self._stop_playback()
+
+    def _on_playback_finished(self, generation: int) -> None:
+        """GUI thread: the recording played to its end."""
+        if generation == self._playback_generation:
+            self._playing_path = None
+            self.set_playback_active(False)
         self.open_log_file_action.setEnabled(self._files.log_file_exists())
 
     # --- Save ----------------------------------------------------------------------------

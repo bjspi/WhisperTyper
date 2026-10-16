@@ -22,6 +22,7 @@ try:
     from PyQt6.QtWidgets import QApplication, QMessageBox
 
     from app.application import WhisperTyperApp
+    from app.ui import tooltip_wrap
     from app.ui.fonts import install_emoji_font
 except ModuleNotFoundError as exc:
     if exc.name == "PyQt6":
@@ -37,6 +38,15 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="If WhisperTyper is already running, hard-stop the existing instance and start a new one.",
     )
+    parser.add_argument(
+        "--show-settings",
+        nargs="?",
+        type=int,
+        const=0,
+        default=None,
+        metavar="TAB",
+        help="Open the settings window on tab TAB (default 0) after startup; a restart passes the open tab.",
+    )
     return parser
 
 
@@ -48,6 +58,7 @@ def main() -> int:
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("WhisperTyper")
     install_emoji_font()
+    tooltip_wrap.install(app)
 
     instance_lock, message = acquire_single_instance_lock(args.restart)
     if instance_lock is None:
@@ -56,7 +67,7 @@ def main() -> int:
         return 0
 
     # The instance lock and the application stay referenced while the event loop runs.
-    application = WhisperTyperApp()
+    application = WhisperTyperApp(show_settings=args.show_settings)
     exit_code = app.exec()
     del application, instance_lock
     return exit_code

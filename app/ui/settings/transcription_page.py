@@ -1,10 +1,13 @@
 """Transcription page: section layout, collapsible prompt and FFmpeg sections, token counter."""
 from __future__ import annotations
 
+import logging
+
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy
 
 from app.core.models import prompt_token_limit, transcription_supports_prompt, transcription_supports_temperature
+from app.core.prompts import DEFAULT_TRANSCRIPTION_PROMPTS, _is_known_default_prompt, default_transcription_prompt
 from app.core.textutil import estimate_tokens
 from app.services.ffmpeg import probe_version, resolve_ffmpeg
 from app.ui.settings.base import SettingsWindowBase
@@ -16,6 +19,9 @@ from app.ui.theme import set_style_state
 _TOKEN_WARNING_SHARE = 0.85
 #: Horizontal gap between the provider, model and temperature columns of an API group.
 _COLUMN_GAP = 12
+#: Visible text lines of the transcription prompt editor, plus its padding and border.
+_PROMPT_LINES = 6
+_PROMPT_FRAME_PX = 14
 #: Pause after the last keystroke before probing the FFmpeg path (a blocking subprocess).
 _FFMPEG_PROBE_DEBOUNCE_MS = 400
 
@@ -27,13 +33,23 @@ class TranscriptionPage(SettingsWindowBase):
         """Order the page: API sections, hotkeys, recording, then the collapsible FFmpeg section."""
         # Token counter renders as a compact pill badge, so it should hug its content.
         self.prompt_token_label.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
-        self.prompt_input.setMinimumHeight(110)
+        # Room for the default prompt (about six lines); longer prompts scroll.
+        self.prompt_input.setFixedHeight(self.prompt_input.fontMetrics().lineSpacing() * _PROMPT_LINES
+                                         + _PROMPT_FRAME_PX)
         # The section header names the prompt, so its separate label is not shown.
         self.transcription_prompt_label.hide()
         self.transcription_prompt_section = CollapsibleSection(self)
         for widget in (self.prompt_input, self.prompt_token_label):
             self.transcription_layout.removeWidget(widget)
-            self.transcription_prompt_section.content_layout.addWidget(widget)
+        self.restore_default_prompt_button = QPushButton(self)
+        self.restore_default_prompt_button.clicked.connect(self._restore_default_transcription_prompt)
+        # Token counter on the left, "restore default" on the right, below the prompt.
+        prompt_footer = QHBoxLayout()
+        prompt_footer.addWidget(self.prompt_token_label)
+        prompt_footer.addStretch(1)
+        prompt_footer.addWidget(self.restore_default_prompt_button)
+        self.transcription_prompt_section.content_layout.addWidget(self.prompt_input)
+        self.transcription_prompt_section.content_layout.addLayout(prompt_footer)
         self.transcription_api_layout.addWidget(self.transcription_prompt_section)
         # Provider | model | temperature rows: columns start at the top, and the slider is as tall as
         # the dropdowns, so all three labels and controls line up.
@@ -59,9 +75,27 @@ class TranscriptionPage(SettingsWindowBase):
     def _connect_transcription_page(self) -> None:
         """Live updates once the saved values are loaded."""
         self.prompt_input.textChanged.connect(self._update_prompt_token_counter)
+        self.language_input.currentIndexChanged.connect(
+            lambda _index: self.swap_default_transcription_prompt(self.language_input.currentData() or "",
+                                                                  self.config.get("ui_language", "en")))
         self.ffmpeg_path_input.textChanged.connect(lambda _text: self._ffmpeg_status_debounce.start())
         QTimer.singleShot(0, self._update_prompt_token_counter)
         self._refresh_ffmpeg_status()
+
+    def _restore_default_transcription_prompt(self) -> None:
+        """Put the default prompt for the selected input language (else the UI language) into the editor."""
+        self.prompt_input.setPlainText(default_transcription_prompt(self.language_input.currentData() or "",
+                                                                    self.config.get("ui_language", "en")))
+
+    def swap_default_transcription_prompt(self, input_language: str, ui_language: str) -> None:
+        """Replace an unedited default prompt with the default for the given languages; edited prompts stay."""
+        current = self.prompt_input.toPlainText()
+        if not _is_known_default_prompt(DEFAULT_TRANSCRIPTION_PROMPTS, current):
+            return
+        new_default = default_transcription_prompt(input_language, ui_language)
+        if current.strip() != new_default:
+            self.prompt_input.setPlainText(new_default)
+            logging.info("Swapped the default transcription prompt to input=%s ui=%s.", input_language, ui_language)
 
     def _build_ffmpeg_settings_row(self) -> None:
         """Add the collapsible FFmpeg section (status, path field, Browse) below the recording settings.

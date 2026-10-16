@@ -47,7 +47,7 @@ logging.getLogger('PyQt6.uic').setLevel(logging.WARNING)
 class WhisperTyperApp(QObject):
     """Builds and connects the application's components; owns startup and shutdown."""
 
-    def __init__(self) -> None:
+    def __init__(self, show_settings: Optional[int] = None) -> None:
         """Create every component, wire them together and start the listeners."""
         super().__init__()
         self.ctx = AppContext(ConfigStore(CONFIG_FILE, normalize_hotkey_string), RecordingStore())
@@ -105,6 +105,14 @@ class WhisperTyperApp(QObject):
         if not transcription_configured(config):
             logging.info("No valid API key configured on startup; opening settings window.")
             QTimer.singleShot(600, self.settings.show_window)
+        elif show_settings is not None:
+            # A restart from the tray reopens the settings window on the tab that was open before.
+            QTimer.singleShot(600, lambda: self._show_settings_tab(show_settings))
+
+    def _show_settings_tab(self, tab: int) -> None:
+        """Open the settings window on ``tab`` (Qt ignores an index that does not exist)."""
+        self.settings.tabs.setCurrentIndex(tab)
+        self.settings.show_window()
 
     def _on_hotkey_action(self, action: str, detected_ns: Optional[int] = None) -> None:
         """Dispatch a hotkey action (GUI thread)."""
@@ -152,6 +160,8 @@ class WhisperTyperApp(QObject):
             program, arguments = sys.executable, ["-r"]
         else:
             program, arguments = sys.executable, [os.path.abspath(sys.argv[0]), "-r"]
+        if self.settings.isVisible():
+            arguments += ["--show-settings", str(self.settings.tabs.currentIndex())]
 
         logging.info(f"Restarting application: {program} {arguments}")
         try:

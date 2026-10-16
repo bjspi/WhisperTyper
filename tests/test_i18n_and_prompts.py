@@ -14,6 +14,7 @@ from app.core.prompts import (
     _is_known_default_prompt,
     auto_apply_prompt,
     captioned_transformations,
+    default_transcription_prompt,
     instruction_entry,
     load_transformations,
     recording_prompt_entries,
@@ -150,3 +151,14 @@ class TestTranscriptionPromptFor:
     def test_language_without_default_keeps_prompt(self):
         assert transcription_prompt_for(DEFAULT_TRANSCRIPTION_PROMPTS["en"], "it") == DEFAULT_TRANSCRIPTION_PROMPTS["en"]
         assert transcription_prompt_for(DEFAULT_TRANSCRIPTION_PROMPTS["en"], "") == DEFAULT_TRANSCRIPTION_PROMPTS["en"]
+
+
+class TestDefaultTranscriptionPrompt:
+
+    def test_input_language_wins_over_ui_language(self):
+        assert default_transcription_prompt("en", "de") == DEFAULT_TRANSCRIPTION_PROMPTS["en"].strip()
+        assert default_transcription_prompt("DE", "en") == DEFAULT_TRANSCRIPTION_PROMPTS["de"].strip()
+
+    def test_auto_detect_or_unknown_language_uses_ui_language(self):
+        assert default_transcription_prompt("", "fr") == DEFAULT_TRANSCRIPTION_PROMPTS["fr"].strip()
+        assert default_transcription_prompt("it", "de") == DEFAULT_TRANSCRIPTION_PROMPTS["de"].strip()

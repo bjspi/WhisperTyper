@@ -1,18 +1,13 @@
 """General page: languages, theme, input device and text insertion options."""
 from __future__ import annotations
 
-import logging
-
 from PyQt6.QtCore import QSignalBlocker
-from PyQt6.QtWidgets import QCheckBox, QMessageBox, QStyle
+from PyQt6.QtWidgets import QCheckBox, QMessageBox
 
+from app import __version__
+from app.controllers.file_actions import GITHUB_URL
 from app.core.env import is_WINDOWS
 from app.core.i18n import UI_LANGUAGES
-from app.core.prompts import (
-    DEFAULT_TRANSCRIPTION_PROMPTS,
-    _default_prompt_for,
-    _is_known_default_prompt,
-)
 from app.ui.durations import BALLOON_MAX_MS
 from app.ui.settings.base import SettingsWindowBase
 
@@ -41,11 +36,7 @@ class GeneralPage(SettingsWindowBase):
         self.network_ip_family_layout.addStretch(1)
 
         self.post_rephrase_auto_select_all_checkbox = QCheckBox(self)
-        self.misc_layout.insertWidget(self.misc_layout.indexOf(self.play_g_button),
-                                      self.post_rephrase_auto_select_all_checkbox)
-        style = self.style()
-        if style is not None:
-            self.play_g_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        self.misc_layout.addWidget(self.post_rephrase_auto_select_all_checkbox)
 
     def _connect_general_page(self) -> None:
         """React to immediate-apply selectors and dependent checkboxes."""
@@ -102,13 +93,11 @@ class GeneralPage(SettingsWindowBase):
         self.retranslate_ui()
 
     def _maybe_swap_default_prompts(self, new_lang_code: str) -> None:
-        """Replace prompts the user never edited (still a known default) with the new language's default."""
-        current_text = self.prompt_input.toPlainText()
-        if _is_known_default_prompt(DEFAULT_TRANSCRIPTION_PROMPTS, current_text):
-            new_default = _default_prompt_for(DEFAULT_TRANSCRIPTION_PROMPTS, new_lang_code)
-            if current_text.strip() != new_default:
-                self.prompt_input.setPlainText(new_default)
-                logging.info("Swapped a default prompt to the new UI language.")
+        """Replace prompts the user never edited (still a known default) with the new language's default.
+
+        The transcription prompt follows the input language first (see ``swap_default_transcription_prompt``).
+        """
+        self.swap_default_transcription_prompt(self.language_input.currentData() or "", new_lang_code)
         self._transformations.apply_language_defaults(new_lang_code)
 
     def show_liveprompt_help(self) -> None:
@@ -117,4 +106,5 @@ class GeneralPage(SettingsWindowBase):
 
     def show_about_dialog(self) -> None:
         """Show the 'About' dialog."""
-        QMessageBox.about(self, self.translator.tr("about_dialog_title"), self.translator.tr("about_dialog_text"))
+        QMessageBox.about(self, self.translator.tr("about_dialog_title"),
+                          self.translator.tr("about_dialog_text", version=__version__, url=GITHUB_URL))

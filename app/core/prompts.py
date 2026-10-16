@@ -125,6 +125,14 @@ def _is_known_default_prompt(prompt_map: Dict[str, str], text: str) -> bool:
     return any(normalized == value.strip() for value in prompt_map.values())
 
 
+def default_transcription_prompt(input_language: str, ui_language: str) -> str:
+    """The default prompt for the spoken language; the UI language's default when there is none (or auto-detect)."""
+    language = (input_language or "").lower()
+    if language in DEFAULT_TRANSCRIPTION_PROMPTS:
+        return DEFAULT_TRANSCRIPTION_PROMPTS[language].strip()
+    return _default_prompt_for(DEFAULT_TRANSCRIPTION_PROMPTS, ui_language)
+
+
 def transcription_prompt_for(prompt: str, input_language: str) -> str:
     """The transcription prompt to send: an unedited default follows the spoken language.
 

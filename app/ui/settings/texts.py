@@ -62,6 +62,8 @@ TEXTS: Tuple[Text, ...] = (
                       "test_transcription_api_button", "test_connection_tooltip"),
     _field("ffmpeg_label", "ffmpeg_tooltip", "ffmpeg_label", "ffmpeg_path_input"),
     Text("ffmpeg_browse_button", "ffmpeg_browse_button"),
+    Text("restore_default_prompt_button", "restore_default_prompt_button", "restore_default_prompt_tooltip",
+         ("restore_default_prompt_button",)),
     _field("transcription_prompt_label", "transcription_prompt_tooltip", "transcription_prompt_label", "prompt_input"),
     Text("transcription_prompt_section", "transcription_prompt_section"),
     Text("ffmpeg_section", "ffmpeg_section"),
@@ -109,8 +111,9 @@ TEXTS: Tuple[Text, ...] = (
            "liveprompt_trigger_scan_depth_label", "liveprompt_trigger_scan_depth_input"),
     _check("liveprompt_strip_trigger_checkbox", "liveprompt_strip_trigger_checkbox", "liveprompt_strip_trigger_tooltip"),
     _check("rephrase_context_checkbox", "rephrase_context_checkbox", "rephrase_context_tooltip"),
-    Text("add_button", "post_rp_add_btn"),
-    Text("remove_button", "post_rp_remove_btn"),
+    # Icon-only buttons (see ThemePage._apply_prompt_list_icons): tooltip, no caption.
+    Text(None, None, "add_prompt_tooltip", ("post_rp_add_btn",)),
+    Text(None, None, "remove_prompt_tooltip", ("post_rp_remove_btn",)),
     # General
     Text("ui_language_label", "ui_language_label"),
     Text("color_theme_label", "color_theme_label"),
@@ -132,7 +135,6 @@ TEXTS: Tuple[Text, ...] = (
     _check("recording_prompt_overlay_digit_keys_checkbox", "recording_prompt_overlay_digit_keys_checkbox",
            "recording_prompt_overlay_digit_keys_tooltip"),
     _check("quit_without_confirmation_checkbox", "quit_without_confirmation_checkbox", "quit_without_confirmation_tooltip"),
-    _check("play_g_button", "play_last_recording_button", "play_last_recording_tooltip"),
     _check("post_rephrase_auto_select_all_checkbox", "post_rephrase_auto_select_all_checkbox",
            "post_rephrase_auto_select_all_tooltip"),
     Text("misc_group_title", "misc_group"),

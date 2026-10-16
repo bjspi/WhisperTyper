@@ -922,13 +922,6 @@
             </property>
            </widget>
           </item>
-          <item>
-           <widget class="QPushButton" name="play_g_button">
-            <property name="text">
-             <string>Play Last Recording</string>
-            </property>
-           </widget>
-          </item>
          </layout>
         </widget>
        </item>

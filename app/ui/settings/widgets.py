@@ -5,11 +5,51 @@ from typing import Any, Optional
 
 from PyQt6.QtCore import QEvent, QObject
 from PyQt6.QtGui import QWheelEvent
-from PyQt6.QtWidgets import QLabel, QPushButton, QScrollArea, QSlider
+from PyQt6.QtWidgets import (
+    QAbstractSpinBox,
+    QComboBox,
+    QGroupBox,
+    QLabel,
+    QLayout,
+    QLineEdit,
+    QPushButton,
+    QScrollArea,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
 
 #: Pixels scrolled per wheel notch, at least; trackpads report exact pixel deltas instead.
 _MIN_WHEEL_STEP_PX = 18
 _WHEEL_LINES_PER_NOTCH = 3
+#: Gap between a caption and its control in a column (layouts named ``*_col`` / ``*_v_layout``).
+_CAPTION_GAP = 4
+#: Largest gap between the rows of a card or page.
+_ROW_GAP = 7
+#: Layout margins inside a card; the card's QSS padding already provides the breathing room.
+_CARD_MARGINS = (5, 5, 5, 3)
+
+
+def compact_layouts(root: QWidget) -> None:
+    """Tighten every layout below ``root`` and give spin boxes the height of a line edit.
+
+    Call after the stylesheet is applied: the spin box height is taken from a styled line edit.
+    """
+    for layout in root.findChildren(QLayout):
+        if layout.objectName().endswith(("_col", "_v_layout")):
+            layout.setSpacing(_CAPTION_GAP)
+        elif isinstance(layout, QVBoxLayout) and not 0 <= layout.spacing() <= _ROW_GAP:
+            layout.setSpacing(_ROW_GAP)
+        card = layout.parentWidget()
+        if isinstance(card, QGroupBox) and card.layout() is layout:
+            layout.setContentsMargins(*_CARD_MARGINS)
+    # Stacked up/down buttons would otherwise make spin boxes taller than the fields beside them.
+    # Spin boxes and combo boxes contain an unpadded line edit of their own; skip those.
+    field = next((edit for edit in root.findChildren(QLineEdit)
+                  if not isinstance(edit.parentWidget(), (QAbstractSpinBox, QComboBox))), None)
+    if field is not None:
+        for spin_box in root.findChildren(QAbstractSpinBox):
+            spin_box.setFixedHeight(field.sizeHint().height())
 
 
 class SliderWheelToScrollArea(QObject):

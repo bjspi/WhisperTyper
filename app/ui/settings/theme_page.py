@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict
 
-from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QStyle, QVBoxLayout, QWidget
 
 from app.core.constants import APP_DATA_DIR
 from app.core.hotkeys import pretty_hotkey
@@ -45,6 +45,12 @@ class ThemePage(SettingsWindowBase):
         row.addLayout(title_box)
         row.addStretch()
 
+        # Plays the last recording; as tall as the hotkey badge beside it.
+        self.brand_play_button = QPushButton(header)
+        self.brand_play_button.setObjectName("brandPlayButton")
+        self.brand_play_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+        row.addWidget(self.brand_play_button)
+
         self._brand_hotkey_badge = QLabel("", header)
         self._brand_hotkey_badge.setObjectName("hotkeyBadge")
         row.addWidget(self._brand_hotkey_badge)
@@ -57,6 +63,17 @@ class ThemePage(SettingsWindowBase):
         """Refresh the header's hotkey badge and tagline."""
         self._brand_hotkey_badge.setText("⌨  " + pretty_hotkey(self.config.get("hotkey", "")))
         self._brand_sub_label.setText(self.translator.tr("brand_tagline"))
+        self.set_playback_active(getattr(self, "_playback_active", False))
+
+    def set_playback_active(self, active: bool) -> None:
+        """Show Play, or Stop while the last recording plays."""
+        self._playback_active = active
+        style = self.style()
+        if style is not None:
+            pixmap = QStyle.StandardPixmap.SP_MediaStop if active else QStyle.StandardPixmap.SP_MediaPlay
+            self.brand_play_button.setIcon(style.standardIcon(pixmap))
+        self.brand_play_button.setToolTip(
+            self.translator.tr("playback_stop_tooltip" if active else "playback_play_tooltip"))
 
     def theme_palette(self) -> Dict[str, str]:
         """Colours of the active theme (light until the first theme is applied)."""
@@ -72,11 +89,23 @@ class ThemePage(SettingsWindowBase):
         except Exception:
             pass  # icons are cosmetic; never let a write failure break theming
         self.setStyleSheet(qss)
+        self._apply_prompt_list_icons()
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            app.setStyleSheet(theme.tooltip_stylesheet(dark))
         self._replacements_tab.highlighter.set_theme(dark)
         # State colours (incomplete sections, token counter, FFmpeg status) are QSS property
         # selectors and follow the new palette by themselves; only the header is drawn by hand.
         self.update_brand_header()
         self._connect_theme_watch()
+
+    def _apply_prompt_list_icons(self) -> None:
+        """Icon-only "+" / "-" below the prompt list, coloured for the active theme."""
+        colors = self.theme_palette()
+        for button, color, plus in ((self.post_rp_add_btn, colors["on_accent"], True),
+                                    (self.post_rp_remove_btn, colors["warn"], False)):
+            button.setText("")
+            button.setIcon(theme.sign_icon(color, plus))
 
     def _connect_theme_watch(self) -> None:
         """Subscribe once to OS colour-scheme changes to re-theme live."""

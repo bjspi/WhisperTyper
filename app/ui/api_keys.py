@@ -38,6 +38,9 @@ class ApiKeysTab(QWidget):
         self.description = QLabel(self)
         self.description.setWordWrap(True)
         layout.addWidget(self.description)
+        # Above the list: below a long key table the option scrolled out of sight.
+        self.groq_rotation = QCheckBox(self)
+        layout.addWidget(self.groq_rotation)
         self.table = QTableWidget(0, 3, self)
         self.table.setShowGrid(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -56,8 +59,6 @@ class ApiKeysTab(QWidget):
         buttons.addWidget(self.remove_button)
         buttons.addStretch()
         layout.addLayout(buttons)
-        self.groq_rotation = QCheckBox(self)
-        layout.addWidget(self.groq_rotation)
         for profile in profiles:
             self._append_profile(profile)
         self.table.itemChanged.connect(lambda _item: self.profiles_changed.emit())

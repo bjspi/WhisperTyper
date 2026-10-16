@@ -49,6 +49,8 @@ class SettingsWindowBase(QWidget):
 
     #: Result of the background AAC encoder probe (a tuple of bitrates), delivered on the GUI thread.
     aac_bitrates_ready = pyqtSignal(object)
+    #: A header playback ended (its generation number), emitted from the playback thread.
+    playback_finished = pyqtSignal(int)
 
     ctx: AppContext
     config: Dict[str, Any]
@@ -224,7 +226,6 @@ class SettingsWindowBase(QWidget):
     windows_sendinput_fallback_checkbox: QCheckBox
     fast_paste_checkbox: QCheckBox
     post_rephrase_auto_select_all_checkbox: QCheckBox
-    play_g_button: QPushButton
 
     # Hooks implemented by other pages or the window itself.
     def retranslate_ui(self) -> None:
@@ -233,6 +234,10 @@ class SettingsWindowBase(QWidget):
 
     def apply_theme(self) -> None:
         """Apply the configured light/dark stylesheet."""
+        raise NotImplementedError
+
+    def swap_default_transcription_prompt(self, input_language: str, ui_language: str) -> None:
+        """Replace an unedited default transcription prompt with the default for these languages."""
         raise NotImplementedError
 
     def _update_prompt_token_counter(self) -> None:
