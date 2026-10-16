@@ -67,7 +67,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "color_theme": "system",  # "system" (auto light/dark) | "light" | "dark"
     "input_device_name": "",  # "" = system default input; else a device name from the dropdown
     "window_width": 760,
-    "window_height": 1080,
+    "window_height": 880,
     "api_key_profiles": [],
     "transcription_key_profile_id": "",
     "rephrasing_key_profile_id": "",
@@ -124,7 +124,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "recording_retention_minutes": 15,
     # Place the recording-prompt palette by the OS status area (Windows tray / macOS menu
     # bar). When disabled it appears once near the mouse pointer, matching older overlays.
-    "recording_prompt_overlay_system_position": True,
+    "recording_prompt_overlay_system_position": False,
     # Windows: while the mouse is over the recording palette, the number keys pick its chips in order.
     "recording_prompt_overlay_digit_keys": True,
     "quit_without_confirmation": False,

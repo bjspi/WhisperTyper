@@ -491,7 +491,7 @@ class RecordingController(QObject):
         self._notifier.hide()
         self._palette_status = None
         self._reset_prompt_choice()
-        use_system_position = bool(self._config.get("recording_prompt_overlay_system_position", True))
+        use_system_position = bool(self._config.get("recording_prompt_overlay_system_position", False))
         RecordingPromptOverlay(
             prompts=prompts,
             status_text=self._ctx.tr("recording_running_message"),

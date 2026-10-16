@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from PyQt6.QtCore import QPointF, Qt
+from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+
 LIGHT: Dict[str, str] = {
     "bg": "#f5f8fa", "panel": "#ffffff", "panel2": "#eef3f6", "text": "#16212b",
     "muted": "#5a6b78", "border": "#d6dfe5", "group_border": "#9aa9b4", "field": "#ffffff", "field_border": "#cfd9e0",
@@ -36,6 +39,24 @@ def set_style_state(widget: Any, name: str, value: Any) -> None:
 def palette(dark: bool) -> Dict[str, str]:
     """Return the colour palette for the requested mode."""
     return DARK if dark else LIGHT
+
+
+def sign_icon(color: str, plus: bool, size: int = 16) -> QIcon:
+    """A bold "+" or "-" drawn in ``color`` (sharp at any scale; Qt greys it out when disabled)."""
+    scale = 3  # drawn larger and scaled down by Qt for high-DPI screens
+    pixmap = QPixmap(size * scale, size * scale)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(QColor(color), 2.4 * scale)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+    margin, middle, end = 3.5 * scale, size * scale / 2, (size - 3.5) * scale
+    painter.drawLine(QPointF(margin, middle), QPointF(end, middle))
+    if plus:
+        painter.drawLine(QPointF(middle, margin), QPointF(middle, end))
+    painter.end()
+    return QIcon(pixmap)
 
 
 def resolve_dark(mode: str, app: object) -> bool:
@@ -71,16 +92,12 @@ QWidget { background-color: %(bg)s; color: %(text)s; font-size: 13px; }
 QLabel, QFrame, QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }
 QScrollArea { border: none; }
 
-QToolTip {
-    background-color: %(panel)s; color: %(text)s;
-    border: 1px solid %(group_border)s; padding: 10px 14px; border-radius: 8px;
-    font-size: 13px; font-weight: normal;
-}
-
 QMenuBar { background: transparent; border: none; padding: 2px 4px; }
 QMenuBar::item { background: transparent; padding: 5px 10px; border-radius: 6px; }
 QMenuBar::item:selected { background: %(hover)s; }
-QMenu { background: %(panel)s; border: 1px solid %(border)s; border-radius: 8px; padding: 5px; }
+/* An open menu: its menu-bar entry and the popup frame share the accent colour, so they read as one. */
+QMenuBar::item:pressed { background: %(accent)s; color: %(on_accent)s; }
+QMenu { background: %(panel)s; border: 1px solid %(accent)s; border-radius: 4px; padding: 5px; }
 QMenu::item { padding: 8px 40px 8px 15px; border-radius: 6px; }
 QMenu::icon { left: 12px; }
 QMenu::item:selected { background: %(accent)s; color: %(on_accent)s; }
@@ -88,7 +105,7 @@ QMenu::item:disabled { color: %(muted)s; }
 
 QTabWidget::pane { border: none; top: -1px; }
 QTabBar::tab {
-    background: transparent; color: %(muted)s; padding: 8px 16px; margin-right: 2px;
+    background: transparent; color: %(muted)s; padding: 6px 14px; margin-right: 2px;
     border: none; border-bottom: 2px solid transparent;
 }
 QTabBar::tab:hover { color: %(text)s; }
@@ -96,7 +113,7 @@ QTabBar::tab:selected { color: %(accent)s; border-bottom: 2px solid %(accent)s; 
 
 QGroupBox {
     background: %(panel)s; border: 1px solid %(group_border)s; border-radius: 8px;
-    margin-top: 8px; padding: 14px 12px 10px 12px; font-weight: 600;
+    margin-top: 8px; padding: 10px 10px 6px 10px; font-weight: 600;
 }
 QGroupBox::title {
     subcontrol-origin: margin; subcontrol-position: top left;
@@ -105,7 +122,7 @@ QGroupBox::title {
 
 QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
     background: %(field)s; color: %(text)s; border: 1px solid %(field_border)s;
-    border-radius: 8px; padding: 6px 8px;
+    border-radius: 8px; padding: 3px 8px;
     selection-background-color: %(accent)s; selection-color: %(on_accent)s;
 }
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus,
@@ -127,7 +144,7 @@ QComboBox QAbstractItemView {
 
 QPushButton {
     background: %(panel2)s; color: %(text)s; border: 1px solid %(border)s;
-    border-radius: 8px; padding: 6px 14px;
+    border-radius: 8px; padding: 4px 12px;
 }
 QPushButton:hover { border-color: %(accent)s; color: %(accent)s; }
 QPushButton:pressed { background: %(hover)s; }
@@ -138,6 +155,14 @@ QPushButton#save_button {
 }
 QPushButton#save_button:hover { background: %(accent_hover)s; border-color: %(accent_hover)s; color: %(on_accent)s; }
 QPushButton#save_button:pressed { background: %(accent_press)s; }
+/* Prompt list "+" / "-" (icon-only): coloured so they stand out next to the Save button. */
+QPushButton#post_rp_add_btn, QPushButton#post_rp_remove_btn { padding: 5px 14px; }
+QPushButton#post_rp_add_btn { background: %(accent)s; border: 1px solid %(accent)s; }
+QPushButton#post_rp_add_btn:hover { background: %(accent_hover)s; border-color: %(accent_hover)s; }
+QPushButton#post_rp_add_btn:pressed { background: %(accent_press)s; }
+QPushButton#post_rp_remove_btn { border: 1px solid %(warn)s; }
+QPushButton#post_rp_remove_btn:hover { background: %(hover)s; border: 2px solid %(warn)s; }
+QPushButton#post_rp_remove_btn:disabled { border-color: %(border)s; background: %(panel2)s; }
 /* Small round "?" help badge next to the LivePrompting toggle (fixed 22px in code). */
 QPushButton[link="true"] {
     background: transparent; border: none; padding: 0 4px; color: %(accent)s; text-decoration: underline;
@@ -185,7 +210,9 @@ QListWidget {
     background: %(field)s; color: %(text)s; border: 1px solid %(field_border)s;
     border-radius: 8px; padding: 4px;
 }
-QListWidget::item { padding: 6px 8px; border-radius: 6px; }
+QListWidget::item { padding: 4px 8px; border-radius: 6px; }
+/* Before :selected, so a selected alternate row still shows the accent. */
+QListWidget::item:alternate { background: %(panel2)s; }
 QListWidget::item:selected { background: %(accent)s; color: %(on_accent)s; }
 QTableWidget {
     background: %(panel)s; alternate-background-color: %(panel2)s;
@@ -194,7 +221,7 @@ QTableWidget {
 }
 QTableWidget::item { padding: 0 8px; border-bottom: 1px solid %(border)s; }
 QHeaderView::section {
-    background: %(panel2)s; color: %(muted)s; padding: 8px;
+    background: %(panel2)s; color: %(muted)s; padding: 5px 8px;
     border: none; border-bottom: 1px solid %(border)s; font-weight: 600;
 }
 QLabel#apiKeyPreview { color: %(muted)s; }
@@ -229,6 +256,7 @@ QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
     background: %(panel2)s; border: 1px solid %(border)s; border-radius: 10px;
     padding: 3px 12px; color: %(accent)s; font-weight: 600;
 }
+QPushButton#brandPlayButton { border-radius: 10px; padding: 3px 12px; }
 """
 
 
@@ -333,9 +361,27 @@ QSpinBox::down-button, QDoubleSpinBox::down-button {{
 }}
 QSpinBox::up-button:hover, QSpinBox::down-button:hover,
 QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{ background: {c['hover']}; }}
-QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url({paths['up']}); width: 13px; height: 13px; }}
-QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url({paths['down']}); width: 13px; height: 13px; }}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url({paths['up']}); width: 10px; height: 10px; }}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url({paths['down']}); width: 10px; height: 10px; }}
 """
+
+
+_TOOLTIP_QSS = """
+QToolTip {
+    background-color: %(panel)s; color: %(text)s;
+    border: 1px solid %(group_border)s; padding: 7px 9px; border-radius: 8px;
+    font-size: 13px; font-weight: normal;
+}
+"""
+
+
+def tooltip_stylesheet(dark: bool) -> str:
+    """Tooltip QSS for the whole application.
+
+    Set on the QApplication, not the window: Qt reuses an open tooltip when the pointer moves to
+    the next widget and then drops the window's stylesheet, so its padding would vanish.
+    """
+    return _TOOLTIP_QSS % palette(dark)
 
 
 def build_stylesheet(dark: bool) -> str:

@@ -306,10 +306,11 @@ def main() -> int:
             wt.pipeline._transcription_progress_message("de") == "Transkribiere [German]...",
         )
         check(
-            "startup: system-positioned recording prompt palette is enabled by default",
-            sw.recording_prompt_overlay_system_position_checkbox.isChecked()
-            and wt.ctx.config["recording_prompt_overlay_system_position"] is True,
+            "startup: system-positioned recording prompt palette is disabled by default",
+            not sw.recording_prompt_overlay_system_position_checkbox.isChecked()
+            and wt.ctx.config["recording_prompt_overlay_system_position"] is False,
         )
+        wt.ctx.config["recording_prompt_overlay_system_position"] = True
         wt.recording.show_prompt_palette([{"caption": "Polish", "text": "CUSTOM_OVERLAY_PROMPT"}])
         overlay = RecordingPromptOverlay._instance
         mouse_status = MouseFollowerTooltip._instance

@@ -62,6 +62,7 @@ class _ReorderableList(QListWidget):
         """Enable internal move drag-and-drop."""
         super().__init__()
         self.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.setAlternatingRowColors(True)  # light grey every other row (theme: QListWidget::item:alternate)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
