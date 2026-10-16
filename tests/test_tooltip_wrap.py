@@ -1,13 +1,15 @@
 """Tests for app/ui/tooltip_wrap.py."""
 from __future__ import annotations
 
-from PyQt6.QtGui import QFont, QFontMetrics
-from PyQt6.QtWidgets import QApplication
+import pytest
 
-from app.ui.tooltip_wrap import wrap_lines, wrapped
+QtGui = pytest.importorskip("PyQt6.QtGui")
+QtWidgets = pytest.importorskip("PyQt6.QtWidgets")
 
-_app = QApplication.instance() or QApplication([])
-METRICS = QFontMetrics(QFont("Arial", 10))
+from app.ui.tooltip_wrap import wrap_lines, wrapped  # noqa: E402
+
+_app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+METRICS = QtGui.QFontMetrics(QtGui.QFont("Arial", 10))
 
 
 def test_lines_stay_within_width_and_keep_every_word():

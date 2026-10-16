@@ -7,7 +7,11 @@ import wave
 from pathlib import Path
 from typing import Any, List
 
-from app.audio.playback import WavPlayer
+import pytest
+
+pytest.importorskip("pyaudio")  # Imported by app.audio.playback; the playback itself uses a fake below.
+
+from app.audio.playback import WavPlayer  # noqa: E402
 
 
 class FakeStream:
