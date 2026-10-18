@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Callable, Optional
 
-from PyQt6.QtCore import QObject, QProcess, QTimer, pyqtSignal
+from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, pyqtSignal
 
 from app.services.gitutil import count_behind_upstream, current_head, find_git_root, git_available
 
@@ -16,6 +16,9 @@ from app.services.gitutil import count_behind_upstream, current_head, find_git_r
 # polls until an update is found. Offline / failed fetches are retried on the next tick.
 UPDATE_CHECK_INITIAL_DELAY_MS = 20_000       # ~20 s after launch
 UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000    # then every 30 minutes
+# A fetch/pull that hangs (stalled network, blocked credential helper) is killed, so the next
+# check can run and the tray spinner never stays up forever.
+GIT_TIMEOUT_MS = 120_000
 
 
 class GitUpdater(QObject):
@@ -75,11 +78,21 @@ class GitUpdater(QObject):
         process.start("git", ["pull", "--ff-only"])
 
     def _process(self, on_finished: Callable[[int, QProcess.ExitStatus], None]) -> QProcess:
-        """A git QProcess in the checkout with stderr folded into stdout."""
+        """A git QProcess in the checkout with stderr folded into stdout, killed after ``GIT_TIMEOUT_MS``.
+
+        Git must never wait for a password on the hidden terminal.
+        """
         process = QProcess(self)
         process.setWorkingDirectory(self.root or "")
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        environment = QProcessEnvironment.systemEnvironment()
+        environment.insert("GIT_TERMINAL_PROMPT", "0")
+        process.setProcessEnvironment(environment)
         process.finished.connect(on_finished)
+        watchdog = QTimer(process)
+        watchdog.setSingleShot(True)
+        watchdog.timeout.connect(process.kill)
+        watchdog.start(GIT_TIMEOUT_MS)
         return process
 
     def _set_available(self, available: bool) -> None:
@@ -89,11 +102,12 @@ class GitUpdater(QObject):
             self._timer.stop()
         self.availability_changed.emit(available)
 
-    def _on_pull_error(self, error: object) -> None:
-        """Git failed to start; ``finished`` will not follow."""
-        if self._pull is None:
-            return  # already handled by finished()
-        self._pull = None
+    def _on_pull_error(self, error: QProcess.ProcessError) -> None:
+        """Git failed to start; ``finished`` will not follow (it does for a crash or a kill)."""
+        if error != QProcess.ProcessError.FailedToStart or self._pull is None:
+            return  # handled by finished()
+        process, self._pull = self._pull, None
+        process.deleteLater()
         logging.error("git update process error: %s", error)
         self.pull_failed_to_start.emit()
 
@@ -125,10 +139,16 @@ class GitUpdater(QObject):
         if not self.root or self.available or self._pull is not None or self._fetch is not None:
             return
         process = self._process(self._on_fetch_finished)
-        # errorOccurred (e.g. git vanished) just clears the ref, like any offline failure.
-        process.errorOccurred.connect(lambda _error: setattr(self, "_fetch", None))
+        process.errorOccurred.connect(self._on_fetch_error)
         self._fetch = process
         process.start("git", ["fetch", "--quiet"])
+
+    def _on_fetch_error(self, error: QProcess.ProcessError) -> None:
+        """Git failed to start (e.g. vanished): clear the ref like any offline failure."""
+        if error != QProcess.ProcessError.FailedToStart or self._fetch is None:
+            return  # handled by finished()
+        process, self._fetch = self._fetch, None
+        process.deleteLater()
 
     def _on_fetch_finished(self, exit_code: int, _exit_status: QProcess.ExitStatus) -> None:
         """Compare against upstream after a successful fetch."""

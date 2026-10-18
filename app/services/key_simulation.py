@@ -11,6 +11,8 @@ from pynput import keyboard
 from app.core.env import is_MACOS
 
 _controller: Optional[keyboard.Controller] = None
+#: osascript runs on the GUI thread; a hung System Events call must not freeze the app.
+OSASCRIPT_TIMEOUT_S = 5.0
 
 
 def simulate_shortcut(char: str, *, alt_lib: bool, fast: bool = False) -> bool:
@@ -46,11 +48,15 @@ def _system_events_shortcut(char: str) -> bool:
     """Send Cmd+``char`` through AppleScript System Events."""
     script = f'tell application "System Events" to keystroke "{char}" using command down'
     try:
-        subprocess.run(['osascript', '-e', script], check=True, capture_output=True, text=True)
+        subprocess.run(['osascript', '-e', script], check=True, capture_output=True, text=True,
+                       timeout=OSASCRIPT_TIMEOUT_S)
         return True
     except subprocess.CalledProcessError as e:
         logging.warning("macOS System Events key simulation failed for Cmd+%s: %s",
                         char, (e.stderr or e.stdout or str(e)).strip())
+    except subprocess.TimeoutExpired:
+        # A blocked Automation permission prompt must not freeze the GUI thread.
+        logging.warning("macOS System Events key simulation for Cmd+%s timed out after %ss", char, OSASCRIPT_TIMEOUT_S)
     except Exception as e:
         logging.warning(f"macOS System Events key simulation failed for Cmd+{char}: {e}")
     return False

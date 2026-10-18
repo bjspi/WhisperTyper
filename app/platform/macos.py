@@ -5,10 +5,14 @@ The native symbols are imported once and exposed as None where unavailable.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 from typing import Any, Dict, Optional, Tuple
 
 from app.core.env import is_MACOS
+
+#: osascript runs on the GUI thread; a hung System Events call must not freeze the app.
+OSASCRIPT_TIMEOUT_S = 5.0
 
 if is_MACOS:
     try:
@@ -57,9 +61,13 @@ else:
 
 
 def frontmost_app_name() -> str:
-    """Return the name of the frontmost macOS application."""
+    """Return the name of the frontmost macOS application.
+
+    Raises:
+        subprocess.SubprocessError: osascript failed or did not answer within ``OSASCRIPT_TIMEOUT_S``.
+    """
     script = 'tell application "System Events" to get name of first application process whose frontmost is true'
-    return subprocess.check_output(['osascript', '-e', script]).decode().strip()
+    return subprocess.check_output(['osascript', '-e', script], timeout=OSASCRIPT_TIMEOUT_S).decode().strip()
 
 
 def make_nonactivating(widget: Any) -> None:
@@ -96,6 +104,9 @@ def frontmost_window_center() -> Optional[Tuple[int, int]]:
 
 
 def activate_app(app_name: str) -> None:
-    """Bring the named macOS application back to the foreground."""
+    """Bring the named macOS application back to the foreground (best effort)."""
     script = f'tell application "{app_name}" to activate'
-    subprocess.call(['osascript', '-e', script])
+    try:
+        subprocess.call(['osascript', '-e', script], timeout=OSASCRIPT_TIMEOUT_S)
+    except (OSError, subprocess.SubprocessError) as e:
+        logging.warning("Could not activate macOS application %r: %s", app_name, e)

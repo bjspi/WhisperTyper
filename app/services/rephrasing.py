@@ -15,49 +15,16 @@ import httpx
 from app.core.models import rephrasing_supports_temperature
 from app.core.redaction import redact_for_log
 from app.core.timing import NO_TIMING, OperationTiming
-from app.services.http_transport import request
+from app.services.http_transport import TimeoutValue, request
+from app.services.net import format_api_error
 
-#: Read timeout for chat completions; generous enough for long generations.
-REQUEST_TIMEOUT_S = 30.0
-MAX_ERROR_DETAIL_CHARS = 1200
+#: Chat completions: connecting and sending are quick, but reasoning models can take minutes
+#: to answer, so only the read phase gets a long budget.
+REQUEST_TIMEOUT = httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0)
 
 
 class RephrasingError(RuntimeError):
     """The rephrasing API request failed (network error or non-2xx response)."""
-
-
-def _format_api_error(response: httpx.Response) -> str:
-    """Return useful, bounded diagnostics from an OpenAI-compatible error response."""
-    lines = [f"HTTP {response.status_code}"]
-    try:
-        payload = response.json()
-    except ValueError:  # json.JSONDecodeError
-        payload = None
-
-    error = payload.get("error") if isinstance(payload, dict) else None
-    if isinstance(error, dict):
-        message = str(error.get("message") or "").strip()
-        if message:
-            lines.append(message)
-        for label, key in (("Parameter", "param"), ("Code", "code"), ("Type", "type")):
-            value = error.get(key)
-            if value not in (None, ""):
-                lines.append(f"{label}: {value}")
-    elif error not in (None, ""):
-        lines.append(str(error))
-    else:
-        body = (response.text or "").strip()
-        if body:
-            if len(body) > MAX_ERROR_DETAIL_CHARS:
-                body = body[:MAX_ERROR_DETAIL_CHARS].rstrip() + "…"
-            lines.append(body)
-        elif response.reason_phrase:
-            lines.append(response.reason_phrase)
-
-    request_id = response.headers.get("x-request-id")
-    if request_id:
-        lines.append(f"Request ID: {request_id}")
-    return "\n".join(lines)
 
 
 def rephrase_text(
@@ -70,7 +37,7 @@ def rephrase_text(
     temperature: float,
     context: str = "",
     proxies: Optional[Dict[str, str]] = None,
-    timeout: float = REQUEST_TIMEOUT_S,
+    timeout: TimeoutValue = REQUEST_TIMEOUT,
     timing: OperationTiming = NO_TIMING,
 ) -> str:
     """Send prompts to an OpenAI-compatible chat-completions endpoint and return the reply.
@@ -84,7 +51,7 @@ def rephrase_text(
         temperature: Sampling temperature.
         context: Optional selected-text context, prepended to the user prompt.
         proxies: Optional ``{"http": url, "https": url}`` proxies mapping.
-        timeout: Request timeout in seconds.
+        timeout: Request timeout (seconds, a ``(send, read)`` pair or an ``httpx.Timeout``).
         timing: Operation timings; the caller owns completion and delivery.
 
     Returns:
@@ -129,11 +96,18 @@ def rephrase_text(
         raise RephrasingError(f"Rephrasing API request failed: {e}") from e
 
     if not response.is_success:
-        raise RephrasingError(f"Rephrasing API request failed:\n{_format_api_error(response)}")
+        raise RephrasingError(f"Rephrasing API request failed:\n{format_api_error(response)}")
 
-    result = response.json()
+    try:
+        result = response.json()
+    except ValueError as e:  # json.JSONDecodeError
+        raise RephrasingError("Rephrasing API answered without a JSON body.") from e
     # OpenAI/Groq style: result['choices'][0]['message']['content']
-    reply = (result.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+    choices = result.get("choices") if isinstance(result, dict) else None
+    if not choices:
+        raise RephrasingError("Rephrasing API answered with an empty response (no choices).")
+    message = (choices[0] or {}).get("message") or {}
+    reply = str(message.get("content") or "").strip()
     timing.mark("rephrase_response_parsed")
     logging.info(f"Rephrasing result: {redact_for_log(reply)}")
     return reply

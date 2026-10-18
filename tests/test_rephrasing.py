@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from app.services.rephrasing import RephrasingError, rephrase_text
+from app.services.rephrasing import REQUEST_TIMEOUT, RephrasingError, rephrase_text
 
 
 @pytest.mark.parametrize("model", ["gpt-5", "gpt-5-mini", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
@@ -121,3 +121,33 @@ def test_worker_reports_each_outcome_on_its_own_signal(reply, expected):
     assert [kind for kind, _ in outcomes] == [expected]
     if expected == "error":
         assert outcomes[0][1] == "boom"  # The caller wraps it in a translated message.
+
+
+def rephrase(response):
+    with patch("app.services.rephrasing.request", return_value=response):
+        return rephrase_text(system_prompt="Test", user_prompt="Reply", api_url="https://example.com/v1/chat/completions",
+                             api_key="test-key", model="test-model", temperature=0.7)
+
+
+def test_a_null_content_is_an_empty_reply() -> None:
+    response = Mock()
+    response.json.return_value = {"choices": [{"message": {"content": None}}]}
+    assert rephrase(response) == ""
+
+
+def test_a_success_without_json_body_is_a_rephrasing_error() -> None:
+    response = Mock()
+    response.json.side_effect = ValueError("not JSON")
+    with pytest.raises(RephrasingError, match="JSON"):
+        rephrase(response)
+
+
+def test_a_success_without_choices_is_a_rephrasing_error() -> None:
+    response = Mock()
+    response.json.return_value = {"choices": []}
+    with pytest.raises(RephrasingError, match="empty"):
+        rephrase(response)
+
+
+def test_the_answer_may_take_longer_than_the_connection() -> None:
+    assert REQUEST_TIMEOUT.read == 120.0 and REQUEST_TIMEOUT.connect == 15.0
