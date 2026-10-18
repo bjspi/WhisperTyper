@@ -23,23 +23,17 @@ def project_root() -> str:
 
 
 def find_git_root() -> Optional[str]:
-    """Return the enclosing git working-tree root, or ``None`` if this isn't a checkout.
+    """Return the project root if it is a git working tree, or ``None`` if this isn't a checkout.
 
     A frozen build can never be a git checkout, so we short-circuit there and the tray
-    never shows the "Update" entry for it. Otherwise we walk up from the project root
-    looking for a ``.git`` entry (a directory for a normal clone, a file for worktrees
-    and submodules).
+    never shows the "Update" entry for it. Otherwise only a ``.git`` entry directly in the
+    project root counts (a directory for a normal clone, a file for worktrees and
+    submodules): an unpacked copy inside some other repository must not pull that one.
     """
     if getattr(sys, "frozen", False):
         return None
     path = project_root()
-    while True:
-        if os.path.exists(os.path.join(path, ".git")):
-            return path
-        parent = os.path.dirname(path)
-        if parent == path:  # reached the filesystem root
-            return None
-        path = parent
+    return path if os.path.exists(os.path.join(path, ".git")) else None
 
 
 def git_available() -> bool:

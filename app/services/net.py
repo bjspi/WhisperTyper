@@ -39,11 +39,67 @@ def proxies_for(config: Mapping[str, Any]) -> Optional[Dict[str, str]]:
 
 
 def diagnose_connectivity(api_url: str, proxies: Optional[Dict[str, str]]) -> str:
-    """'blocked' (internet up but API unreachable) vs 'no_internet' (no outbound route)."""
+    """'blocked' (internet up but API unreachable) vs 'no_internet' (no outbound route).
+
+    Behind a configured proxy the public hosts are not reachable directly, so the proxy
+    itself is probed: a listening proxy means the route exists and the API is blocked.
+    """
+    proxy = urlparse((proxies or {}).get("https") or (proxies or {}).get("http") or "")
+    if proxy.hostname:
+        port = proxy.port or (443 if proxy.scheme == "https" else 80)
+        return "blocked" if tcp_check(proxy.hostname, port) else "no_internet"
     raw_internet = tcp_check("1.1.1.1", 53) or tcp_check("8.8.8.8", 53)
     host = urlparse(api_url).hostname
     api_direct = tcp_check(host, 443)
     return "blocked" if (raw_internet or api_direct) else "no_internet"
+
+
+#: Longest raw response body quoted in an API error message.
+MAX_ERROR_DETAIL_CHARS = 1200
+
+
+def api_error_details(response: httpx.Response) -> str:
+    """Bounded diagnostics of an OpenAI-compatible error response, without the HTTP status.
+
+    The ``error.message`` (with parameter, code and type) when the body is JSON, else the
+    truncated body or the reason phrase; a request id follows when the server sent one.
+    """
+    lines = []
+    try:
+        payload = response.json()
+    except ValueError:  # json.JSONDecodeError
+        payload = None
+
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if isinstance(error, dict):
+        message = str(error.get("message") or "").strip()
+        if message:
+            lines.append(message)
+        for label, key in (("Parameter", "param"), ("Code", "code"), ("Type", "type")):
+            value = error.get(key)
+            if value not in (None, ""):
+                lines.append(f"{label}: {value}")
+    elif error not in (None, ""):
+        lines.append(str(error))
+    else:
+        body = (response.text or "").strip()
+        if body:
+            if len(body) > MAX_ERROR_DETAIL_CHARS:
+                body = body[:MAX_ERROR_DETAIL_CHARS].rstrip() + "…"
+            lines.append(body)
+        elif response.reason_phrase:
+            lines.append(response.reason_phrase)
+
+    request_id = response.headers.get("x-request-id")
+    if request_id:
+        lines.append(f"Request ID: {request_id}")
+    return "\n".join(lines)
+
+
+def format_api_error(response: httpx.Response) -> str:
+    """``api_error_details`` headed by the HTTP status line."""
+    details = api_error_details(response)
+    return f"HTTP {response.status_code}" + (f"\n{details}" if details else "")
 
 
 def classify_transport_error(error: Exception, api_url: str, proxies: Optional[Dict[str, str]]) -> str:

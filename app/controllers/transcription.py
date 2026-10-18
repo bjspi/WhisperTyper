@@ -70,6 +70,9 @@ class TranscriptionPipeline:
         self._batch_index = 0
         self._batch_results: List[str] = []
         self._batch_active = False
+        #: Number of the current batch; its requests carry it, so a hotkey dictation finishing
+        #: while a batch runs takes the normal delivery path instead of landing in the batch.
+        self._batch_id = 0
 
     def reload_replacements(self) -> None:
         """Compile the saved correction rules; invalid rules disable corrections until fixed."""
@@ -82,7 +85,8 @@ class TranscriptionPipeline:
     # --- Transcription -------------------------------------------------------------------
     def start(self, audio_path: str, output_mode: str = "insert",
               transformation_prompt: Optional[str] = None, timing: Optional[OperationTiming] = None,
-              use_auto_prompt: bool = True, instruction_selected: bool = False) -> None:
+              use_auto_prompt: bool = True, instruction_selected: bool = False,
+              batch: Optional[int] = None) -> None:
         """Transcribe ``audio_path`` on a worker thread.
 
         Args:
@@ -93,6 +97,7 @@ class TranscriptionPipeline:
             timing: Recording-stop timing, or a fresh operation for a file transcription.
             use_auto_prompt: False when "None" was picked in the palette for this recording.
             instruction_selected: The palette choice was the instruction entry (run as an order).
+            batch: The batch this file belongs to (see ``start_batch``); None for single requests.
         """
         config = self._config
         timing = timing or OperationTiming()
@@ -160,13 +165,14 @@ class TranscriptionPipeline:
         auto_prompt = self.auto_prompt() if use_auto_prompt else None
         worker.finished.connect(
             lambda text, mode=output_mode, selected_prompt=transformation_prompt, operation=timing, auto=auto_prompt,
-            instruction=instruction_selected:
-                self.on_transcription_finished(text, mode, selected_prompt, operation, auto, instruction)
+            instruction=instruction_selected, batch_id=batch:
+                self.on_transcription_finished(text, mode, selected_prompt, operation, auto, instruction, batch_id)
         )
         worker.error.connect(
             lambda message, path, mode=output_mode, selected_prompt=transformation_prompt, operation=timing,
-            auto=use_auto_prompt, instruction=instruction_selected:
-                self.on_transcription_error(message, path, mode, selected_prompt, operation, auto, instruction)
+            auto=use_auto_prompt, instruction=instruction_selected, batch_id=batch:
+                self.on_transcription_error(message, path, mode, selected_prompt, operation, auto, instruction,
+                                            batch_id)
         )
         self._workers.start(worker, (worker.finished, worker.error),
                             queued=lambda: timing.mark("transcription_worker_queued"))
@@ -241,7 +247,8 @@ class TranscriptionPipeline:
     def on_transcription_finished(self, text: str, output_mode: str = "insert",
                                   transformation_prompt: Optional[str] = None,
                                   timing: Optional[OperationTiming] = None,
-                                  auto_prompt: Optional[str] = None, instruction_selected: bool = False) -> None:
+                                  auto_prompt: Optional[str] = None, instruction_selected: bool = False,
+                                  batch: Optional[int] = None) -> None:
         """Handle a successful transcription and route it through rephrasing if configured.
 
         Args:
@@ -251,13 +258,14 @@ class TranscriptionPipeline:
             timing: This request's recording/HTTP timings, preserved through rephrasing.
             auto_prompt: The automatic prompt snapshotted when the request started, if any.
             instruction_selected: The palette choice was the instruction entry.
+            batch: The batch the request belongs to, if any (see ``start``).
         """
         timing = timing or OperationTiming("transcription_result")
         timing.mark("transcription_result_received")
         processed = usable_transcript(text, self._sent_prompt())
         if processed is None:
             timing.finish("no_speech")
-            if self._batch_active:
+            if self._in_batch(batch):
                 logging.info("Batch file produced no usable speech; skipping it.")
                 self._advance_batch(None)
                 return
@@ -270,9 +278,9 @@ class TranscriptionPipeline:
         plan = plan_rephrase(processed, self._config, transformation_prompt, self.selection_context, auto_prompt,
                              instruction_selected)
         if plan is None:
-            self.finalize_output(processed, output_mode=output_mode, timing=timing)
+            self.finalize_output(processed, output_mode=output_mode, timing=timing, batch=batch)
         else:
-            self._start_post_transcription_rephrase(plan, processed, output_mode, timing)
+            self._start_post_transcription_rephrase(plan, processed, output_mode, timing, batch)
 
     def _apply_replacements(self, text: str, timing: OperationTiming) -> str:
         """Apply the saved correction rules; logs counts and rule lines, never transcript text."""
@@ -291,12 +299,12 @@ class TranscriptionPipeline:
                                output_mode: str = "insert",
                                transformation_prompt: Optional[str] = None,
                                timing: OperationTiming = NO_TIMING, use_auto_prompt: bool = True,
-                               instruction_selected: bool = False) -> None:
+                               instruction_selected: bool = False, batch: Optional[int] = None) -> None:
         """Report a failed transcription and offer a retry (batches skip the file instead)."""
         logging.error(f"Transcription error: {error_message}")
         timing.finish("transcription_failed")
         # In a batch, don't block on a modal retry dialog — log, skip this file, and keep going.
-        if self._batch_active:
+        if self._in_batch(batch):
             logging.warning("Batch file failed, skipping: %s", audio_file_path)
             self._advance_batch(None)
             return
@@ -342,7 +350,8 @@ class TranscriptionPipeline:
                             queued=lambda: operation.mark("rephrase_worker_queued"))
 
     def _start_post_transcription_rephrase(self, plan: RephrasePlan, original_text: str,
-                                           output_mode: str, timing: OperationTiming) -> None:
+                                           output_mode: str, timing: OperationTiming,
+                                           batch: Optional[int] = None) -> None:
         """Run the planned rephrasing/LivePrompt request; the spinner stays up until it ends."""
         # Preview the FINAL prompt actually sent (after trigger stripping), shortened to keep the
         # balloon compact. The spinner ignores its timeout.
@@ -352,7 +361,7 @@ class TranscriptionPipeline:
         def deliver_original(spinner_active: bool, operation: OperationTiming) -> None:
             """Fall back to the unmodified transcription."""
             self.finalize_output(original_text, spinner_active=spinner_active, output_mode=output_mode,
-                                 timing=operation, outcome="rephrase_failed_fallback")
+                                 timing=operation, outcome="rephrase_failed_fallback", batch=batch)
 
         def on_error(error_message: str, operation: OperationTiming) -> None:
             """Replace the spinner with the error notice, then deliver the raw text without hiding it."""
@@ -363,7 +372,7 @@ class TranscriptionPipeline:
         self.start_rephrasing(
             plan.system_prompt, plan.user_prompt, plan.context, timing,
             on_finished=lambda text, operation: self.finalize_output(
-                text, spinner_active=True, output_mode=output_mode, timing=operation),
+                text, spinner_active=True, output_mode=output_mode, timing=operation, batch=batch),
             # An empty answer is no hard failure: deliver the raw text and let finalize end the spinner.
             on_empty=lambda operation: deliver_original(True, operation),
             on_error=on_error,
@@ -371,7 +380,8 @@ class TranscriptionPipeline:
 
     # --- Delivery ------------------------------------------------------------------------
     def finalize_output(self, text: str, spinner_active: bool = True, output_mode: str = "insert",
-                        timing: OperationTiming = NO_TIMING, outcome: str = "ok") -> None:
+                        timing: OperationTiming = NO_TIMING, outcome: str = "ok",
+                        batch: Optional[int] = None) -> None:
         """Deliver the final text (insert or clipboard) and end the spinner balloon.
 
         Args:
@@ -381,11 +391,12 @@ class TranscriptionPipeline:
             output_mode: 'insert' types the text into the focused field; 'clipboard' copies it.
             timing: The operation whose text is being delivered.
             outcome: Distinguishes normal completion from a rephrasing fallback.
+            batch: The batch the text belongs to, if any; its files are collected, not delivered.
         """
         self.last_transcription = text
         # In a batch, capture this file's text and trigger the next one instead of delivering now;
         # the joined result is copied once the whole batch finishes.
-        if self._batch_active:
+        if self._in_batch(batch):
             timing.finish("batch_buffered")
             self._advance_batch(text)
             return
@@ -455,14 +466,19 @@ class TranscriptionPipeline:
         self._batch_index = 0
         self._batch_results = []
         self._batch_active = True
+        self._batch_id += 1
         self._transcribe_next_in_batch()
+
+    def _in_batch(self, batch: Optional[int]) -> bool:
+        """Whether a result with batch number ``batch`` belongs to the running batch."""
+        return self._batch_active and batch == self._batch_id
 
     def _transcribe_next_in_batch(self) -> None:
         """Start the next queued file, or finish the batch when the queue is exhausted."""
         if self._batch_index >= len(self._batch_files):
             self._finish_batch()
             return
-        self.start(self._batch_files[self._batch_index], output_mode="clipboard")
+        self.start(self._batch_files[self._batch_index], output_mode="clipboard", batch=self._batch_id)
 
     def _advance_batch(self, text: Optional[str]) -> None:
         """Record a finished file's text (if non-empty), then move on to the next file."""

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import wave
+from unittest.mock import Mock
 
 from app.services import net, netutil
 
@@ -46,3 +47,40 @@ class TestGenerateTestWav:
 class TestTcpCheck:
     def test_none_host_is_false(self):
         assert netutil.tcp_check(None, 443) is False
+
+
+class TestDiagnoseConnectivity:
+    def test_without_proxy_the_public_hosts_and_the_api_are_probed(self, monkeypatch):
+        probed = []
+        monkeypatch.setattr(net, "tcp_check", lambda host, port: probed.append((host, port)) or False)
+        assert net.diagnose_connectivity("https://api.groq.com/openai/v1/audio/transcriptions", None) == "no_internet"
+        assert probed == [("1.1.1.1", 53), ("8.8.8.8", 53), ("api.groq.com", 443)]
+
+    def test_behind_a_proxy_only_the_proxy_is_probed(self, monkeypatch):
+        probed = []
+        monkeypatch.setattr(net, "tcp_check", lambda host, port: probed.append((host, port)) or True)
+        proxies = netutil.build_proxies("http://corp-proxy:3128")
+        assert net.diagnose_connectivity("https://api.groq.com/openai/v1", proxies) == "blocked"
+        assert probed == [("corp-proxy", 3128)]
+
+    def test_an_unreachable_proxy_means_no_route(self, monkeypatch):
+        probed = []
+        monkeypatch.setattr(net, "tcp_check", lambda host, port: probed.append((host, port)) or False)
+        assert net.diagnose_connectivity("https://api.groq.com/openai/v1", netutil.build_proxies("http://corp-proxy")) == "no_internet"
+        assert probed == [("corp-proxy", 80)]
+
+
+class TestApiErrorDetails:
+    def test_structured_error_lists_message_fields_and_request_id(self):
+        response = Mock(status_code=400, headers={"x-request-id": "req_1"})
+        response.json.return_value = {"error": {"message": "Bad model.", "param": "model", "code": "x", "type": "t"}}
+        assert net.api_error_details(response) == "Bad model.\nParameter: model\nCode: x\nType: t\nRequest ID: req_1"
+        assert net.format_api_error(response).startswith("HTTP 400\nBad model.")
+
+    def test_plain_body_is_bounded_and_the_reason_phrase_is_the_last_resort(self):
+        response = Mock(status_code=502, headers={}, text="x" * 2000, reason_phrase="Bad Gateway")
+        response.json.side_effect = ValueError("not JSON")
+        details = net.api_error_details(response)
+        assert len(details) == net.MAX_ERROR_DETAIL_CHARS + 1 and details.endswith("…")
+        response.text = ""
+        assert net.format_api_error(response) == "HTTP 502\nBad Gateway"

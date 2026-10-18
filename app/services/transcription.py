@@ -25,6 +25,7 @@ from app.core.textutil import clean_model_name
 from app.core.timing import OperationTiming
 from app.services import ffmpeg, transcription_diagnostics
 from app.services.http_transport import request
+from app.services.net import api_error_details
 
 Translate = Callable[..., str]
 #: Text of a response and its decoded JSON body.
@@ -109,6 +110,23 @@ class _Upload:
     size: int
 
 
+class _TempUpload:
+    """A temporary upload read by ``readers`` requests; the last one to finish removes it."""
+
+    def __init__(self, path: Optional[str], readers: int) -> None:
+        self.path = path
+        self._readers = readers
+        self._lock = threading.Lock()
+
+    def release(self) -> None:
+        """One request is done with the file; nothing happens for a source file (no temp)."""
+        with self._lock:
+            self._readers -= 1
+            last = self._readers == 0
+        if last and self.path:
+            _remove(self.path)
+
+
 #: An attempt's (text, details), or the exception it ended with.
 _Outcome = Tuple[Optional[Tuple[str, Optional[Dict[str, Any]]]], Optional[Exception]]
 
@@ -127,16 +145,19 @@ def transcribe(req: TranscriptionRequest, timing: OperationTiming, tr: Translate
     """
     if not req.api_key:
         raise TranscriptionError(tr("transcription_api_key_missing"))
-    upload: Optional[_Upload] = None
+    temp: Optional[_TempUpload] = None
     try:
         with timing.span("upload_prepare"):
             upload = (_prepare_recording(req, timing, tr, on_compressing) if req.recording_format is not None
                       else _prepare_file(req, on_compressing))
+        # The parallel second transcription may still be sending the file after a confident first
+        # result returns, so the temporary upload is removed by whichever request finishes last.
+        temp = _TempUpload(upload.temp, readers=2 if req.second_pass == "always" else 1)
         # Pre-processing (extraction or compression) just finished: the upload phase begins.
         if upload.temp is not None:
             on_transcribing()
         if req.second_pass == "always":
-            text, details = _transcribe_twice(req, upload, timing, tr)
+            text, details = _transcribe_twice(req, upload, timing, tr, temp.release)
         else:
             text, payload = _send(req, upload, timing, tr)
             details = transcription_diagnostics.extract(payload) if req.wants_details else None
@@ -144,8 +165,8 @@ def transcribe(req: TranscriptionRequest, timing: OperationTiming, tr: Translate
                 text, details = _choose(req, timing, text, details, _second_pass(req, upload, timing, tr))
     finally:
         # Remove only the temporary upload; the original recording/file stays for retries.
-        if upload is not None and upload.temp:
-            _remove(upload.temp)
+        if temp is not None:
+            temp.release()
     average = _average_logprob(details)
     if average is not None:
         timing.notes["avg_logprob"] = average
@@ -187,11 +208,20 @@ def _second_pass(req: TranscriptionRequest, upload: _Upload, timing: OperationTi
 
 
 def _transcribe_twice(req: TranscriptionRequest, upload: _Upload, timing: OperationTiming,
-                      tr: Translate) -> Tuple[str, Optional[Dict[str, Any]]]:
-    """Send both transcriptions at once; wait for the second only when the first is doubtful or fails."""
+                      tr: Translate, on_second_done: Callable[[], None]) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """Send both transcriptions at once; wait for the second only when the first is doubtful or fails.
+
+    ``on_second_done`` runs on the second request's thread once it no longer reads the upload.
+    """
     second: "queue.SimpleQueue[_Outcome]" = queue.SimpleQueue()
-    threading.Thread(target=lambda: second.put(_second_pass(req, upload, timing, tr)),
-                     name="TranscriptionSecondPass", daemon=True).start()
+
+    def run_second() -> None:
+        try:
+            second.put(_second_pass(req, upload, timing, tr))
+        finally:
+            on_second_done()
+
+    threading.Thread(target=run_second, name="TranscriptionSecondPass", daemon=True).start()
     try:
         text, payload = _send(req, upload, timing, tr)
     except Exception as error:
@@ -398,7 +428,8 @@ def _parse(response: httpx.Response, tr: Translate) -> _Parsed:
     """The text and JSON body of a complete response; any non-200 status is a user-facing error."""
     logging.debug(f"API response status: {response.status_code}")
     if response.status_code != 200:
-        raise TranscriptionError(tr("transcription_api_error", status=response.status_code, details=response.text))
+        raise TranscriptionError(tr("transcription_api_error", status=response.status_code,
+                                    details=api_error_details(response)))
     payload: Dict[str, Any] = response.json()
     return payload.get("text", ""), payload
 

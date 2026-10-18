@@ -1,6 +1,8 @@
 """Recording format uploads preserve originals and use FFmpeg only above the upload limit."""
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -142,7 +144,7 @@ def test_oversized_recording_falls_back_to_ffmpeg_from_retained_wav(monkeypatch,
 def test_worker_errors_are_translated(monkeypatch, tmp_path):
     source = tmp_path / "recording.wav"
     dsp.write_wav(str(source), b"\x01\x00" * 16000, 16000)
-    monkeypatch.setattr(service, "request", Mock(return_value=Mock(status_code=401, text="denied")))
+    monkeypatch.setattr(service, "request", Mock(return_value=Mock(status_code=401, text="denied", headers={})))
     worker = make_worker(source, recording_format="wav", tr=lambda key, **kwargs: f"<{key}:{sorted(kwargs.items())}>")
     errors = []
     worker.error.connect(lambda *args: errors.append(args))
@@ -199,3 +201,48 @@ def test_voice_message_opus_is_converted_or_sent_as_ogg(monkeypatch, tmp_path, f
     worker.run()
     assert finished == ["result"]
     assert source.read_bytes() == b"OggS-opus"
+
+
+def test_second_pass_keeps_the_temp_upload_until_the_background_request_is_done(monkeypatch, tmp_path):
+    source = tmp_path / "recording.wav"
+    dsp.write_wav(str(source), b"\x01\x00" * 16000, 16000)
+    prepared = []
+
+    def encode(_source, destination, _bitrate):
+        Path(destination).write_bytes(b"encoded-aac")
+        prepared.append(destination)
+
+    release = threading.Event()
+    removed = []
+    remove = service._remove
+    monkeypatch.setattr(service, "_remove", lambda path: (removed.append(path), remove(path)))
+
+    def request(_method, _url, **kwargs):
+        text = " Erster"
+        if kwargs["data"]["prompt"] == "second":
+            assert release.wait(5)  # The second transcription is still reading the open upload.
+            text = " Zweiter"
+        assert kwargs["files"]["file"][1].read() == b"encoded-aac"
+        payload = {"text": text, "duration": 5.0, "words": [],
+                   "segments": [{"start": 0.0, "end": 5.0, "text": text, "avg_logprob": -0.1,
+                                 "no_speech_prob": 0.0, "compression_ratio": 1.2}]}
+        return Mock(status_code=200, json=lambda: payload, text="")
+
+    monkeypatch.setattr(service, "encode_wav_to_aac", encode)
+    monkeypatch.setattr(service, "available_aac_bitrates", lambda: (64,))
+    monkeypatch.setattr(service, "request", request)
+    req = TranscriptionRequest("key", "https://example.invalid/transcribe", str(source), "", "whisper-large-v3", "en",
+                               0.0, recording_format="aac", second_pass="always", second_pass_prompt="second")
+    text = service.transcribe(req, OperationTiming("recording"), lambda key, **_kw: key,
+                              on_compressing=Mock(), on_transcribing=Mock())
+    assert text == " Erster"
+    temp = Path(prepared[0])
+    assert temp.exists() and removed == []  # A confident first result returns while the second request runs.
+
+    release.set()
+    deadline = time.monotonic() + 5
+    while temp.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    time.sleep(0.05)
+    assert not temp.exists() and removed == [str(temp)]
+    assert source.read_bytes()  # The retained recording stays.
