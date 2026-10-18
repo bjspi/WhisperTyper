@@ -93,6 +93,7 @@ TEXTS: Tuple[Text, ...] = (
     Text("recording_bitrate_label", "recording_bitrate_label"),
     _field("input_language_label", "input_language_tooltip", "input_language_label", "language_input"),
     _field("gain_label", "gain_tooltip", "gain_label", "gain_input"),
+    _check("gain_normalize_checkbox", "gain_normalize_checkbox", "gain_normalize_tooltip"),
     # Rephrasing API
     Text("shared_api_group_title", "shared_api_group"),
     *_api_group_texts("rephrasing_provider_label", "rephrasing_provider_selector", "rephrasing_model_label",

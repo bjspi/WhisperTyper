@@ -82,3 +82,33 @@ class TestPrepareForUpload:
         monkeypatch.setattr(dsp, "resample", lambda *_args: (_ for _ in ()).throw(ValueError("unsupported")))
         pcm = make_tone(samplerate=44100)
         assert dsp.prepare_for_upload(pcm, 44100, 16000, 0.0) == (pcm, 44100)
+
+
+class TestNormalizingGain:
+    def test_lifts_quiet_recording_to_target_peak(self):
+        pcm = struct.pack("<2h", 3277, -100)  # peak -20 dBFS
+        assert math.isclose(dsp.normalizing_gain_db(pcm, 30.0), 19.0, abs_tol=0.05)
+
+    def test_capped_at_limit(self):
+        pcm = struct.pack("<2h", 33, -10)  # peak -60 dBFS
+        assert dsp.normalizing_gain_db(pcm, 15.0) == 15.0
+
+    def test_loud_recording_is_never_attenuated(self):
+        assert dsp.normalizing_gain_db(struct.pack("<h", 32767), 15.0) == 0.0
+
+    def test_silence_gets_no_gain(self):
+        assert dsp.normalizing_gain_db(b"\x00" * 320, 15.0) == 0.0
+
+    def test_normalized_upload_does_not_clip(self):
+        pcm = make_tone(amplitude=10000)
+        out, _rate = dsp.prepare_for_upload(pcm, 16000, 16000, 20.0, normalize=True)
+        assert 0.85 * 32767 < dsp.peak(out) < 32767
+
+
+class TestBlockDbfs:
+    def test_full_scale_square_is_about_zero(self):
+        pcm = struct.pack("<4h", 32767, -32767, 32767, -32767)
+        assert dsp.block_dbfs(pcm)[0] > -0.1
+
+    def test_silence_is_floor_and_parts_split(self):
+        assert dsp.block_dbfs(b"\x00" * 400, 2) == [-96.0, -96.0]

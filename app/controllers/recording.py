@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import time
 import wave
+from collections import deque
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from PyQt6.QtCore import QObject, QPoint, QTimer, pyqtSignal
@@ -42,6 +43,8 @@ MIC_SIGNAL_GRACE_MS = 1500
 
 #: PyAudio frames per read.
 CHUNK_SIZE = 1024
+#: Waveform bars per captured block (1024 frames at 16 kHz: one bar per 32 ms).
+WAVE_BARS_PER_BLOCK = 2
 
 
 class RecordingController(QObject):
@@ -86,6 +89,9 @@ class RecordingController(QObject):
         #: True until the running recording has shown its balloon or prompt palette.
         self._feedback_pending = False
         self.latest_audio_level = 0.0
+        #: Recent block levels in dBFS for the palette's waveform; appended by the capture thread.
+        self._wave_levels: deque[float] = deque(maxlen=256)
+        self._mac_device_name = ""
         self.last_activity_ts = time.monotonic()
         self.microphone = MicrophoneInput(lambda: self._config, UPLOAD_SAMPLERATE, CHUNK_SIZE,
                                           self._notify_input_device_fallback)
@@ -101,8 +107,61 @@ class RecordingController(QObject):
 
     # --- Capture strategy ----------------------------------------------------------------
     def _update_latest_audio_level(self, pcm_chunk: bytes) -> None:
-        """Feed the tray meter from a captured block."""
+        """Feed the tray meter and the palette's waveform from a captured block (capture thread)."""
         self.latest_audio_level = dsp.meter_level(pcm_chunk)
+        self._wave_levels.extend(dsp.block_dbfs(pcm_chunk, WAVE_BARS_PER_BLOCK))
+
+    def drain_wave_levels(self) -> List[float]:
+        """Levels in dBFS captured since the last call, for the palette's waveform (GUI thread)."""
+        if self.mac_recorder.active:
+            power = self.mac_recorder.power_dbfs()
+            return [] if power is None else [power]
+        levels = []
+        while self._wave_levels:
+            levels.append(self._wave_levels.popleft())
+        return levels
+
+    def input_device_display_name(self) -> str:
+        """The microphone the running recording comes from ("" while the stream is not open yet)."""
+        if self.mac_recorder.active:
+            if not self._mac_device_name:
+                self._mac_device_name = macos_recorder.default_input_name()
+            return self._mac_device_name
+        return self.microphone.device_name
+
+    def _device_menu_entries(self) -> List[tuple]:
+        """(label, config value) pairs for the palette's microphone menu."""
+        entries = [(self._ctx.tr("input_device_default"), "")]
+        entries += [(device["name"], device["name"]) for device in self.selectable_input_devices()]
+        return entries
+
+    def switch_input_device(self, name: str) -> None:
+        """Record from another microphone, picked in the palette: the take starts over on it.
+
+        Audio from two devices (possibly at different sample rates) cannot be joined, so the
+        take so far is discarded, like the restart button does.
+        """
+        self._config["input_device_name"] = name
+        self._ctx.save_config()
+        if not self.is_recording or self.mac_recorder.active:
+            self.apply_input_device_selection()
+            return
+        self.microphone.device_name = ""
+        if self.keep_mic_hot():
+            # Join the reader before the stream closes; the recording flag survives the restart.
+            self.hot_mic.stop()
+            self.hot_mic.restart_recording()
+            self.hot_mic.start()
+        else:
+            self.on_demand.cancel_recording()
+            self.on_demand.start_recording()
+        self._wave_levels.clear()
+        self.is_paused = False
+        overlay = RecordingPromptOverlay._instance
+        if overlay is not None:
+            overlay.set_paused(False)
+            overlay.restart_timer()
+        logging.info(f"Input device switched during recording to {name or 'System Default'!r}; take restarted.")
 
     def level(self) -> float:
         """Current input level for the tray meter (the macOS recorder meters natively)."""
@@ -228,6 +287,8 @@ class RecordingController(QObject):
         self.is_paused = False
         self._take += 1
         self._feedback_pending = True
+        self._wave_levels.clear()
+        self._mac_device_name = ""
         self.state_changed.emit(True)
 
         if self.keep_mic_hot():
@@ -434,7 +495,8 @@ class RecordingController(QObject):
             timing.finish("silence")
             return
         audio_bytes, output_samplerate = dsp.prepare_for_upload(raw_audio, samplerate, UPLOAD_SAMPLERATE,
-                                                                self._gain_db())
+                                                                self._gain_db(),
+                                                                bool(self._config.get("gain_normalize", False)))
         timing.mark("audio_prepare_end")
         try:
             with timing.span("file_write"):
@@ -510,7 +572,15 @@ class RecordingController(QObject):
             pause_tooltip=self._ctx.tr("recording_pause_tooltip"),
             resume_tooltip=self._ctx.tr("recording_resume_tooltip"),
             digit_keys=bool(self._config.get("recording_prompt_overlay_digit_keys", True)),
+            level_feed=self.drain_wave_levels,
+            device_name=self.input_device_display_name,
+            # The native macOS recorder always uses the system default microphone.
+            devices=None if self.mac_recorder.active else self._device_menu_entries,
+            on_device_selected=None if self.mac_recorder.active else self.switch_input_device,
+            device_tooltip=self._ctx.tr("recording_device_tooltip"),
         )
+        if RecordingPromptOverlay._instance is not None:
+            RecordingPromptOverlay._instance.set_configured_device(self._config.get("input_device_name", "") or "")
         # A system-positioned palette can be far away from the user's current work. Keep the
         # original mouse-following recording status as a lightweight local reminder. When the
         # palette itself is mouse-relative, its own status label already provides that feedback.

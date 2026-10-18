@@ -2,11 +2,23 @@
 from __future__ import annotations
 
 import time
+from collections import deque
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from PyQt6.QtCore import QByteArray, QEasingCurve, QPoint, QSize, Qt, QTimer, QVariantAnimation
-from PyQt6.QtGui import QColor, QCursor, QFont, QIcon, QKeyEvent, QMouseEvent, QPainter, QPixmap
+from PyQt6.QtCore import QByteArray, QEasingCurve, QPoint, QRectF, QSize, Qt, QTimer, QVariantAnimation
+from PyQt6.QtGui import (
+    QBrush,
+    QColor,
+    QCursor,
+    QFont,
+    QIcon,
+    QKeyEvent,
+    QLinearGradient,
+    QMouseEvent,
+    QPainter,
+    QPixmap,
+)
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
@@ -15,6 +27,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLayout,
+    QMenu,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -111,6 +124,17 @@ class _PromptCard(QWidget):
             }}
             QPushButton[role="icon"]:hover {{ background-color: {pal['panel2']}; border-color: {pal['border']}; }}
             QPushButton[role="icon"]:pressed {{ background-color: {pal['hover']}; }}
+            QPushButton[role="device"] {{
+                background-color: transparent;
+                border: none;
+                border-radius: 6px;
+                padding: 1px 2px;
+                min-height: 0px;
+                font-size: 12px;
+                color: {pal['muted']};
+                text-align: left;
+            }}
+            QPushButton[role="device"]:hover {{ color: {pal['accent']}; }}
             QPushButton[role="icon"][danger="true"]:hover {{
                 background-color: {danger_tint}; border-color: {danger};
             }}
@@ -349,6 +373,98 @@ class _RecordingDot(QWidget):
         painter.drawEllipse(1, 1, 10, 10)
 
 
+class _LevelWave(QWidget):
+    """Scrolling bar waveform of the microphone level on a fixed dBFS scale.
+
+    The scale is absolute, not normalised to the loudest block: room noise and a muted or
+    wrong microphone stay as flat grey bars, and only a real voice reaches the accent colour.
+    The bars only advance while audio blocks arrive, so a stalled input visibly stops.
+    """
+
+    #: Levels at or below this draw as the minimal bar (typical laptop-mic noise sits around -60..-50).
+    FLOOR_DB = -55.0
+    #: Levels at or above this fill the full height (loud, close speech).
+    FULL_DB = -12.0
+    #: From here on a bar counts as voice and is drawn in the accent colour.
+    VOICE_DB = -40.0
+    _BAR, _GAP, _HEIGHT = 3, 2, 26
+    #: Minimum width; the card's 24 px header slack widens it to ~155 px (one second of history).
+    WIDTH = 131
+
+    def __init__(self, feed: Callable[[], List[float]], voice: QColor, noise: QColor,
+                 parent: Optional[QWidget] = None) -> None:
+        """Poll ``feed`` (new dBFS values since the last call) about 30 times per second."""
+        super().__init__(parent)
+        self.setFixedHeight(self._HEIGHT)
+        self.setMinimumWidth(120)
+        self._feed = feed
+        self._voice = QColor(voice)
+        self._noise = QColor(noise)
+        self._levels: deque[float] = deque(maxlen=200)
+        self._paused = False
+        self._timer = QTimer(self)
+        self._timer.setInterval(33)
+        self._timer.timeout.connect(self._pull)
+        self._timer.start()
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+        """Small width hint: the wave takes the card's width, it never widens the card."""
+        return QSize(self.WIDTH, self._HEIGHT)
+
+    def set_paused(self, paused: bool) -> None:
+        """Freeze the wave while the recording is paused (blocks read meanwhile are dropped)."""
+        self._paused = paused
+        self.update()
+
+    def clear(self) -> None:
+        """Start with an empty wave again (the take was started over)."""
+        self._levels.clear()
+        self.update()
+
+    def stop(self) -> None:
+        """Stop polling (the palette is closing)."""
+        self._timer.stop()
+
+    def _pull(self) -> None:
+        """Take the new levels and repaint."""
+        levels = self._feed()
+        if levels and not self._paused:
+            self._levels.extend(levels)
+            self.update()
+
+    def _fraction(self, db: float) -> float:
+        """Bar height 0..1 for a level on the fixed scale."""
+        return min(1.0, max(0.0, (db - self.FLOOR_DB) / (self.FULL_DB - self.FLOOR_DB)))
+
+    def paintEvent(self, _event: Any) -> None:  # noqa: N802 - Qt API
+        """Draw the newest levels right-aligned as mirrored rounded bars; older bars fade out."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        step = self._BAR + self._GAP
+        count = max(1, self.width() // step)
+        levels = list(self._levels)[-count:]
+        height = self.height()
+        middle = height / 2.0
+        x = self.width() - len(levels) * step + self._GAP
+        # Paused: the frozen wave keeps its shape but its colour is muted, so it no longer reads as live.
+        voice_color = self._voice
+        if self._paused:
+            voice_color = QColor.fromHsv(voice_color.hsvHue(), voice_color.hsvSaturation() // 3, voice_color.value())
+        # Voice bars glow: full colour at the centre line, lighter towards the tips.
+        voice_brush = QLinearGradient(0, 0, 0, height)
+        voice_brush.setColorAt(0.0, voice_color.lighter(150))
+        voice_brush.setColorAt(0.5, voice_color)
+        voice_brush.setColorAt(1.0, voice_color.lighter(150))
+        for i, db in enumerate(levels):
+            bar_height = max(2.0, self._fraction(db) * (height - 2))
+            # The oldest third of the strip fades in from the left edge.
+            fade = min(1.0, (x + i * step) / max(1.0, self.width() / 3.0))
+            painter.setOpacity((0.45 if self._paused else 1.0) * max(0.15, fade))
+            painter.setBrush(QBrush(voice_brush) if db >= self.VOICE_DB else QBrush(self._noise))
+            painter.drawRoundedRect(QRectF(x + i * step, middle - bar_height / 2.0, self._BAR, bar_height), 1.5, 1.5)
+
+
 class _MoveHandle(QLabel):
     """Small four-way arrow in the card's corner that marks the palette as movable.
 
@@ -391,7 +507,12 @@ class RecordingPromptOverlay(_PromptCard):
                  on_restart: Optional[Callable[[], None]] = None,
                  cancel_tooltip: str = "", restart_tooltip: str = "", move_tooltip: str = "",
                  on_pause: Optional[Callable[[], None]] = None, paused_text: str = "",
-                 pause_tooltip: str = "", resume_tooltip: str = "", digit_keys: bool = False) -> None:
+                 pause_tooltip: str = "", resume_tooltip: str = "", digit_keys: bool = False,
+                 level_feed: Optional[Callable[[], List[float]]] = None,
+                 device_name: Optional[Callable[[], str]] = None,
+                 devices: Optional[Callable[[], List[Tuple[str, str]]]] = None,
+                 on_device_selected: Optional[Callable[[str], None]] = None,
+                 device_tooltip: str = "") -> None:
         """Build the palette by the system status area or near the cursor without taking focus.
 
         The prompt marked ``auto_apply`` starts selected (otherwise "None"); only clicks report
@@ -404,6 +525,11 @@ class RecordingPromptOverlay(_PromptCard):
         registered as hotkeys, so the focus stays where it is.
         A palette placed near the cursor can be dragged by its card; a handle in the bottom-right
         corner shows that.
+        ``level_feed`` returns the dBFS levels captured since its last call; with it, a live waveform
+        takes the place of the status text and freezes, muted, while the recording is paused.
+        ``device_name`` returns the microphone being recorded from, shown in a muted line; with
+        ``devices`` (``(label, config value)`` pairs) and ``on_device_selected`` that line opens a
+        menu to switch the microphone.
         """
         if RecordingPromptOverlay._instance:
             RecordingPromptOverlay._instance.close()
@@ -440,7 +566,15 @@ class RecordingPromptOverlay(_PromptCard):
         self.status_label.setMinimumWidth(max(metrics.horizontalAdvance(self._status_text),
                                               metrics.horizontalAdvance(self._paused_text)))
         header.addWidget(self.status_label)
-        header.addStretch()
+        self.wave: Optional[_LevelWave] = None
+        if level_feed is not None:
+            self.wave = _LevelWave(level_feed, QColor(recording_red), QColor(theme.palette(dark)["muted"]), self.card)
+            # Compact on its own; when the chips make the card wider, the wave fills the gap.
+            self.wave.setMinimumWidth(_LevelWave.WIDTH)
+            header.addWidget(self.wave, 1)
+            self.status_label.hide()
+        else:
+            header.addStretch()
         self.timer_label = QLabel(self.card)
         self.timer_label.setProperty("role", "muted")
         timer_font = self.timer_label.font()
@@ -478,7 +612,26 @@ class RecordingPromptOverlay(_PromptCard):
             self.cancel_button.clicked.connect(lambda _checked=False: on_cancel())
             icons.addWidget(self.cancel_button, 0, Qt.AlignmentFlag.AlignVCenter)
         header.addLayout(controls)
-        card_layout.addLayout(header)
+        top = QVBoxLayout()
+        top.setSpacing(4)
+        top.addLayout(header)
+        self._device_name = device_name
+        self._devices = devices
+        self._on_device_selected = on_device_selected
+        self.device_button: Optional[QPushButton] = None
+        if device_name is not None:
+            self.device_button = QPushButton(self.card)
+            self.device_button.setProperty("role", "device")
+            self.device_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            if devices is not None and on_device_selected is not None:
+                self.device_button.setCursor(Qt.CursorShape.PointingHandCursor)
+                self.device_button.setToolTip(device_tooltip)
+                self.device_button.clicked.connect(lambda _checked=False: self._show_device_menu())
+            else:
+                self.device_button.setEnabled(False)
+            top.addWidget(self.device_button, 0, Qt.AlignmentFlag.AlignLeft)
+            self._update_device_name()
+        card_layout.addLayout(top)
 
         card_layout.addLayout(self._chips, 1)  # the chips take the height their lines need
         none_button = self._add_chip(none_text, checkable=True)
@@ -494,10 +647,11 @@ class RecordingPromptOverlay(_PromptCard):
         self._clock = QTimer(self)
         self._clock.setInterval(250)
         self._clock.timeout.connect(self._update_elapsed)
+        self._clock.timeout.connect(self._update_device_name)
         self._update_elapsed()
         self._clock.start()
 
-        self._fit_card(card_layout, header)
+        self._fit_card(card_layout, top)
         self.move_handle: Optional[_MoveHandle] = None
         self._grab_offset: Optional[QPoint] = None
         self._digit_keys = digit_keys and is_WINDOWS
@@ -590,6 +744,8 @@ class RecordingPromptOverlay(_PromptCard):
 
     def restart_timer(self) -> None:
         """Count the elapsed time from zero again (the take was started over)."""
+        if self.wave is not None:
+            self.wave.clear()
         self._started = time.monotonic()
         self._paused_total = 0.0
         if self._paused_since is not None:
@@ -606,6 +762,9 @@ class RecordingPromptOverlay(_PromptCard):
             self._paused_since = None
         self._dot.set_paused(paused)
         self.status_label.setText(self._paused_text if paused else self._status_text)
+        if self.wave is not None:
+            # The wave stays in place, frozen and muted, while paused.
+            self.wave.set_paused(paused)
         if self.pause_button is not None:
             self.pause_button.setIcon(self._pause_icons[paused])
             self.pause_button.setToolTip(self._pause_tooltips[paused])
@@ -616,6 +775,48 @@ class RecordingPromptOverlay(_PromptCard):
         end = self._paused_since if self._paused_since is not None else time.monotonic()
         seconds = int(end - self._started - self._paused_total)
         self.timer_label.setText(f"{seconds // 60}:{seconds % 60:02d}")
+
+    def _update_device_name(self) -> None:
+        """Show the microphone in use; it may change once the stream is (re)opened."""
+        if self.device_button is None or self._device_name is None:
+            return
+        name = self._device_name() or "…"
+        if name == self.device_button.property("device"):
+            return
+        self.device_button.setProperty("device", name)
+        arrow = " ▾" if self.device_button.isEnabled() else ""
+        max_width = self.card.width() - 2 * self._CARD_PADDING - 30 if self.card.width() > 100 else 360
+        caption = self.device_button.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight, max_width)
+        self.device_button.setText(caption + arrow)
+        if not self.device_button.isEnabled():
+            self.device_button.setToolTip(name)
+
+    def _show_device_menu(self) -> None:
+        """Offer the microphones; a pick is reported to the app, which switches and restarts the take."""
+        if self._devices is None or self._on_device_selected is None or self.device_button is None:
+            return
+        menu = QMenu(self)
+        menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        current = self.device_button.property("configured") or ""
+        for label, value in self._devices():
+            action = menu.addAction(label)
+            if action is None:
+                continue
+            action.setCheckable(True)
+            action.setChecked(value == current)
+            action.triggered.connect(partial(self._pick_device, value))
+        menu.popup(self.device_button.mapToGlobal(QPoint(0, self.device_button.height())))
+
+    def _pick_device(self, value: str, _checked: bool = False) -> None:
+        """Report the chosen microphone to the app."""
+        self.set_configured_device(value)
+        if self._on_device_selected is not None:
+            self._on_device_selected(value)
+
+    def set_configured_device(self, value: str) -> None:
+        """Remember which menu entry is the configured microphone (checked in the menu)."""
+        if self.device_button is not None:
+            self.device_button.setProperty("configured", value)
 
     def _select_prompt(self, prompt: Optional[Dict[str, Any]], selected_button: QPushButton) -> None:
         """Highlight one choice and report its palette entry (None for "None") to the app."""
@@ -669,6 +870,8 @@ class RecordingPromptOverlay(_PromptCard):
         """Stop the clock and the pulse, and clear the singleton instance."""
         self._clock.stop()
         self._dot.stop()
+        if self.wave is not None:
+            self.wave.stop()
         self._release_digit_keys()
         if RecordingPromptOverlay._instance is self:
             RecordingPromptOverlay._instance = None

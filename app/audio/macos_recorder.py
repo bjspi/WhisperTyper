@@ -7,7 +7,7 @@ import time
 from typing import Any, Optional
 
 from app.core.env import is_MACOS
-from app.platform.macos import NSURL, AVAudioRecorder
+from app.platform.macos import NSURL, AVAudioRecorder, AVCaptureDevice
 
 SAMPLERATE = 44100
 DEVICE_NAME = "macOS system microphone"
@@ -18,6 +18,17 @@ _FINALIZE_WAIT_S = 0.08
 def available() -> bool:
     """Whether the AVFoundation recorder can be used on this system."""
     return bool(is_MACOS and AVAudioRecorder and NSURL)
+
+
+def default_input_name() -> str:
+    """Name of the system default microphone AVAudioRecorder records from (generic if unknown)."""
+    try:
+        device = AVCaptureDevice.defaultDeviceWithMediaType_("soun") if AVCaptureDevice else None
+        if device is not None:
+            return str(device.localizedName())
+    except Exception:
+        pass
+    return DEVICE_NAME
 
 
 class MacRecorder:
@@ -88,6 +99,16 @@ class MacRecorder:
             except Exception as e:
                 logging.warning(f"macOS: could not delete discarded recording '{path}': {e}")
         return None
+
+    def power_dbfs(self) -> Optional[float]:
+        """Current average input power in dBFS from the recorder's meters, or None when unavailable."""
+        if not self._recorder:
+            return None
+        try:
+            self._recorder.updateMeters()
+            return float(self._recorder.averagePowerForChannel_(0))
+        except Exception:
+            return None
 
     def level(self) -> Optional[float]:
         """Current input level 0..1 from the recorder's meters, or None when unavailable."""

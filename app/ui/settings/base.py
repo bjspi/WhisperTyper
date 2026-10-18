@@ -150,6 +150,7 @@ class SettingsWindowBase(QWidget):
     language_input: QComboBox
     gain_label: QLabel
     gain_input: QLineEdit
+    gain_normalize_checkbox: QCheckBox
 
     # Rephrasing API page
     shared_api_group: QGroupBox

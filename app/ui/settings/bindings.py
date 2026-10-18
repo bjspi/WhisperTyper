@@ -67,6 +67,7 @@ BINDINGS: Tuple[Binding, ...] = (
     Binding("windows_keep_mic_hot_idle_input", "windows_keep_mic_hot_idle_minutes", "int", "windows",
             companions=("windows_keep_mic_hot_idle_label",)),
     Binding("min_recording_input", "min_recording_seconds", "float"),
+    Binding("gain_normalize_checkbox", "gain_normalize", "check"),
     # Rephrasing API (the instruction entry's settings live in the prompt list)
     Binding("rephrasing_api_url_input", "rephrasing_api_url", "text"),
     Binding("rephrasing_temp_slider", "rephrasing_temperature", "temperature",

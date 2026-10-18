@@ -189,6 +189,7 @@ class TranscriptionPipeline:
             "recording_format": request.recording_format,
             "recording_bitrate_kbps": request.recording_bitrate_kbps if request.recording_format == "aac" else None,
             "gain_db": self._config.get("gain_db"),
+            "gain_normalize": bool(self._config.get("gain_normalize", False)),
             "rephrasing_prompt": transformation_prompt,
             "transcription": None,
             "error": None,
