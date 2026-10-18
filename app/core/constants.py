@@ -111,6 +111,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "debug_logging": True,
     "file_logging": True,
     "redact_transcription_in_log": True,
+    # Ask the transcription API for confidence details (log-probabilities per segment/token, word
+    # timestamps) and write them to the log and to flagged bad recordings.
+    "transcription_diagnostics": True,
     "log_retention_days": 3,
     "proxy_url": "",
     "use_local_px_proxy": False,

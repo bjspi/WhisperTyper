@@ -5,6 +5,7 @@ caller's callbacks and translation lookup, so this module needs no Qt.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import queue
@@ -12,20 +13,22 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import httpx
 
 from app.audio.aac_encoder import available_aac_bitrates, encode_wav_to_aac
 from app.core import audio_formats
 from app.core.models import transcription_form_fields
-from app.core.redaction import redact_for_log
+from app.core.redaction import LOG_REDACTION_STATE, redact_for_log
 from app.core.textutil import clean_model_name
 from app.core.timing import OperationTiming
-from app.services import ffmpeg
+from app.services import ffmpeg, transcription_diagnostics
 from app.services.http_transport import request
 
 Translate = Callable[..., str]
+#: Text of a response and its decoded JSON body.
+_Parsed = Tuple[str, Dict[str, Any]]
 
 #: Recording formats a retained microphone WAV can be uploaded as.
 RECORDING_FORMATS = ("wav", "aac")
@@ -78,6 +81,8 @@ class TranscriptionRequest:
     #: Key for a parallel second attempt over a fresh connection when the first one stalls
     #: (the next Groq key when rotation is on, else the same key); None disables hedging.
     hedge_api_key: Optional[str] = None
+    #: Ask for confidence details (log-probabilities) where the model offers them.
+    diagnostics: bool = False
 
 
 @dataclass(frozen=True)
@@ -90,8 +95,12 @@ class _Upload:
 
 
 def transcribe(req: TranscriptionRequest, timing: OperationTiming, tr: Translate, *,
-               on_compressing: Callable[[str], None], on_transcribing: Callable[[], None]) -> str:
+               on_compressing: Callable[[str], None], on_transcribing: Callable[[], None],
+               on_diagnostics: Optional[Callable[[Dict[str, Any]], None]] = None) -> str:
     """Upload ``req.audio_path`` and return the transcription text.
+
+    With ``req.diagnostics``, the response's confidence details are logged and passed to
+    ``on_diagnostics`` before the text is returned.
 
     Raises:
         TranscriptionError: For conditions with a translated, user-facing explanation.
@@ -106,11 +115,36 @@ def transcribe(req: TranscriptionRequest, timing: OperationTiming, tr: Translate
         # Pre-processing (extraction or compression) just finished: the upload phase begins.
         if upload.temp is not None:
             on_transcribing()
-        return _send(req, upload, timing, tr)
+        text, payload = _send(req, upload, timing, tr)
     finally:
         # Remove only the temporary upload; the original recording/file stays for retries.
         if upload is not None and upload.temp:
             _remove(upload.temp)
+    if req.diagnostics:
+        _report_diagnostics(payload, timing, on_diagnostics)
+    return text
+
+
+def _report_diagnostics(payload: Dict[str, Any], timing: OperationTiming,
+                        on_diagnostics: Optional[Callable[[Dict[str, Any]], None]]) -> None:
+    """Log the confidence summary (and, unredacted, the words) and hand the details on."""
+    details = transcription_diagnostics.extract(payload)
+    if details is None:
+        logging.info("transcription_diagnostics op=%s available=false", timing.operation_id)
+        return
+    logging.info("transcription_diagnostics op=%s %s", timing.operation_id,
+                 transcription_diagnostics.summary_line(details))
+    for segment in details["segments"]:
+        logging.debug("transcription_diagnostics op=%s segment=%s-%s avg_logprob=%s no_speech_prob=%s "
+                      "compression_ratio=%s text=%s", timing.operation_id, segment["start"], segment["end"],
+                      segment["avg_logprob"], segment["no_speech_prob"], segment["compression_ratio"],
+                      redact_for_log(segment["text"]))
+    if not LOG_REDACTION_STATE.get("enabled", True):
+        # Word by word only without redaction: the words are the transcript.
+        logging.debug("transcription_diagnostics op=%s words=%s", timing.operation_id,
+                      json.dumps(details["words"], ensure_ascii=False))
+    if on_diagnostics is not None:
+        on_diagnostics(details)
 
 
 def _remove(path: str) -> None:
@@ -200,10 +234,11 @@ def _timeouts(upload_size: int) -> Tuple[float, float]:
     return min(high, max(low, upload_size / _UPLINK_BYTES_PER_S)), _READ_TIMEOUT_S
 
 
-def _send(req: TranscriptionRequest, upload: _Upload, timing: OperationTiming, tr: Translate) -> str:
-    """POST the multipart request and return the transcription text."""
+def _send(req: TranscriptionRequest, upload: _Upload, timing: OperationTiming, tr: Translate) -> _Parsed:
+    """POST the multipart request and return the transcription text with the response body."""
     model = clean_model_name(req.model)
-    data = transcription_form_fields(model, req.prompt, req.temperature, req.language.lower() if req.language else "")
+    data = transcription_form_fields(model, req.prompt, req.temperature, req.language.lower() if req.language else "",
+                                     req.diagnostics)
     log_data = dict(data)
     if "prompt" in log_data:
         log_data["prompt"] = redact_for_log(log_data["prompt"])
@@ -229,19 +264,19 @@ def _send(req: TranscriptionRequest, upload: _Upload, timing: OperationTiming, t
         # The transport returns only after reading the complete response body.
         timing.mark("transcription_response_received")
 
-    transcription = _parse(response, tr)
+    transcription, payload = _parse(response, tr)
     timing.mark("transcription_response_parsed")
     logging.info(f"Transcription result: {redact_for_log(transcription)}")
-    return transcription
+    return transcription, payload
 
 
-def _parse(response: httpx.Response, tr: Translate) -> str:
-    """The transcription text of a complete response; any non-200 status is a user-facing error."""
+def _parse(response: httpx.Response, tr: Translate) -> _Parsed:
+    """The text and JSON body of a complete response; any non-200 status is a user-facing error."""
     logging.debug(f"API response status: {response.status_code}")
     if response.status_code != 200:
         raise TranscriptionError(tr("transcription_api_error", status=response.status_code, details=response.text))
-    text: str = response.json().get("text", "")
-    return text
+    payload: Dict[str, Any] = response.json()
+    return payload.get("text", ""), payload
 
 
 def hedge_thresholds(upload_bytes: int) -> Tuple[float, float]:
@@ -253,7 +288,7 @@ def hedge_thresholds(upload_bytes: int) -> Tuple[float, float]:
 
 def _send_hedged(req: TranscriptionRequest, upload: _Upload, timing: OperationTiming, tr: Translate,
                  data: Dict[str, object], filename: str, content_type: str,
-                 timeouts: Tuple[float, float]) -> str:
+                 timeouts: Tuple[float, float]) -> _Parsed:
     """Send like ``_send``; if the upload or the response stalls, race a second attempt.
 
     The second attempt uses ``req.hedge_api_key`` over a fresh connection, so a pooled connection
@@ -263,7 +298,7 @@ def _send_hedged(req: TranscriptionRequest, upload: _Upload, timing: OperationTi
     """
     with open(upload.path, 'rb') as audio_file:
         body = audio_file.read()  # Each attempt sends this buffer; no file handle is shared.
-    results: "queue.SimpleQueue[Tuple[int, Optional[str], Optional[Exception]]]" = queue.SimpleQueue()
+    results: "queue.SimpleQueue[Tuple[int, Optional[_Parsed], Optional[Exception]]]" = queue.SimpleQueue()
     uploaded, answered, hedged = threading.Event(), threading.Event(), threading.Event()
     uploaded_at: List[float] = []
     finished_ms: Dict[int, float] = {}
@@ -286,7 +321,7 @@ def _send_hedged(req: TranscriptionRequest, upload: _Upload, timing: OperationTi
                 proxies=req.proxies, timeout=timeouts, fresh_connection=fresh,
                 on_phase=watch if index == 1 else None,
             )
-            outcome: Tuple[int, Optional[str], Optional[Exception]] = (index, _parse(response, tr), None)
+            outcome: Tuple[int, Optional[_Parsed], Optional[Exception]] = (index, _parse(response, tr), None)
         except Exception as error:
             outcome = (index, None, error)
         finished_ms[index] = (time.monotonic() - started) * 1000
@@ -313,7 +348,7 @@ def _send_hedged(req: TranscriptionRequest, upload: _Upload, timing: OperationTi
         else:
             remaining = max(0.0, started + upload_budget - time.monotonic())
         try:
-            _index, text, error = results.get(timeout=remaining)
+            _index, parsed, error = results.get(timeout=remaining)
         except queue.Empty:
             # Hedge only once the deadline of the current phase has passed; an upload that finished
             # while waiting starts the response deadline instead.
@@ -326,7 +361,7 @@ def _send_hedged(req: TranscriptionRequest, upload: _Upload, timing: OperationTi
             elif now >= started + upload_budget:
                 trigger = "upload"
             continue
-        return _finish(timing, text, error, winner=1, trigger="")
+        return _finish(timing, parsed, error, winner=1, trigger="")
 
     hedged.set()
     timing.mark("transcription_hedge_started")
@@ -335,16 +370,16 @@ def _send_hedged(req: TranscriptionRequest, upload: _Upload, timing: OperationTi
     launch(2, req.hedge_api_key or req.api_key, "transcription_hedge", True)
     errors: List[Exception] = []
     for _ in range(2):
-        index, text, error = results.get()
+        index, parsed, error = results.get()
         if error is None:
-            return _finish(timing, text, None, winner=index, trigger=trigger, winner_ms=finished_ms.get(index))
+            return _finish(timing, parsed, None, winner=index, trigger=trigger, winner_ms=finished_ms.get(index))
         errors.append(error)
     logging.info("transcription_hedge op=%s trigger=%s winner=none", timing.operation_id, trigger)
     raise errors[0]
 
 
-def _finish(timing: OperationTiming, text: Optional[str], error: Optional[Exception],
-            winner: int, trigger: str, winner_ms: Optional[float] = None) -> str:
+def _finish(timing: OperationTiming, parsed: Optional[_Parsed], error: Optional[Exception],
+            winner: int, trigger: str, winner_ms: Optional[float] = None) -> _Parsed:
     """Complete the operation with the winning attempt's outcome (``trigger`` empty: no hedge ran)."""
     timing.mark("transcription_response_received")
     if trigger:
@@ -353,7 +388,7 @@ def _finish(timing: OperationTiming, text: Optional[str], error: Optional[Except
                      winner, "?" if winner_ms is None else f"{winner_ms:.0f}")
     if error is not None:
         raise error
-    transcription = text or ""
+    transcription, payload = parsed or ("", {})
     timing.mark("transcription_response_parsed")
     logging.info(f"Transcription result: {redact_for_log(transcription)}")
-    return transcription
+    return transcription, payload

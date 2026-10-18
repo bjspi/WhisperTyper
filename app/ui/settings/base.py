@@ -211,6 +211,7 @@ class SettingsWindowBase(QWidget):
     debug_logging_checkbox: QCheckBox
     file_logging_checkbox: QCheckBox
     redact_log_checkbox: QCheckBox
+    transcription_diagnostics_checkbox: QCheckBox
     systray_double_click_copy_checkbox: QCheckBox
     recording_prompt_overlay_system_position_checkbox: QCheckBox
     recording_prompt_overlay_digit_keys_checkbox: QCheckBox
