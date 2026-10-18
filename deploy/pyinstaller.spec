@@ -78,15 +78,20 @@ excludes = [
 ]
 
 def get_app_data_files():
-    """Recursively find all files in ../app and prepare them for PyInstaller's 'datas'."""
+    """Collect the data the app reads at run time (app/lang, app/resources) for PyInstaller's 'datas'.
+
+    The Python sources are already compiled into the archive; only these folders are looked
+    up through resource_path()/i18n and must exist as files inside the bundle.
+    """
     data_files = []
-    app_dir = os.path.join('..', 'app')
-    for root, dirs, files in os.walk(app_dir):
-        for file in files:
-            file_path = os.path.join(root, file)
-            # Destination path inside the bundle should be relative to app_dir
-            dest_dir = os.path.relpath(root, '..')
-            data_files.append((file_path, dest_dir))
+    for data_dir in ('lang', 'resources'):
+        for root, dirs, files in os.walk(os.path.join('..', 'app', data_dir)):
+            dirs[:] = [d for d in dirs if d != '__pycache__']
+            for file in files:
+                file_path = os.path.join(root, file)
+                # Destination path inside the bundle should be relative to the project root
+                dest_dir = os.path.relpath(root, '..')
+                data_files.append((file_path, dest_dir))
     return data_files
 
 a = Analysis(

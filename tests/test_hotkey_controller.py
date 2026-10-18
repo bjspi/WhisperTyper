@@ -22,10 +22,44 @@ def qapp():
     return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 
-def controller():
+def controller(config=None, hotkey="<ctrl>+<f8>"):
     recording = SimpleNamespace(is_recording=False, push_to_talk_active=False)
-    ctx = SimpleNamespace(config={}, tr=lambda key, **_kw: key)
-    return hotkey_controller.HotkeyController(ctx, recording, Mock())
+    ctx = SimpleNamespace(config=config or {}, tr=lambda key, **_kw: key)
+    hk = hotkey_controller.HotkeyController(ctx, recording, Mock())
+    hk.bindings = [hotkeys.parse_hotkey_binding(hotkey, "transcription")]
+    hk._manual_bindings = list(hk.bindings)
+    return hk
+
+
+def pynput_key(name):
+    return SimpleNamespace(name=name, char=None, vk=None)
+
+
+def test_push_to_talk_quick_tap_stops_before_the_gui_thread_started_recording(qapp):
+    hk = controller({"push_to_talk": True})
+    actions = []
+    hk.action_triggered.connect(lambda action, _ns: actions.append(action))
+    hk._on_press(pynput_key("ctrl"))
+    hk._on_press(pynput_key("f8"))
+    assert actions == ["transcription"] and hk._recording.push_to_talk_active
+    # The key-up arrives on the listener thread while is_recording is still False.
+    hk._on_release(pynput_key("f8"))
+    assert actions == ["transcription", "stop_transcription"]
+    assert not hk._recording.push_to_talk_active
+
+
+def test_stale_pressed_keys_are_dropped_before_a_new_press(qapp, monkeypatch):
+    hk = controller()
+    actions = []
+    hk.action_triggered.connect(lambda action, _ns: actions.append(action))
+    clock = [100.0]
+    monkeypatch.setattr(hotkey_controller.time, "monotonic", lambda: clock[0])
+    hk._on_press(pynput_key("alt"))  # its key-up gets lost (UAC prompt, lock screen)
+    clock[0] += hotkey_controller._STALE_PRESSED_S + 1
+    hk._on_press(pynput_key("ctrl"))
+    assert hk._pressed == {"<ctrl>"}
+    hk._on_press(pynput_key("f8"))
+    assert actions == ["transcription"]
 
 
 def test_own_injected_keystrokes_are_never_suppressed():

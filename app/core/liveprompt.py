@@ -6,6 +6,7 @@ the sentence to the chat model instead of typing it out verbatim).
 """
 from __future__ import annotations
 
+import re
 from typing import List, Optional
 
 #: Leading separators/punctuation stripped from the instruction after the trigger word.
@@ -17,13 +18,18 @@ def parse_trigger_words(trigger_words_csv: str) -> List[str]:
     return [word.strip() for word in (trigger_words_csv or "").lower().split(",") if word.strip()]
 
 
+def _trigger_pattern(trigger: str) -> re.Pattern[str]:
+    """Case-insensitive pattern for a trigger as a whole word, so "ki" does not fire on "Kinder"."""
+    return re.compile(rf"(?<!\w){re.escape(trigger)}(?!\w)", re.IGNORECASE)
+
+
 def contains_trigger(text: str, trigger_words: List[str], scan_depth: int) -> bool:
     """Return True if any trigger word occurs within the first ``scan_depth`` words of ``text``."""
     if not trigger_words:
         return False
     words_to_check = text.split()[:max(0, scan_depth)]
-    text_to_check = " ".join(words_to_check).lower()
-    return any(trigger in text_to_check for trigger in trigger_words)
+    text_to_check = " ".join(words_to_check)
+    return any(_trigger_pattern(trigger).search(text_to_check) for trigger in trigger_words if trigger)
 
 
 def strip_trigger(text: str, trigger_words: List[str]) -> str:
@@ -33,14 +39,13 @@ def strip_trigger(text: str, trigger_words: List[str]) -> str:
     separators/punctuation (e.g. "Das bitte als Anweisung. Schreib …" -> "Schreib …").
     Falls back to the full text if no trigger is found or the result would be empty.
     """
-    lower = text.lower()
     best_end: Optional[int] = None
     for trigger in trigger_words:
         if not trigger:
             continue
-        idx = lower.find(trigger)
-        if idx != -1 and (best_end is None or idx + len(trigger) < best_end):
-            best_end = idx + len(trigger)
+        match = _trigger_pattern(trigger).search(text)
+        if match and (best_end is None or match.end() < best_end):
+            best_end = match.end()
     if best_end is None:
         return text
     remainder = text[best_end:].lstrip(_TRIGGER_SEPARATORS)

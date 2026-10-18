@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import time
 from typing import Any, Callable, Dict, Tuple
 
 from app.core.api_keys import migrate_api_keys
@@ -39,6 +41,13 @@ _LEGACY_LIVEPROMPT_FIELDS = {
     "rephrase_use_selection_context": "use_selection_context",
 }
 
+#: Keys the migrations index or compute with; a hand-edited value of another type counts as missing.
+_EXPECTED_TYPES: Dict[str, Any] = {
+    "prompt": str, "hotkey": str, "post_rephrase_hotkey": str, "ui_language": str,
+    "api_endpoint": str, "rephrasing_api_url": str, "post_rephrasing_entries": list,
+    "config_schema_version": int, "window_width": (int, float), "window_height": (int, float),
+}
+
 
 class ConfigStore:
     """Reads/writes the JSON config file and applies backward-compatible migrations."""
@@ -60,33 +69,69 @@ class ConfigStore:
             (config, changed): the resolved config dict and whether anything was migrated or
             defaulted (in which case the caller should persist it back via ``save``).
         """
-        loaded_config: Dict[str, Any] = {}
+        loaded_config: Any = {}
         try:
             # Match save()'s utf-8 encoding so non-ASCII prompts (e.g. German umlauts) load
             # correctly on platforms whose default encoding is not utf-8.
             with open(self.config_file, 'r', encoding='utf-8') as f:
                 loaded_config = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            # File doesn't exist or is corrupted, will proceed with defaults
-            pass
+        except FileNotFoundError:
+            pass  # First start: proceed with defaults.
+        except (OSError, ValueError) as e:  # unreadable, invalid JSON or not UTF-8
+            self._set_aside_corrupt_file(str(e))
+            loaded_config = {}
+        if not isinstance(loaded_config, dict):
+            self._set_aside_corrupt_file("top-level JSON value is not an object")
+            loaded_config = {}
 
         changed = self._migrate(loaded_config)
         return loaded_config, changed
 
-    def save(self, config: Dict[str, Any]) -> None:
-        """Write the current configuration to the JSON file."""
+    def _set_aside_corrupt_file(self, reason: str) -> None:
+        """Keep an unusable config file under a dated name, so the defaults saved next never erase it."""
+        backup = f"{self.config_file}.corrupt-{time.strftime('%Y%m%d-%H%M%S')}"
         try:
-            with open(self.config_file, 'w', encoding='utf-8') as f:
+            os.replace(self.config_file, backup)
+        except OSError as e:
+            logging.error(f"Config file {self.config_file} is unusable ({reason}) and could not be set aside: {e}")
+            return
+        logging.warning(f"Config file is unusable ({reason}); kept as {backup}, using defaults.")
+
+    def save(self, config: Dict[str, Any]) -> None:
+        """Write the current configuration to the JSON file.
+
+        The JSON goes to a sibling ``.tmp`` file first and replaces the config in one step, so a
+        crash while writing leaves the previous file intact.
+        """
+        tmp_file = self.config_file + ".tmp"
+        try:
+            directory = os.path.dirname(self.config_file)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            with open(tmp_file, 'w', encoding='utf-8') as f:
                 # ensure_ascii=False keeps the file human-readable UTF-8 (ü, é, …) and,
                 # paired with the utf-8 read above, avoids the classic mojibake round-trip.
                 json.dump(config, f, indent=4, ensure_ascii=False)
+            os.replace(tmp_file, self.config_file)
             logging.info(f"Configuration saved to {self.config_file}")
         except Exception as e:
             logging.error(f"Failed to save configuration: {e}")
+            try:
+                os.remove(tmp_file)
+            except OSError:
+                pass
 
     def _migrate(self, cfg: Dict[str, Any]) -> bool:
         """Apply all in-place migrations/defaults to ``cfg``; return True if it changed."""
         changed = False
+
+        # A hand-edited value of the wrong type (e.g. "window_height": "abc") is treated as missing.
+        for key, expected in _EXPECTED_TYPES.items():
+            if key in cfg and not isinstance(cfg[key], expected):
+                logging.warning("Config value %s has an unexpected type (%s); using the default.",
+                                key, type(cfg[key]).__name__)
+                del cfg[key]
+                changed = True
 
         # Migrate old 'language' key to 'input_language'
         if "language" in cfg and "input_language" not in cfg:
@@ -163,15 +208,17 @@ class ConfigStore:
         # Self-heal hotkeys polluted by a captured control char. If "Set hotkey" was active while
         # the key's own global action fired, its simulated Ctrl+C (\x03) got captured too, saving
         # garbage like "<ctrl>+\x03+<f9>+c" (shown as "<ctrl>++<f9>+c") that no longer binds.
+        # Only the bad tokens are dropped; the default steps in when nothing usable remains.
         for hk_key in ("hotkey", "post_rephrase_hotkey"):
             hk_val = cfg.get(hk_key, "")
             if isinstance(hk_val, str) and any(ord(ch) < 32 for ch in hk_val):
-                cfg[hk_key] = DEFAULT_CONFIG.get(hk_key, "")
+                kept = "+".join(part for part in hk_val.split("+") if not any(ord(ch) < 32 for ch in part))
+                cfg[hk_key] = kept if self._normalize_hotkey(kept) else DEFAULT_CONFIG.get(hk_key, "")
                 changed = True
 
         for hk_key in ("hotkey", "post_rephrase_hotkey"):
             hk_val = cfg.get(hk_key, "")
-            normalized = self._normalize_hotkey(hk_val)
+            normalized = self._normalize_hotkey(hk_val) if isinstance(hk_val, str) else ""
             if hk_val and normalized and normalized != hk_val:
                 cfg[hk_key] = normalized
                 changed = True

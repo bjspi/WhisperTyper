@@ -15,13 +15,33 @@ _CONSOLE_WINDOW_CLASSES = frozenset({
     "ConsoleWindowClass", "CASCADIA_HOSTING_WINDOW_CLASS", "VirtualConsoleClass", "mintty",
 })
 
+#: user32 loaded once with the signatures of the functions used here; see ``_user32_api``.
+_user32: Any = None
+
+
+def _user32_api() -> Any:
+    """The user32 library (Windows only), created on first use with ``argtypes``/``restype`` declared."""
+    global _user32
+    if _user32 is None:
+        user32 = ctypes.WinDLL("user32")
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        user32.GetForegroundWindow.argtypes = []
+        user32.GetClassNameW.restype = ctypes.c_int
+        user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        user32.RegisterHotKey.restype = wintypes.BOOL
+        user32.RegisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.UINT, wintypes.UINT]
+        user32.UnregisterHotKey.restype = wintypes.BOOL
+        user32.UnregisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int]
+        _user32 = user32
+    return _user32
+
 
 def is_console_foreground_window() -> bool:
     """Whether the foreground window is a console/terminal host (where Ctrl+C would interrupt)."""
     if not is_WINDOWS:
         return False
     try:
-        user32 = ctypes.WinDLL("user32")
+        user32 = _user32_api()
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
             return False
@@ -38,7 +58,7 @@ def register_window_hotkey(hwnd: int, hotkey_id: int, vk: int) -> bool:
     if not is_WINDOWS:
         return False
     try:
-        return bool(ctypes.WinDLL("user32").RegisterHotKey(wintypes.HWND(hwnd), hotkey_id, MOD_NOREPEAT, vk))
+        return bool(_user32_api().RegisterHotKey(wintypes.HWND(hwnd), hotkey_id, MOD_NOREPEAT, vk))
     except Exception as e:
         logging.debug(f"RegisterHotKey failed for vk={vk:#x}: {e}")
         return False
@@ -49,7 +69,7 @@ def unregister_window_hotkey(hwnd: int, hotkey_id: int) -> None:
     if not is_WINDOWS:
         return
     try:
-        ctypes.WinDLL("user32").UnregisterHotKey(wintypes.HWND(hwnd), hotkey_id)
+        _user32_api().UnregisterHotKey(wintypes.HWND(hwnd), hotkey_id)
     except Exception as e:
         logging.debug(f"UnregisterHotKey failed for id={hotkey_id}: {e}")
 

@@ -93,7 +93,9 @@ def normalize_hotkey_part(part: str) -> str:
         return ""
     if normalized.startswith("<") and normalized.endswith(">"):
         normalized = normalized[1:-1]
-    normalized = normalized.replace(" ", "").replace("-", "_")
+    normalized = normalized.replace(" ", "")
+    if len(normalized) > 1:  # alias spellings such as 'caps-lock'; the minus key itself stays '-'
+        normalized = normalized.replace("-", "_")
     normalized = _ALIAS_MAP.get(normalized, normalized)
     if re.fullmatch(r"f\d{1,2}", normalized) or normalized in _SPECIAL_TOKENS:
         return f"<{normalized}>"

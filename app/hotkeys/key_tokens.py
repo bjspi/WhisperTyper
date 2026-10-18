@@ -65,7 +65,9 @@ def pynput_key_tokens(key: Any) -> Set[str]:
     if is_WINDOWS and key_name == "alt_r":
         tokens.update({"<alt_gr>", "<alt>", "<ctrl>"})
     char = getattr(key, "char", None)
-    if char:
+    # Ctrl+<letter> arrives as a control character (Windows reports Ctrl+C as '\x03'); such a
+    # char would be saved into the hotkey as garbage. The virtual-key code still names the key.
+    if char and char.isprintable() and not char.isspace():
         tokens.add(char.lower())
     # Only Windows reports virtual-key codes here; macOS hardware keycodes would turn e.g. 't' into <ctrl>.
     vk_token = hotkeys.vk_to_key_token(getattr(key, "vk", None)) if is_WINDOWS else None

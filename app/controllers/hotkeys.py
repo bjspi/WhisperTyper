@@ -28,6 +28,8 @@ from app.ui.durations import BALLOON_WARNING_MS
 
 #: macOS: an armed post-rephrase whose keys are released later than this is dropped.
 _RELEASE_ACTION_TIMEOUT_S = 3.0
+#: Keys still "held" with no key event for this long were lost (UAC prompt, lock screen) and are dropped.
+_STALE_PRESSED_S = 10.0
 
 
 class RecordingState(Protocol):
@@ -56,6 +58,8 @@ class HotkeyController(QObject):
         self._manual_bindings: List[Dict[str, Any]] = []
         self._pressed: Set[str] = set()
         self._active_actions: Set[str] = set()
+        #: Monotonic time of the last press/release seen by the manual listener.
+        self._last_event_at = 0.0
         #: macOS: actions armed on press (with arm time) that fire once their keys are released.
         self._release_actions: Dict[str, float] = {}
         #: macOS: global callbacks stay muted until this time after a capture (monotonic seconds).
@@ -180,12 +184,16 @@ class HotkeyController(QObject):
         return self._is_push_to_talk_release(key_tokens)
 
     def _is_push_to_talk_release(self, released_tokens: Set[str]) -> bool:
-        """Whether ``released_tokens`` end the push-to-talk recording that is running now."""
+        """Whether ``released_tokens`` end the push-to-talk recording started by the hotkey.
+
+        Only ``push_to_talk_active`` counts: a quick tap releases the key before the GUI thread
+        has processed the queued start and set ``is_recording``; start and stop are queued in
+        order, and the stop handler itself ignores a recording that never started.
+        """
         transcription_binding = self._binding_for("transcription")
         return bool(
             self._config.get("push_to_talk", False)
             and self._recording.push_to_talk_active
-            and self._recording.is_recording
             and transcription_binding
             and released_tokens.intersection(hotkeys.binding_release_tokens(transcription_binding))
         )
@@ -213,6 +221,13 @@ class HotkeyController(QObject):
             return
         if is_MACOS and (self.capturing or time.monotonic() < self._muted_until):
             return  # macOS keeps the listener running during capture (see start_capture)
+        now = time.monotonic()
+        if self._pressed and now - self._last_event_at > _STALE_PRESSED_S:
+            # The key-up of these keys never arrived; a stuck modifier would swallow this combo.
+            logging.debug(f"Dropping stale pressed keys {sorted(self._pressed)} before the new press.")
+            self._pressed = set()
+            self._active_actions = set()
+        self._last_event_at = now
         self._pressed.update(key_tokens)
 
         # Snapshot the binding list: the main thread swaps in a new list on re-init.
@@ -242,6 +257,7 @@ class HotkeyController(QObject):
             return
         if is_MACOS and (self.capturing or time.monotonic() < self._muted_until):
             return
+        self._last_event_at = time.monotonic()
         if self._is_push_to_talk_release(released_tokens):
             logging.info("Push-to-talk hotkey released. Stopping recording.")
             self._recording.push_to_talk_active = False

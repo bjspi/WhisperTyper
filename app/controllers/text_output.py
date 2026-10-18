@@ -88,7 +88,8 @@ class TextOutput(QObject):
         """
         Retrieves the currently selected text from any application by copying it to the clipboard.
         The clipboard is cleared first so a selection equal to the old clipboard is still detected;
-        the original clipboard is restored if configured.
+        the original clipboard is always restored afterwards (the ``restore_clipboard`` option
+        only concerns the pasted output text).
 
         Args:
             select_all_first (bool): Whether to trigger a platform-aware "select all"
@@ -101,8 +102,7 @@ class TextOutput(QObject):
         selected_text = ""
         snapshot: Optional[ClipboardSnapshot] = None
         try:
-            if self._config["restore_clipboard"]:
-                snapshot = self._capture_clipboard_state()
+            snapshot = self._capture_clipboard_state()
             if select_all_first:
                 logging.debug("Selecting all text in the focused field before copying selection.")
                 self._simulate_key_combination('a')

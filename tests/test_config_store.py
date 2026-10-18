@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -45,12 +46,36 @@ class TestLoad:
         write_config(store, {"prompt": "Mein eigener Prompt."})
         assert store.load()[0]["prompt"] == "Mein eigener Prompt."
 
-    def test_corrupt_file_yields_defaults(self, store: ConfigStore):
-        with open(store.config_file, "w", encoding="utf-8") as f:
-            f.write("{not valid json")
+    @pytest.mark.parametrize("content", [
+        b"{not valid json",
+        '{"prompt": "führt"}'.encode("cp1252"),  # not UTF-8
+        b'["a", "list"]',
+    ])
+    def test_unusable_file_yields_defaults_and_is_kept_aside(self, store: ConfigStore, content: bytes):
+        with open(store.config_file, "wb") as f:
+            f.write(content)
         config, changed = store.load()
         assert changed is True
         assert config["api_endpoint"] == DEFAULT_CONFIG["api_endpoint"]
+        kept = [name for name in os.listdir(os.path.dirname(store.config_file)) if ".corrupt-" in name]
+        assert len(kept) == 1 and kept[0].startswith("config.json.corrupt-")
+        assert not os.path.exists(store.config_file)
+        with open(os.path.join(os.path.dirname(store.config_file), kept[0]), "rb") as f:
+            assert f.read() == content
+
+    @pytest.mark.parametrize("key,value", [
+        ("hotkey", None), ("post_rephrase_hotkey", 9), ("window_height", "abc"), ("window_width", None),
+        ("prompt", ["x"]), ("post_rephrasing_entries", 3), ("config_schema_version", "3"),
+    ])
+    def test_wrong_typed_value_counts_as_missing(self, store: ConfigStore, key: str, value):
+        write_config(store, {key: value, "api_key": "sk-keep"})
+        config, changed = store.load()
+        assert changed is True
+        if key == "post_rephrasing_entries":
+            assert config[key] == [default_instruction_entry(DEFAULT_CONFIG["ui_language"])]
+        else:
+            assert config[key] == DEFAULT_CONFIG[key]
+        assert selected_api_key(config, "transcription") == "sk-keep"
 
     def test_existing_values_are_preserved(self, store: ConfigStore):
         write_config(store, {"api_key": "sk-test", "config_schema_version": CONFIG_SCHEMA_VERSION})
@@ -149,8 +174,13 @@ class TestMigrations:
         assert changed is True
         assert config["post_rephrasing_entries"][0]["show_during_recording"] is False
 
-    def test_hotkey_with_control_chars_is_reset_to_default(self, store: ConfigStore):
+    def test_control_char_tokens_are_dropped_from_a_hotkey(self, store: ConfigStore):
         write_config(store, {"hotkey": "<ctrl>+\x03+<f9>+c"})
+        config, _ = store.load()
+        assert config["hotkey"] == "<ctrl>+<f9>+c"
+
+    def test_hotkey_of_only_control_chars_falls_back_to_default(self, store: ConfigStore):
+        write_config(store, {"hotkey": "\x03+\x16"})
         config, _ = store.load()
         assert config["hotkey"] == DEFAULT_CONFIG["hotkey"]
 
@@ -176,6 +206,27 @@ class TestMigrations:
 
 
 class TestSaveRoundtrip:
+    def test_interrupted_write_keeps_the_previous_file(self, store: ConfigStore, monkeypatch):
+        config, _ = store.load()
+        config["prompt"] = "kept"
+        store.save(config)
+
+        def crash(*_args, **_kwargs):
+            raise RuntimeError("disk full")
+
+        monkeypatch.setattr("app.core.config_store.json.dump", crash)
+        config["prompt"] = "lost"
+        store.save(config)
+        with open(store.config_file, encoding="utf-8") as f:
+            assert json.load(f)["prompt"] == "kept"
+        assert not os.path.exists(store.config_file + ".tmp")
+
+    def test_save_creates_a_missing_directory(self, tmp_path: Path):
+        store = ConfigStore(str(tmp_path / "new" / "dir" / "config.json"), normalize_hotkey_string)
+        config, _ = store.load()
+        store.save(config)
+        assert store.load()[1] is False
+
     def test_utf8_roundtrip(self, store: ConfigStore):
         config, _ = store.load()
         config["prompt"] = "Bitte übersetze — dies ist ein Test 🚀"
