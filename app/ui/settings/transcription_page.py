@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+from typing import Optional
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy
@@ -25,7 +27,7 @@ _PROMPT_FRAME_PX = 14
 #: Quality fallback modes and their caption keys, in dropdown order.
 _SECOND_PASS_MODES = (("off", "second_pass_mode_off"), ("doubtful", "second_pass_mode_doubtful"),
                       ("always", "second_pass_mode_always"))
-#: Pause after the last keystroke before probing the FFmpeg path (a blocking subprocess).
+#: Pause after the last keystroke before probing the FFmpeg path (a subprocess per probe).
 _FFMPEG_PROBE_DEBOUNCE_MS = 400
 
 
@@ -153,11 +155,16 @@ class TranscriptionPage(SettingsWindowBase):
         self.ffmpeg_path_input = QLineEdit(self)
         self.ffmpeg_browse_button = QPushButton(self)
         self.ffmpeg_browse_button.clicked.connect(self._browse_ffmpeg_path)
-        # The probe runs `ffmpeg -version` as a blocking subprocess: debounce it while typing.
+        # The probe runs `ffmpeg -version` in a background thread: debounce it while typing, and
+        # only the newest probe's result is shown.
         self._ffmpeg_status_debounce = QTimer(self)
         self._ffmpeg_status_debounce.setSingleShot(True)
         self._ffmpeg_status_debounce.setInterval(_FFMPEG_PROBE_DEBOUNCE_MS)
         self._ffmpeg_status_debounce.timeout.connect(self._refresh_ffmpeg_status)
+        self._ffmpeg_probe_generation = 0
+        self._ffmpeg_version: Optional[str] = None
+        self._ffmpeg_probed = False
+        self.ffmpeg_version_ready.connect(self._apply_ffmpeg_version)
 
         ffmpeg_row = QHBoxLayout()
         ffmpeg_row.addWidget(self.ffmpeg_path_input)
@@ -182,8 +189,34 @@ class TranscriptionPage(SettingsWindowBase):
             self.ffmpeg_path_input.setText(path)
 
     def _refresh_ffmpeg_status(self) -> None:
-        """Probe the configured path / PATH and show whether FFmpeg is available."""
-        version = probe_version(resolve_ffmpeg(self.ffmpeg_path_input.text()))
+        """Probe the configured path / PATH in the background; ``ffmpeg_version_ready`` brings the result."""
+        self._ffmpeg_probe_generation += 1
+        generation = self._ffmpeg_probe_generation
+        configured = self.ffmpeg_path_input.text()
+
+        def probe() -> None:
+            version = probe_version(resolve_ffmpeg(configured))
+            try:
+                self.ffmpeg_version_ready.emit((generation, version))
+            except RuntimeError:
+                pass  # the window was deleted while the probe ran
+
+        threading.Thread(target=probe, name="FfmpegProbe", daemon=True).start()
+
+    def _apply_ffmpeg_version(self, result: tuple[int, Optional[str]]) -> None:
+        """Keep the newest probe's version (an older probe may finish later) and show it."""
+        generation, version = result
+        if generation != self._ffmpeg_probe_generation:
+            return
+        self._ffmpeg_version = version
+        self._ffmpeg_probed = True
+        self._render_ffmpeg_status()
+
+    def _render_ffmpeg_status(self) -> None:
+        """Show the cached probe result in the current language; nothing until the first probe is done."""
+        if not self._ffmpeg_probed:
+            return
+        version = self._ffmpeg_version
         if version:
             self.ffmpeg_status_label.setText(self.translator.tr("ffmpeg_status_detected", version=version))
         else:

@@ -129,6 +129,23 @@ class TransformationsEditor(QObject):
         if self.list.count():
             self.list.setCurrentRow(0)
 
+    def load(self, entries: Any) -> None:
+        """Replace everything shown with ``entries`` (the saved ones, when unsaved edits are dropped)."""
+        self._loading = True
+        self.list.clear()
+        self._entries = {}
+        self._current_id = None
+        self._loading = False
+        for entry in load_transformations(entries):
+            self._entries[uuid.uuid4().hex] = entry
+        for entry_id in self._entries:
+            self._append_item(entry_id)
+        self._load_editor(None)
+        if self.list.count():
+            self.list.setCurrentRow(0)  # loads the editor and emits ``changed``
+        else:
+            self.changed.emit()
+
     def entries(self) -> List[Dict[str, Any]]:
         """Commit the visible edits and return the entries in display order."""
         self._commit_editor()

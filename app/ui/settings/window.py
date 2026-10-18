@@ -1,13 +1,14 @@
 """The settings window: composes the pages, loads/saves the form and announces changes."""
 from __future__ import annotations
 
+import copy
 import logging
 import os
 import time
-from typing import Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 from PyQt6 import uic
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QSignalBlocker, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QCloseEvent
 from PyQt6.QtWidgets import QApplication, QMenuBar, QMessageBox, QSizePolicy, QStyle
 
@@ -37,6 +38,8 @@ from app.ui.tray_icons import app_icon
 
 #: Default window width on first launch (the height default lives in the config).
 _DEFAULT_WINDOW_WIDTH = 760
+#: Config keys the pages mirror into the live config before Save; closing without Save restores them.
+_LIVE_MIRRORED_KEYS = ("post_rephrasing_entries", "ui_language")
 
 
 class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, ThemePage):
@@ -87,6 +90,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self._connect_general_page()
         self._init_api_settings()
         self._sync_transformations_to_config()  # Store the normalized templates once.
+        self._snapshot_live_config()
         self._connection_tester = ConnectionTester(self)
         self.test_transcription_api_button.clicked.connect(self._connection_tester.test_transcription)
         self.test_rephrasing_api_button.clicked.connect(self._connection_tester.test_rephrasing)
@@ -204,8 +208,24 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self.config["post_rephrasing_entries"] = self._transformations.entries()
         self._refresh_api_state()
 
+    def _snapshot_live_config(self) -> None:
+        """Remember the saved values of the live-mirrored keys (taken after loading and after each Save)."""
+        self._live_snapshot: Dict[str, Any] = {key: copy.deepcopy(self.config.get(key)) for key in _LIVE_MIRRORED_KEYS}
+
+    def _discard_live_edits(self) -> None:
+        """Put the live-mirrored keys back to their saved values and reload the pages showing them."""
+        language = self._live_snapshot["ui_language"]
+        if self.config.get("ui_language") != language:
+            with QSignalBlocker(self.ui_language_selector):
+                self.ui_language_selector.setCurrentIndex(max(0, self.ui_language_selector.findData(language)))
+            self.change_language(language)
+        entries = self._live_snapshot["post_rephrasing_entries"]
+        if self.config.get("post_rephrasing_entries") != entries:
+            self._transformations.load(copy.deepcopy(entries))  # emits ``changed``, which mirrors them back
+
     def refresh_actions(self) -> None:
         """Enable the file actions only when their files exist."""
+        self.open_log_file_action.setEnabled(self._files.log_file_exists())
         self.play_last_recording_action.setEnabled(self.ctx.recordings.exists())
         latest = self.ctx.recordings.latest()
         self.brand_play_button.setEnabled(latest is not None)
@@ -248,7 +268,6 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         if generation == self._playback_generation:
             self._playing_path = None
             self.set_playback_active(False)
-        self.open_log_file_action.setEnabled(self._files.log_file_exists())
 
     # --- Save ----------------------------------------------------------------------------
     def save_settings(self) -> None:
@@ -283,6 +302,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         hotkeys_changed = self._apply_pending_hotkeys()
 
         self.ctx.save_config()
+        self._snapshot_live_config()
         self.update_brand_header()
         if hotkeys_changed:
             self.hotkeys_changed.emit()
@@ -348,10 +368,9 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         for button in (self.test_internet_button, self.test_transcription_api_button, self.test_rephrasing_api_button):
             fit_button_to_captions(button, tr("api_test_testing_button"))
         self._update_recording_format_controls()
-        self._refresh_ffmpeg_status()
-        # The texts table sets the general temperature tooltip; models without temperature say why.
-        self._update_prompt_token_counter()
+        self._render_ffmpeg_status()
         self._refresh_api_state()
+        # The texts table sets the general temperature tooltip; models without temperature say why.
         self._update_prompt_token_counter()
         self.update_brand_header()
         self.language_changed.emit()
@@ -404,13 +423,15 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self.show_window()
 
     def closeEvent(self, event: QCloseEvent | None) -> None:  # noqa: N802 - Qt API
-        """Hide instead of quitting; remember the size and prune old recordings."""
+        """Hide instead of quitting; drop unsaved live edits, remember the size and prune old recordings."""
         # An unfinished hotkey capture must restore the global listeners, or every hotkey stays dead.
         self._hotkeys.cancel_capture()
+        self._discard_live_edits()
         try:
+            # Only the size is persisted: the form's other edits wait for Save.
             self.config["window_width"] = self.width()
             self.config["window_height"] = self.height()
-            self.ctx.save_config()
+            self.ctx.save_config_keys("window_width", "window_height")
         except Exception as e:
             logging.debug(f"Could not persist window size on close: {e}")
         if event is not None:

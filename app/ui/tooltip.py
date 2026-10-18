@@ -31,7 +31,8 @@ class MouseFollowerTooltip(QWidget):
     _SPINNER_SAFETY_MS = 300000
 
     def __init__(self, message: str, timeout_ms: int = 2000, spinner: bool = False,
-                 check: bool = False, detail: str = "", detail_level: str = "") -> None:
+                 check: bool = False, detail: str = "", detail_level: str = "",
+                 dark: Optional[bool] = None) -> None:
         """
         Initializes the tooltip widget.
 
@@ -46,6 +47,8 @@ class MouseFollowerTooltip(QWidget):
                 after ``timeout_ms``. Ignored when ``spinner`` is True.
             detail (str): Shown in brackets after a checkmark message, tinted by ``detail_level``
                 ("good", "warn" or "bad"; empty keeps the normal text colour).
+            dark (bool | None): Draw the dark palette (the app's resolved colour theme); None
+                follows the operating system's scheme.
         """
         super().__init__()
         self._message = message
@@ -59,7 +62,8 @@ class MouseFollowerTooltip(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
 
         self.label = QLabel(self)
-        dark = theme.is_dark_mode(QApplication.instance())
+        if dark is None:
+            dark = theme.is_dark_mode(QApplication.instance())
         pal = theme.palette(dark)
         # A green that reads as "success" and stays legible on the panel in either theme.
         self._check_color = "#66bb6a" if dark else "#2e7d32"
@@ -163,7 +167,8 @@ class MouseFollowerTooltip(QWidget):
 
     @staticmethod
     def show_tooltip(message: str, timeout_ms: int = 2000, spinner: bool = False,
-                     check: bool = False, detail: str = "", detail_level: str = "") -> None:
+                     check: bool = False, detail: str = "", detail_level: str = "",
+                     dark: Optional[bool] = None) -> None:
         """
         Displays a new tooltip. If one is already visible, it is closed first.
 
@@ -173,13 +178,14 @@ class MouseFollowerTooltip(QWidget):
             spinner (bool): If True, show a persistent animated spinner (see __init__).
             check (bool): If True, prepend a static green checkmark (see __init__).
             detail (str): Bracketed note after a checkmark message, coloured by ``detail_level`` (see __init__).
+            dark (bool | None): The resolved colour theme (see __init__); None follows the OS.
         """
         # Close the previous tooltip if it exists
         if MouseFollowerTooltip._instance:
             MouseFollowerTooltip._instance.close()
 
         # Create a new instance
-        MouseFollowerTooltip(message, timeout_ms, spinner, check, detail, detail_level)
+        MouseFollowerTooltip(message, timeout_ms, spinner, check, detail, detail_level, dark)
 
     @staticmethod
     def hide_tooltip() -> None:

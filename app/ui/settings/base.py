@@ -49,6 +49,8 @@ class SettingsWindowBase(QWidget):
 
     #: Result of the background AAC encoder probe (a tuple of bitrates), delivered on the GUI thread.
     aac_bitrates_ready = pyqtSignal(object)
+    #: Result of the background FFmpeg probe (``(generation, version or None)``), delivered on the GUI thread.
+    ffmpeg_version_ready = pyqtSignal(object)
     #: A header playback ended (its generation number), emitted from the playback thread.
     playback_finished = pyqtSignal(int)
 

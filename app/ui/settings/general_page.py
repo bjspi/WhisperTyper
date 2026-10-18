@@ -61,7 +61,7 @@ class GeneralPage(SettingsWindowBase):
     def _on_color_theme_changed(self, *_args: object) -> None:
         """Persist the chosen colour theme and re-apply it immediately."""
         self.config["color_theme"] = self.color_theme_selector.currentData() or "system"
-        self.ctx.save_config()
+        self.ctx.save_config_keys("color_theme")
         self.apply_theme()
 
     def populate_input_devices(self) -> None:
@@ -81,7 +81,7 @@ class GeneralPage(SettingsWindowBase):
     def _on_input_device_changed(self, *_args: object) -> None:
         """Persist the chosen input device and reopen the capture stream on it."""
         self.config["input_device_name"] = self.input_device_selector.currentData() or ""
-        self.ctx.save_config()
+        self.ctx.save_config_keys("input_device_name")
         self._recording.apply_input_device_selection()
 
     def change_language(self, lang_code: str) -> None:

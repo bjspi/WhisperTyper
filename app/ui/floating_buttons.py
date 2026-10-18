@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 from collections import deque
+from dataclasses import dataclass
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -59,11 +60,10 @@ class _PromptCard(QWidget):
         Returns the card's layout and whether the dark palette is used (None follows the OS).
         """
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         if dark is None:
             dark = theme.is_dark_mode(QApplication.instance())
         pal = theme.palette(dark)
-        danger = "#ff5a52" if dark else "#e5484d"
+        danger = pal["danger"]
         danger_tint = "rgba(255, 90, 82, 0.18)" if dark else "rgba(229, 72, 77, 0.12)"
         self._danger_color = danger
         self._prompt_buttons: List[QPushButton] = []
@@ -263,6 +263,8 @@ class FloatingButtonWindow(_PromptCard):
                      Qt.WindowType.WindowStaysOnTopHint)
         self.setWindowFlags(flags)
         card_layout, _dark = self._build_card("rephrasePromptCard", dark)
+        # Unlike the recording palette this one takes the focus, so Escape and a click elsewhere close it.
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         # Determine if we auto-close on focus loss (avoid on macOS due to premature closes).
         self._close_on_focus_out = not is_MACOS
@@ -306,6 +308,8 @@ class FloatingButtonWindow(_PromptCard):
             self.preview_label.setToolTip(preview if len(preview) <= 500 else preview[:500] + "…")
         self._place_near_cursor()
         self.show()
+        self.activateWindow()
+        self.setFocus()
 
     def keyPressEvent(self, event: Optional[QKeyEvent]) -> None:
         """Close the palette on Escape."""
@@ -484,6 +488,21 @@ class _MoveHandle(QLabel):
         self.setToolTip(tooltip)
 
 
+@dataclass(frozen=True)
+class RecordingPaletteTexts:
+    """Translated captions and tooltips of the recording palette; missing ones stay empty."""
+
+    status_text: str = ""
+    none_text: str = ""
+    paused_text: str = ""
+    cancel_tooltip: str = ""
+    restart_tooltip: str = ""
+    move_tooltip: str = ""
+    pause_tooltip: str = ""
+    resume_tooltip: str = ""
+    device_tooltip: str = ""
+
+
 #: First id of the overlay's digit hotkeys (application ids are 0x0000-0xBFFF).
 _DIGIT_HOTKEY_BASE = 0xB000
 _VK_0, _VK_NUMPAD0 = 0x30, 0x60
@@ -498,8 +517,8 @@ class RecordingPromptOverlay(_PromptCard):
 
     _instance: Optional['RecordingPromptOverlay'] = None
 
-    def __init__(self, prompts: List[Dict[str, Any]], status_text: str, none_text: str,
-                 on_selection_changed: Callable[[Optional[Dict[str, Any]]], None],
+    def __init__(self, prompts: List[Dict[str, Any]], status_text: str = "", none_text: str = "",
+                 on_selection_changed: Optional[Callable[[Optional[Dict[str, Any]]], None]] = None,
                  use_system_position: bool = True,
                  system_anchor: Optional[QPoint] = None,
                  dark: Optional[bool] = None,
@@ -512,7 +531,8 @@ class RecordingPromptOverlay(_PromptCard):
                  device_name: Optional[Callable[[], str]] = None,
                  devices: Optional[Callable[[], List[Tuple[str, str]]]] = None,
                  on_device_selected: Optional[Callable[[str], None]] = None,
-                 device_tooltip: str = "") -> None:
+                 device_tooltip: str = "",
+                 texts: Optional[RecordingPaletteTexts] = None) -> None:
         """Build the palette by the system status area or near the cursor without taking focus.
 
         The prompt marked ``auto_apply`` starts selected (otherwise "None"); only clicks report
@@ -530,12 +550,20 @@ class RecordingPromptOverlay(_PromptCard):
         ``device_name`` returns the microphone being recorded from, shown in a muted line; with
         ``devices`` (``(label, config value)`` pairs) and ``on_device_selected`` that line opens a
         menu to switch the microphone.
+        The captions and tooltips can come bundled as ``texts``; without it the single string
+        parameters make up the bundle.
         """
         if RecordingPromptOverlay._instance:
             RecordingPromptOverlay._instance.close()
         super().__init__()
         RecordingPromptOverlay._instance = self
-        self._on_selection_changed = on_selection_changed
+        if texts is None:
+            texts = RecordingPaletteTexts(
+                status_text=status_text, none_text=none_text, paused_text=paused_text,
+                cancel_tooltip=cancel_tooltip, restart_tooltip=restart_tooltip, move_tooltip=move_tooltip,
+                pause_tooltip=pause_tooltip, resume_tooltip=resume_tooltip, device_tooltip=device_tooltip)
+        self._texts = texts
+        self._on_selection_changed = on_selection_changed or (lambda _prompt: None)
         self._started = time.monotonic()
         # Paused time is left out of the elapsed time.
         self._paused_since: Optional[float] = None
@@ -550,15 +578,40 @@ class RecordingPromptOverlay(_PromptCard):
         )
         self.setWindowFlags(flags)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         card_layout, dark = self._build_card("recordingPromptCard", dark)
-        recording_red = "#ff5a52" if dark else "#e5484d"
+        self._icon_color = theme.palette(dark)["muted"]
 
+        top = self._build_header(on_pause, on_restart, on_cancel, level_feed)
+        self._build_device_line(top, device_name, devices, on_device_selected)
+        card_layout.addLayout(top)
+        self._build_chips(card_layout, prompts)
+
+        self._clock = QTimer(self)
+        self._clock.setInterval(250)
+        self._clock.timeout.connect(self._update_elapsed)
+        self._clock.timeout.connect(self._update_device_name)
+        self._update_elapsed()
+        self._clock.start()
+
+        self._fit_card(card_layout, top)
+        self._finish_placement(use_system_position, system_anchor, digit_keys)
+        self.show()
+
+    def _build_header(self, on_pause: Optional[Callable[[], None]], on_restart: Optional[Callable[[], None]],
+                      on_cancel: Optional[Callable[[], None]],
+                      level_feed: Optional[Callable[[], List[float]]]) -> QVBoxLayout:
+        """The header line: pulsing dot, status text or waveform, timer and the take controls.
+
+        Returns the layout holding the header, which the device line is added to.
+        """
+        texts = self._texts
         header = QHBoxLayout()
         header.setSpacing(8)
-        self._dot = _RecordingDot(QColor(recording_red), self.card)
+        self._dot = _RecordingDot(QColor(self._danger_color), self.card)
         header.addWidget(self._dot, 0, Qt.AlignmentFlag.AlignVCenter)
-        self._status_text = status_text.rstrip(" .\u2026")
-        self._paused_text = paused_text.rstrip(" .\u2026") or self._status_text
+        self._status_text = texts.status_text.rstrip(" .\u2026")
+        self._paused_text = texts.paused_text.rstrip(" .\u2026") or self._status_text
         self.status_label = QLabel(self._status_text, self.card)
         self.status_label.setProperty("role", "title")
         # Wide enough for either text, so the card keeps its size when the recording pauses.
@@ -568,7 +621,7 @@ class RecordingPromptOverlay(_PromptCard):
         header.addWidget(self.status_label)
         self.wave: Optional[_LevelWave] = None
         if level_feed is not None:
-            self.wave = _LevelWave(level_feed, QColor(recording_red), QColor(theme.palette(dark)["muted"]), self.card)
+            self.wave = _LevelWave(level_feed, QColor(self._danger_color), QColor(self._icon_color), self.card)
             # Compact on its own; when the chips make the card wider, the wave fills the gap.
             self.wave.setMinimumWidth(_LevelWave.WIDTH)
             header.addWidget(self.wave, 1)
@@ -591,23 +644,23 @@ class RecordingPromptOverlay(_PromptCard):
         icons.setSpacing(2)
         icons.setContentsMargins(0, 2, 0, 0)
         controls.addLayout(icons)
-        icon_color = theme.palette(dark)["muted"]
+        icon_color = self._icon_color
         self.pause_button: Optional[QPushButton] = None
         if on_pause is not None:
             self._pause_icons = (_svg_icon(theme.pause_svg(icon_color), 16, self.devicePixelRatioF()),
                                  _svg_icon(theme.play_svg(icon_color), 16, self.devicePixelRatioF()))
-            self._pause_tooltips = (pause_tooltip, resume_tooltip)
-            self.pause_button = self._add_icon_button(theme.pause_svg(icon_color), pause_tooltip)
+            self._pause_tooltips = (texts.pause_tooltip, texts.resume_tooltip)
+            self.pause_button = self._add_icon_button(theme.pause_svg(icon_color), texts.pause_tooltip)
             self.pause_button.clicked.connect(lambda _checked=False: on_pause())
             icons.addWidget(self.pause_button, 0, Qt.AlignmentFlag.AlignVCenter)
         self.restart_button: Optional[QPushButton] = None
         self.cancel_button: Optional[QPushButton] = None
         if on_restart is not None:
-            self.restart_button = self._add_icon_button(theme.restart_svg(icon_color), restart_tooltip)
+            self.restart_button = self._add_icon_button(theme.restart_svg(icon_color), texts.restart_tooltip)
             self.restart_button.clicked.connect(lambda _checked=False: on_restart())
             icons.addWidget(self.restart_button, 0, Qt.AlignmentFlag.AlignVCenter)
         if on_cancel is not None:
-            self.cancel_button = self._add_icon_button(theme.trash_svg(icon_color), cancel_tooltip,
+            self.cancel_button = self._add_icon_button(theme.trash_svg(icon_color), texts.cancel_tooltip,
                                                        hover_svg=theme.trash_svg(self._danger_color), danger=True)
             self.cancel_button.clicked.connect(lambda _checked=False: on_cancel())
             icons.addWidget(self.cancel_button, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -615,26 +668,34 @@ class RecordingPromptOverlay(_PromptCard):
         top = QVBoxLayout()
         top.setSpacing(4)
         top.addLayout(header)
+        return top
+
+    def _build_device_line(self, top: QVBoxLayout, device_name: Optional[Callable[[], str]],
+                           devices: Optional[Callable[[], List[Tuple[str, str]]]],
+                           on_device_selected: Optional[Callable[[str], None]]) -> None:
+        """The muted microphone line below the header; with a device list it opens the switch menu."""
         self._device_name = device_name
         self._devices = devices
         self._on_device_selected = on_device_selected
         self.device_button: Optional[QPushButton] = None
-        if device_name is not None:
-            self.device_button = QPushButton(self.card)
-            self.device_button.setProperty("role", "device")
-            self.device_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            if devices is not None and on_device_selected is not None:
-                self.device_button.setCursor(Qt.CursorShape.PointingHandCursor)
-                self.device_button.setToolTip(device_tooltip)
-                self.device_button.clicked.connect(lambda _checked=False: self._show_device_menu())
-            else:
-                self.device_button.setEnabled(False)
-            top.addWidget(self.device_button, 0, Qt.AlignmentFlag.AlignLeft)
-            self._update_device_name()
-        card_layout.addLayout(top)
+        if device_name is None:
+            return
+        self.device_button = QPushButton(self.card)
+        self.device_button.setProperty("role", "device")
+        self.device_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        if devices is not None and on_device_selected is not None:
+            self.device_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.device_button.setToolTip(self._texts.device_tooltip)
+            self.device_button.clicked.connect(lambda _checked=False: self._show_device_menu())
+        else:
+            self.device_button.setEnabled(False)
+        top.addWidget(self.device_button, 0, Qt.AlignmentFlag.AlignLeft)
+        self._update_device_name()
 
+    def _build_chips(self, card_layout: QVBoxLayout, prompts: List[Dict[str, Any]]) -> None:
+        """The "None" chip and one chip per prompt; the ``auto_apply`` prompt starts selected."""
         card_layout.addLayout(self._chips, 1)  # the chips take the height their lines need
-        none_button = self._add_chip(none_text, checkable=True)
+        none_button = self._add_chip(self._texts.none_text, checkable=True)
         none_button.clicked.connect(partial(self._select_prompt, None, none_button))
         preselected = none_button
         for prompt in prompts:
@@ -644,20 +705,15 @@ class RecordingPromptOverlay(_PromptCard):
                 preselected = button
         preselected.setChecked(True)
 
-        self._clock = QTimer(self)
-        self._clock.setInterval(250)
-        self._clock.timeout.connect(self._update_elapsed)
-        self._clock.timeout.connect(self._update_device_name)
-        self._update_elapsed()
-        self._clock.start()
-
-        self._fit_card(card_layout, top)
+    def _finish_placement(self, use_system_position: bool, system_anchor: Optional[QPoint],
+                          digit_keys: bool) -> None:
+        """Place the fitted card; a palette near the cursor gets its move handle, Windows the digit keys."""
         self.move_handle: Optional[_MoveHandle] = None
         self._grab_offset: Optional[QPoint] = None
         self._digit_keys = digit_keys and is_WINDOWS
         self._registered_hotkeys: List[int] = []
         if not self._position_for_platform(use_system_position, system_anchor):
-            self.move_handle = _MoveHandle(icon_color, move_tooltip, self.card)
+            self.move_handle = _MoveHandle(self._icon_color, self._texts.move_tooltip, self.card)
             # The whole card drags; buttons and chips keep their own pointing-hand cursor.
             self.card.setCursor(Qt.CursorShape.SizeAllCursor)
             # The handle sits in the card's bottom-right padding, clear of the rounded border.
@@ -667,7 +723,6 @@ class RecordingPromptOverlay(_PromptCard):
             self.move_handle.raise_()
         if is_MACOS:
             make_nonactivating(self)  # after setWindowFlags, which recreates the native window
-        self.show()
 
     def mousePressEvent(self, event: Optional[QMouseEvent]) -> None:  # noqa: N802 - Qt API
         """Start dragging a movable palette from anywhere on the card but its buttons.

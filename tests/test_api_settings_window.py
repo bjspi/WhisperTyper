@@ -125,3 +125,33 @@ def test_choosing_the_automatic_key_explicitly_is_stored_as_automatic(make_windo
     assert json.loads(path.read_text(encoding="utf-8"))["rephrasing_key_profile_id"] == ""
     assert window.rephrasing_key_profile_selector.isHidden()
 
+
+
+def test_connection_test_runs_off_the_gui_thread_and_ignores_clicks_meanwhile(make_window, qapp):
+    import threading
+
+    window, _path = make_window()
+    tester = window._connection_tester
+    button = window.test_transcription_api_button
+    caption = button.text()
+    release, probe_thread = threading.Event(), []
+
+    def slow_probe(*_args):
+        probe_thread.append(threading.current_thread())
+        release.wait(5)
+        return "ok", ""
+
+    with (patch("app.ui.connection_tester.net.run_transcription_connection_test", side_effect=slow_probe),
+          patch("app.ui.connection_tester.request") as internet,
+          patch("app.ui.connection_tester.QMessageBox") as message_box):
+        tester.test_transcription()
+        assert tester.busy and not button.isEnabled()
+        assert button.text() == window.translator.tr("api_test_testing_button")
+        tester.test_internet()  # one test at a time: ignored while the first one runs
+        assert window.test_internet_button.isEnabled() and not internet.called
+        release.set()
+        tester.wait()
+    assert probe_thread and probe_thread[0] is not threading.main_thread()
+    assert not tester.busy and button.isEnabled() and button.text() == caption
+    assert message_box.information.call_count == 1
+    assert message_box.information.call_args.args[1] == window.translator.tr("conn_test_title")

@@ -1,15 +1,17 @@
 """Live connection tests for the settings window (transcription / internet / rephrasing).
 
 Single responsibility: drive the three "Test connection" buttons — read the current form
-values, run the network probe (via ``services.net`` / ``services.rephrasing``) and report
-the outcome through QMessageBox. The networking itself lives in ``services``.
+values, run the network probe (via ``services.net`` / ``services.rephrasing``) off the GUI
+thread and report the outcome through QMessageBox. The networking itself lives in ``services``.
 """
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager
-from typing import Any, Dict, Iterator, Optional
+import threading
+from functools import partial
+from typing import Any, Callable, Dict, Optional
 
+from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton
 
 from app.core.redaction import redact_for_log
@@ -22,32 +24,70 @@ from app.services.rephrasing import rephrase_text
 #: Tiny, well-known connectivity endpoint (answers HTTP 204).
 _CONNECTIVITY_URL = "https://www.google.com/generate_204"
 
+#: A probe runs on its own thread and returns the report to show on the GUI thread.
+_Probe = Callable[[], Callable[[], None]]
 
-class ConnectionTester:
-    """Runs the settings window's three connection-test flows against the current form."""
+
+class ConnectionTester(QObject):
+    """Runs the settings window's three connection-test flows against the current form.
+
+    One test runs at a time: its button shows "testing…" until the probe thread has
+    reported back through ``_reported`` (queued onto the GUI thread).
+    """
+
+    _reported = pyqtSignal(object)
 
     def __init__(self, window: Any) -> None:
         """Keep the settings window for its form widgets and translator."""
+        super().__init__(window)
         self._w = window
+        self._thread: Optional[threading.Thread] = None
+        self._reported.connect(self._on_reported)
+
+    @property
+    def busy(self) -> bool:
+        """Whether a test is still running."""
+        return self._thread is not None and self._thread.is_alive()
+
+    def _start(self, button: QPushButton, probe: _Probe) -> None:
+        """Show "testing…" on ``button`` and run ``probe`` on a thread; a click meanwhile is ignored."""
+        if self.busy:
+            return
+        caption = button.text()
+        button.setEnabled(False)
+        button.setText(self._w.translator.tr("api_test_testing_button"))
+
+        def run() -> None:
+            try:
+                report = probe()
+            except Exception as error:
+                report = partial(self._crash, error)
+            try:
+                self._reported.emit((button, caption, report))
+            except RuntimeError:
+                pass  # the window was deleted while the probe ran
+
+        self._thread = threading.Thread(target=run, name="ConnectionTest", daemon=True)
+        self._thread.start()
+
+    def _on_reported(self, result: Any) -> None:
+        """GUI thread: restore the button and show the probe's report."""
+        button, caption, report = result
+        button.setEnabled(True)
+        button.setText(caption)
+        report()
+
+    def wait(self, timeout: float = 10.0) -> None:
+        """Block until the running test has reported (for tests; the app never waits)."""
+        if self._thread is not None:
+            self._thread.join(timeout)
+        QApplication.processEvents()
 
     def _form_proxies(self) -> Optional[Dict[str, str]]:
         """Proxies from the current (unsaved) proxy fields."""
         w = self._w
         return net.proxies_for({"proxy_url": w.proxy_url_input.text(),
                                 "use_local_px_proxy": w.use_px_proxy_checkbox.isChecked()})
-
-    @contextmanager
-    def _busy(self, button: QPushButton) -> Iterator[None]:
-        """Show "testing…" on ``button`` while a test runs; restore its caption afterwards."""
-        caption = button.text()
-        button.setEnabled(False)
-        button.setText(self._w.translator.tr("api_test_testing_button"))
-        QApplication.processEvents()
-        try:
-            yield
-        finally:
-            button.setEnabled(True)
-            button.setText(caption)
 
     def _fail(self, title_key: str, text_key: str, **kwargs: Any) -> None:
         """Warn about missing settings or a failed test."""
@@ -67,12 +107,17 @@ class ConnectionTester:
             self._fail("api_test_fail_title", "recording_no_api_keys")
             return
         model = clean_model_name(w.model_dropdown.currentText())
-        with self._busy(w.test_transcription_api_button):
-            try:
-                result_key, detail = net.run_transcription_connection_test(api_url, api_key, model, self._form_proxies())
-            except Exception as e:
-                self._crash(e)
-                return
+        proxies = self._form_proxies()
+
+        def probe() -> Callable[[], None]:
+            result_key, detail = net.run_transcription_connection_test(api_url, api_key, model, proxies)
+            return partial(self._report_transcription, result_key, detail)
+
+        self._start(w.test_transcription_api_button, probe)
+
+    def _report_transcription(self, result_key: str, detail: str) -> None:
+        """Show the classified outcome of the transcription test."""
+        w = self._w
         logging.info(f"Transcription connection test result: {result_key} ({redact_for_log(detail)})")
         message = w.translator.tr(f"conn_test_{result_key}", detail=detail)
         # Only a genuine 200 is a success; anything else must not read as "everything is fine".
@@ -87,21 +132,34 @@ class ConnectionTester:
         proxies = self._form_proxies()
         manual_proxy = bool(w.proxy_url_input.text().strip())
         used_px = (proxies or {}).get("https", "").endswith(f":{PX_PROXY_PORT}") and not manual_proxy
-        with self._busy(w.test_internet_button):
+
+        def probe() -> Callable[[], None]:
             try:
                 response = request("GET", _CONNECTIVITY_URL, stage="internet_test", proxies=proxies, timeout=10)
                 if response.status_code in (200, 204):
-                    key = "internet_test_ok_px" if used_px else "internet_test_ok"
-                    QMessageBox.information(w, w.translator.tr("internet_test_title"),
-                                            w.translator.tr(key, detail=f"HTTP {response.status_code}"))
-                    return
+                    return partial(self._report_internet_ok, used_px, response.status_code)
                 reason_key, detail = "unknown", f"HTTP {response.status_code}: {(response.text or '')[:200]}"
             except Exception as e:
                 reason_key, detail = net.classify_transport_error(e, _CONNECTIVITY_URL, proxies), str(e)
+            # A running px the user has not opted into is a likely fix.
+            px_hint = is_px_running() and not used_px and not manual_proxy
+            return partial(self._report_internet_failed, reason_key, detail, px_hint)
+
+        self._start(w.test_internet_button, probe)
+
+    def _report_internet_ok(self, used_px: bool, status_code: int) -> None:
+        """Show the reachability success, naming px when it carried the request."""
+        w = self._w
+        key = "internet_test_ok_px" if used_px else "internet_test_ok"
+        QMessageBox.information(w, w.translator.tr("internet_test_title"),
+                                w.translator.tr(key, detail=f"HTTP {status_code}"))
+
+    def _report_internet_failed(self, reason_key: str, detail: str, px_hint: bool) -> None:
+        """Show the reachability failure with its classified reason."""
+        w = self._w
         logging.info(f"Internet test failed: {reason_key} ({redact_for_log(detail)})")
         message = w.translator.tr("internet_test_fail", detail=f"[{reason_key}] {detail}")
-        # A running px the user has not opted into is a likely fix.
-        if is_px_running() and not used_px and not manual_proxy:
+        if px_hint:
             message += "\n\n" + w.translator.tr("internet_test_px_hint")
         QMessageBox.warning(w, w.translator.tr("internet_test_title"), message)
 
@@ -114,17 +172,22 @@ class ConnectionTester:
         if not all([api_url, api_key, model]):
             self._fail("api_test_fail_title", "rephrase_api_settings_missing")
             return
-        with self._busy(w.test_rephrasing_api_button):
-            try:
-                response_text = rephrase_text(
-                    system_prompt="You are a test assistant.",
-                    user_prompt="Reply with only the word 'Success'.",
-                    api_url=api_url, api_key=api_key, model=model, temperature=0.0,
-                    proxies=self._form_proxies(),
-                )
-            except Exception as e:
-                self._crash(e)
-                return
+        proxies = self._form_proxies()
+
+        def probe() -> Callable[[], None]:
+            response_text = rephrase_text(
+                system_prompt="You are a test assistant.",
+                user_prompt="Reply with only the word 'Success'.",
+                api_url=api_url, api_key=api_key, model=model, temperature=0.0,
+                proxies=proxies,
+            )
+            return partial(self._report_rephrasing, response_text)
+
+        self._start(w.test_rephrasing_api_button, probe)
+
+    def _report_rephrasing(self, response_text: str) -> None:
+        """Show whether the model answered with the expected word."""
+        w = self._w
         if "success" in response_text.lower():
             QMessageBox.information(w, w.translator.tr("api_test_success_title"),
                                     w.translator.tr("api_test_success_text", response=response_text))
