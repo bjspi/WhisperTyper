@@ -38,6 +38,13 @@ class TestLoad:
         # The prompt list starts with the instruction entry in the UI language.
         assert config["post_rephrasing_entries"] == [default_instruction_entry(DEFAULT_CONFIG["ui_language"])]
 
+    def test_an_unedited_earlier_default_prompt_becomes_the_current_default(self, store: ConfigStore):
+        from app.core.prompts import DEFAULT_TRANSCRIPTION_PROMPTS, PREVIOUS_TRANSCRIPTION_PROMPTS
+        write_config(store, {"prompt": PREVIOUS_TRANSCRIPTION_PROMPTS["de"]})
+        assert store.load()[0]["prompt"] == DEFAULT_TRANSCRIPTION_PROMPTS["de"].strip()
+        write_config(store, {"prompt": "Mein eigener Prompt."})
+        assert store.load()[0]["prompt"] == "Mein eigener Prompt."
+
     def test_corrupt_file_yields_defaults(self, store: ConfigStore):
         with open(store.config_file, "w", encoding="utf-8") as f:
             f.write("{not valid json")

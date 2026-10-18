@@ -18,7 +18,12 @@ from app.core.constants import (
     WINDOW_MIN_HEIGHT,
 )
 from app.core.hotkeys import is_clipboard_shortcut
-from app.core.prompts import INSTRUCTION, default_instruction_entry, transformation_entry
+from app.core.prompts import (
+    INSTRUCTION,
+    default_instruction_entry,
+    transformation_entry,
+    updated_default_transcription_prompt,
+)
 from app.core.textutil import demojibake
 
 # A hotkey normalizer, e.g. HotkeyMixin.normalize_hotkey_string.
@@ -99,6 +104,12 @@ class ConfigStore:
             if removed_key in cfg:
                 del cfg[removed_key]
                 changed = True
+
+        # An unedited earlier default transcription prompt becomes the current default.
+        updated_prompt = updated_default_transcription_prompt(cfg.get("prompt", ""))
+        if updated_prompt is not None:
+            cfg["prompt"] = updated_prompt
+            changed = True
 
         # Check if input_language is a display name and convert to code
         if "input_language" in cfg:
