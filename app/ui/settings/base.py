@@ -117,6 +117,13 @@ class SettingsWindowBase(QWidget):
     ffmpeg_status_label: QLabel
     transcription_prompt_section: "CollapsibleSection"
     ffmpeg_section: "CollapsibleSection"
+    second_pass_section: "CollapsibleSection"
+    second_pass_mode_label: QLabel
+    second_pass_mode_selector: QComboBox
+    second_pass_logprob_label: QLabel
+    second_pass_logprob_input: QDoubleSpinBox
+    second_pass_prompt_label: QLabel
+    second_pass_prompt_input: QLineEdit
     _ffmpeg_status_debounce: QTimer
 
     # Recording card

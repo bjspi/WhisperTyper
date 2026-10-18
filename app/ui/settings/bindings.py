@@ -56,6 +56,9 @@ BINDINGS: Tuple[Binding, ...] = (
     Binding("transcription_temp_slider", "transcription_temperature", "temperature",
             companions=("transcription_temp_label",)),
     Binding("ffmpeg_path_input", "ffmpeg_path", "stripped"),
+    Binding("second_pass_mode_selector", "transcription_second_pass", "choice"),
+    Binding("second_pass_logprob_input", "transcription_second_pass_logprob", "float"),
+    Binding("second_pass_prompt_input", "transcription_second_pass_prompt", "text"),
     Binding("prompt_input", "prompt", "plain"),
     # Recording
     Binding("push_to_talk_checkbox", "push_to_talk", "check"),

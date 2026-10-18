@@ -98,6 +98,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "hotkey": "<ctrl>+x" if is_MACOS else "<caps_lock>+<ctrl>",
     "push_to_talk": False,
     "transcription_hedging": False,
+    # Quality fallback: a second transcription with transcription_second_pass_prompt (empty = no prompt).
+    # "off" | "doubtful" (sent after an empty result or an average log-probability below
+    # transcription_second_pass_logprob) | "always" (sent in parallel). The first result is kept
+    # unless it is doubtful and the second one is more confident.
+    "transcription_second_pass": "doubtful",
+    "transcription_second_pass_logprob": -0.5,
+    "transcription_second_pass_prompt": "",
     "windows_keep_mic_hot": is_WINDOWS,
     "windows_keep_mic_hot_idle_minutes": 15,
     # Recordings shorter than this (seconds) are treated as a mis-tap and discarded without
