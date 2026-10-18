@@ -184,6 +184,38 @@ Logs of a hedged request, in order:
   `hedge_trigger_ms` in the summary, and an `http_transport` line with
   `stage=transcription_hedge` (connection setup, upload, response) for the second attempt.
 
+## Transcription confidence and the quality fallback
+
+**Log transcription confidence** (General tab, Logging; on by default) asks the API for its
+confidence details where the model offers them: Whisper models (Groq, `whisper-1`) answer
+with `verbose_json` (average log-probability, no-speech probability and compression ratio
+per segment, timestamps per word), OpenAI's GPT transcription models with a log-probability
+per token, grouped into words. Log-probabilities are natural logs: 0 is certain, more
+negative is less sure. The transcribed text and the latency stay the same.
+
+- `transcription_diagnostics op=… source=verbose_json|logprobs … avg_logprob=…` sums up
+  every transcription (no transcript text);
+- with debug logging, one line per segment follows, and the word list when log redaction
+  is off;
+- "Mark last recording as bad" stores the full details in the JSON sidecar.
+
+**Quality fallback** (Transcription tab, below the prompt) adds a second transcription with
+its own prompt (empty = no prompt), for the rare results a long prompt garbles (dropped or
+rewritten text, typically an average log-probability far below -0.5 while normal dictations
+sit around -0.1 to -0.3). *Only for doubtful results* (default) sends it after an empty
+result or one below the threshold; *Always, in parallel* sends both at once and waits for
+the second only when the first is doubtful or fails. In both modes the first result is kept
+unless it is doubtful and the second one is more confident. The second request has its own
+operation id and no hedge, so the first request's timings stay comparable.
+
+- `transcription_second_pass op=… started mode=… second_op=… prompt=…`;
+- `transcription_second_pass op=… finished avg_logprob=… words=…` or `… failed error=…`;
+- `transcription_second_pass op=… chosen=first|second reason=confident|first_doubtful|first_failed|second_failed …`.
+
+The checkmark balloon shows the average log-probability and whether the second
+transcription or a second connection was used, in brackets: green, yellow when the second
+transcription was used or the value is below 70% of the threshold, red below the threshold.
+
 ## Connection: IPv4 or IPv6
 
 **Connection** (General tab) chooses the IP version of every API connection, including

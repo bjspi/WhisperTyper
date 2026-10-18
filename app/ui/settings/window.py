@@ -343,6 +343,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self._replacements_tab.retranslate_ui()
         self._retranslate_api_settings()
         self._retranslate_general_page()
+        self._retranslate_transcription_page()
         # Test buttons show "testing…" while running; a fixed width keeps the slider/proxy field still.
         for button in (self.test_internet_button, self.test_transcription_api_button, self.test_rephrasing_api_button):
             fit_button_to_captions(button, tr("api_test_testing_button"))

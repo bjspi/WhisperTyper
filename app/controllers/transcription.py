@@ -42,6 +42,8 @@ from app.ui.durations import (
     BALLOON_WARNING_MS,
 )
 
+#: The result note turns yellow below this share of the quality fallback threshold (-0.35 at -0.5).
+_WARN_SHARE = 0.7
 
 class TranscriptionPipeline:
     """Transcribe audio, route the transcript through rephrasing and deliver the final text."""
@@ -137,6 +139,11 @@ class TranscriptionPipeline:
             ffmpeg_setting=config.get("ffmpeg_path", ""),
             hedge_api_key=hedge_api_key or None,
             diagnostics=bool(config.get("transcription_diagnostics", True)),
+            second_pass=config.get("transcription_second_pass", "off"),
+            second_pass_threshold=float(config.get("transcription_second_pass_logprob", -0.5)),
+            second_pass_prompt=config.get("transcription_second_pass_prompt", ""),
+            second_pass_api_key=(self._key_rotation.next_key(config) or None
+                                 if config.get("transcription_second_pass", "off") == "always" else None),
         )
         worker = TranscriptionWorker(request, timing=timing, tr=self._ctx.tr)
         if recording_format is not None:
@@ -171,7 +178,7 @@ class TranscriptionPipeline:
     def _remember_request(self, request: TranscriptionRequest, transformation_prompt: Optional[str]) -> None:
         """Store what is sent for a recording (no API key); a retry of the same file replaces its entry."""
         fields = transcription_form_fields(request.model, request.prompt, request.temperature,
-                                           request.language.lower() if request.language else "", request.diagnostics)
+                                           request.language.lower() if request.language else "", request.wants_details)
         # Retained recordings are pruned by age; drop the entries of files that are gone.
         self._recording_requests = {path: entry for path, entry in self._recording_requests.items()
                                     if os.path.exists(path)}
@@ -390,14 +397,41 @@ class TranscriptionPipeline:
             # user hasn't focused a text field. The checkmark balloon replaces the spinner.
             with timing.span("clipboard_write"):
                 copykitten.copy(text)
-            self._notifier.show(self._ctx.tr("transcribed_to_clipboard_message"), BALLOON_INFO_MS, check=True)
+            self._show_done("transcribed_to_clipboard_message", BALLOON_INFO_MS, timing)
             return True
         # Insert mode: swap the spinner for a brief "done ✓" balloon, then type the text. If
         # the spinner was already replaced by an error notice (spinner_active=False), leave
         # that notice alone rather than clobbering it with a success checkmark.
         if spinner_active:
-            self._notifier.show(self._ctx.tr("transcription_done_message"), BALLOON_CONFIRM_MS, check=True)
+            self._show_done("transcription_done_message", BALLOON_CONFIRM_MS, timing)
         return self._output.insert(text, timing=timing)
+
+    def _show_done(self, message_key: str, duration_ms: int, timing: OperationTiming) -> None:
+        """Checkmark balloon; confidence and second-request notes follow in brackets, shown 44% longer.
+
+        The notes are green, yellow when the second transcription was used or the confidence is
+        getting low (below 70% of the quality fallback threshold), red below the threshold itself.
+        """
+        tr, notes = self._ctx.tr, timing.notes
+        parts = []
+        if "avg_logprob" in notes:
+            parts.append(tr("result_note_logprob", value=f"{notes['avg_logprob']:.2f}"))
+        if "second_pass" in notes:
+            parts.append(tr(f"result_note_second_pass_{notes['second_pass']}"))
+        if "hedge_winner" in notes:
+            parts.append(tr("result_note_hedge_won" if notes["hedge_winner"] == 2 else "result_note_hedge_started"))
+        if not parts:
+            self._notifier.show(tr(message_key), duration_ms, check=True)
+            return
+        threshold = float(self._config.get("transcription_second_pass_logprob", -0.5))
+        average = notes.get("avg_logprob")
+        level = "good"
+        if notes.get("second_pass") == "second" or (average is not None and average < threshold * _WARN_SHARE):
+            level = "warn"
+        if average is not None and average < threshold:
+            level = "bad"
+        self._notifier.show(tr(message_key), int(duration_ms * 1.44), check=True, detail=" · ".join(parts),
+                            detail_level=level)
 
     def copy_last_transcription(self) -> None:
         """Copy the last delivered text to the clipboard again."""

@@ -107,6 +107,8 @@ class OperationTiming:
         self._epoch_ns = time.time_ns() - (time.perf_counter_ns() - self._started_ns)
         self._events: dict[str, int] = {"operation_start": self._started_ns}
         self._finished = False
+        #: Facts about how the result came about, shown with it (e.g. confidence, second request).
+        self.notes: dict[str, Any] = {}
         if source == "recording":
             self.mark("stop", self._started_ns)
 
@@ -161,6 +163,7 @@ class _NoTiming(OperationTiming):
         self.source = "none"
         self._events = {}
         self._finished = True
+        self.notes = {}
 
 
 #: Shared default for optional timing parameters; avoids ``if timing:`` guards at every milestone.

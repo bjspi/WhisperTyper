@@ -31,7 +31,7 @@ class MouseFollowerTooltip(QWidget):
     _SPINNER_SAFETY_MS = 300000
 
     def __init__(self, message: str, timeout_ms: int = 2000, spinner: bool = False,
-                 check: bool = False) -> None:
+                 check: bool = False, detail: str = "", detail_level: str = "") -> None:
         """
         Initializes the tooltip widget.
 
@@ -44,11 +44,14 @@ class MouseFollowerTooltip(QWidget):
             check (bool): If True, prepend a static green checkmark instead of the spinner. Used
                 for the "done ✓" state that replaces the spinner when a job finishes. Auto-closes
                 after ``timeout_ms``. Ignored when ``spinner`` is True.
+            detail (str): Shown in brackets after a checkmark message, tinted by ``detail_level``
+                ("good", "warn" or "bad"; empty keeps the normal text colour).
         """
         super().__init__()
         self._message = message
         self._spinner = spinner
         self._check = check and not spinner
+        self._detail = detail
         self._spinner_index = 0
         # Set window flags to create a frameless, top-level tooltip
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.ToolTip | Qt.WindowType.WindowStaysOnTopHint)
@@ -60,6 +63,8 @@ class MouseFollowerTooltip(QWidget):
         pal = theme.palette(dark)
         # A green that reads as "success" and stays legible on the panel in either theme.
         self._check_color = "#66bb6a" if dark else "#2e7d32"
+        self._detail_color = {"good": self._check_color, "warn": "#ffca28" if dark else "#b26a00",
+                              "bad": "#ef5350" if dark else "#c62828"}.get(detail_level, "")
         self.label.setStyleSheet(
             f"background-color: {pal['panel']}; color: {pal['text']}; "
             f"border: 1px solid {pal['accent']}; padding: 7px 11px; "
@@ -107,9 +112,13 @@ class MouseFollowerTooltip(QWidget):
             # Rich text so only the checkmark is tinted green; escape the message so any stray
             # angle brackets/ampersands in transcribed text don't get parsed as markup.
             self.label.setTextFormat(Qt.TextFormat.RichText)
+            detail = ""
+            if self._detail:
+                style = f" style='color:{self._detail_color};'" if self._detail_color else ""
+                detail = f" <span{style}>({html.escape(self._detail)})</span>"
             self.label.setText(
                 f"<span style='color:{self._check_color}; font-weight:bold;'>{self._CHECK_GLYPH}</span>"
-                f"&nbsp;&nbsp;{html.escape(self._message)}"
+                f"&nbsp;&nbsp;{html.escape(self._message)}{detail}"
             )
         else:
             self.label.setTextFormat(Qt.TextFormat.PlainText)
@@ -154,7 +163,7 @@ class MouseFollowerTooltip(QWidget):
 
     @staticmethod
     def show_tooltip(message: str, timeout_ms: int = 2000, spinner: bool = False,
-                     check: bool = False) -> None:
+                     check: bool = False, detail: str = "", detail_level: str = "") -> None:
         """
         Displays a new tooltip. If one is already visible, it is closed first.
 
@@ -163,13 +172,14 @@ class MouseFollowerTooltip(QWidget):
             timeout_ms (int): How long the tooltip should be visible in milliseconds.
             spinner (bool): If True, show a persistent animated spinner (see __init__).
             check (bool): If True, prepend a static green checkmark (see __init__).
+            detail (str): Bracketed note after a checkmark message, coloured by ``detail_level`` (see __init__).
         """
         # Close the previous tooltip if it exists
         if MouseFollowerTooltip._instance:
             MouseFollowerTooltip._instance.close()
 
         # Create a new instance
-        MouseFollowerTooltip(message, timeout_ms, spinner, check)
+        MouseFollowerTooltip(message, timeout_ms, spinner, check, detail, detail_level)
 
     @staticmethod
     def hide_tooltip() -> None:

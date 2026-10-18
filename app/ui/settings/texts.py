@@ -66,6 +66,12 @@ TEXTS: Tuple[Text, ...] = (
          ("restore_default_prompt_button",)),
     _field("transcription_prompt_label", "transcription_prompt_tooltip", "transcription_prompt_label", "prompt_input"),
     Text("transcription_prompt_section", "transcription_prompt_section"),
+    Text("second_pass_section", "second_pass_section"),
+    _field("second_pass_mode_label", "second_pass_mode_tooltip", "second_pass_mode_label", "second_pass_mode_selector"),
+    _field("second_pass_logprob_label", "second_pass_logprob_tooltip", "second_pass_logprob_label",
+           "second_pass_logprob_input"),
+    _field("second_pass_prompt_label", "second_pass_prompt_tooltip", "second_pass_prompt_label",
+           "second_pass_prompt_input"),
     Text("ffmpeg_section", "ffmpeg_section"),
     # Hotkeys
     Text("hotkeys_group_title", "hotkeys_group"),
@@ -153,6 +159,7 @@ PLACEHOLDERS: Tuple[Tuple[str, str], ...] = (
     ("ffmpeg_path_input", "ffmpeg_path_placeholder"),
     ("prompt_input", "transcription_prompt_placeholder"),
     ("post_rp_text_edit", "text_placeholder"),
+    ("second_pass_prompt_input", "second_pass_prompt_placeholder"),
 )
 
 

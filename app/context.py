@@ -19,7 +19,7 @@ class Notifier(QObject):
     worker threads are queued onto the GUI thread; calls on the GUI thread run directly.
     """
 
-    _show = pyqtSignal(str, int, bool, bool)
+    _show = pyqtSignal(str, int, bool, bool, str, str)
     _hide = pyqtSignal()
 
     def __init__(self) -> None:
@@ -28,18 +28,22 @@ class Notifier(QObject):
         self._show.connect(self._show_slot)
         self._hide.connect(self._hide_slot)
 
-    def _show_slot(self, message: str, timeout_ms: int, spinner: bool, check: bool) -> None:
+    def _show_slot(self, message: str, timeout_ms: int, spinner: bool, check: bool, detail: str,
+                   detail_level: str) -> None:
         """GUI thread: display the balloon."""
-        MouseFollowerTooltip.show_tooltip(message, timeout_ms, spinner, check)
+        MouseFollowerTooltip.show_tooltip(message, timeout_ms, spinner, check, detail, detail_level)
 
     def _hide_slot(self) -> None:
         """GUI thread: dismiss the balloon."""
         MouseFollowerTooltip.hide_tooltip()
 
     def show(self, message: str, timeout_ms: int = BALLOON_SHORT_MS, spinner: bool = False,
-             check: bool = False) -> None:
-        """Show ``message``; a spinner stays until hidden or replaced, ``check`` marks completion."""
-        self._show.emit(message, timeout_ms, spinner, check)
+             check: bool = False, detail: str = "", detail_level: str = "") -> None:
+        """Show ``message``; a spinner stays until hidden or replaced, ``check`` marks completion.
+
+        ``detail`` follows a checkmark message in brackets, coloured by ``detail_level`` ("good"/"warn"/"bad").
+        """
+        self._show.emit(message, timeout_ms, spinner, check, detail, detail_level)
 
     def hide(self) -> None:
         """Dismiss the current balloon (ends a persistent spinner)."""

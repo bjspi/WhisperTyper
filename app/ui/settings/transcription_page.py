@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy
+from PyQt6.QtWidgets import QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy
 
 from app.core.models import prompt_token_limit, transcription_supports_prompt, transcription_supports_temperature
 from app.core.prompts import DEFAULT_TRANSCRIPTION_PROMPTS, _is_known_default_prompt, default_transcription_prompt
@@ -22,6 +22,9 @@ _COLUMN_GAP = 12
 #: Visible text lines of the transcription prompt editor, plus its padding and border.
 _PROMPT_LINES = 6
 _PROMPT_FRAME_PX = 14
+#: Quality fallback modes and their caption keys, in dropdown order.
+_SECOND_PASS_MODES = (("off", "second_pass_mode_off"), ("doubtful", "second_pass_mode_doubtful"),
+                      ("always", "second_pass_mode_always"))
 #: Pause after the last keystroke before probing the FFmpeg path (a blocking subprocess).
 _FFMPEG_PROBE_DEBOUNCE_MS = 400
 
@@ -51,6 +54,7 @@ class TranscriptionPage(SettingsWindowBase):
         self.transcription_prompt_section.content_layout.addWidget(self.prompt_input)
         self.transcription_prompt_section.content_layout.addLayout(prompt_footer)
         self.transcription_api_layout.addWidget(self.transcription_prompt_section)
+        self._build_second_pass_section()
         # Provider | model | temperature rows: columns start at the top, and the slider is as tall as
         # the dropdowns, so all three labels and controls line up.
         for row, combo, slider, columns in (
@@ -79,8 +83,50 @@ class TranscriptionPage(SettingsWindowBase):
             lambda _index: self.swap_default_transcription_prompt(self.language_input.currentData() or "",
                                                                   self.config.get("ui_language", "en")))
         self.ffmpeg_path_input.textChanged.connect(lambda _text: self._ffmpeg_status_debounce.start())
+        self.second_pass_mode_selector.currentIndexChanged.connect(self._update_second_pass_controls)
+        self._update_second_pass_controls()
         QTimer.singleShot(0, self._update_prompt_token_counter)
         self._refresh_ffmpeg_status()
+
+    def _build_second_pass_section(self) -> None:
+        """Collapsed "quality fallback" section below the prompt: mode, threshold and prompt of a second transcription."""
+        self.second_pass_section = CollapsibleSection(self)
+        content = self.second_pass_section.content_layout
+        self.second_pass_mode_label = QLabel(self)
+        self.second_pass_mode_selector = QComboBox(self)
+        for mode, _key in _SECOND_PASS_MODES:
+            self.second_pass_mode_selector.addItem("", mode)
+        self.second_pass_logprob_label = QLabel(self)
+        self.second_pass_logprob_input = QDoubleSpinBox(self)
+        self.second_pass_logprob_input.setRange(-5.0, 0.0)
+        self.second_pass_logprob_input.setSingleStep(0.05)
+        self.second_pass_logprob_input.setDecimals(2)
+        self.second_pass_prompt_label = QLabel(self)
+        self.second_pass_prompt_input = QLineEdit(self)
+        for widgets in ((self.second_pass_mode_label, self.second_pass_mode_selector),
+                        (self.second_pass_logprob_label, self.second_pass_logprob_input)):
+            row = QHBoxLayout()
+            for widget in widgets:
+                row.addWidget(widget)
+            row.addStretch(1)
+            content.addLayout(row)
+        row = QHBoxLayout()
+        row.addWidget(self.second_pass_prompt_label)
+        row.addWidget(self.second_pass_prompt_input, 1)
+        content.addLayout(row)
+        self.transcription_api_layout.addWidget(self.second_pass_section)
+
+    def _retranslate_transcription_page(self) -> None:
+        """Translate the quality fallback modes, whose item data stays fixed."""
+        for index, (_mode, key) in enumerate(_SECOND_PASS_MODES):
+            self.second_pass_mode_selector.setItemText(index, self.translator.tr(key))
+
+    def _update_second_pass_controls(self, *_args: object) -> None:
+        """Threshold and prompt only apply while a second transcription is enabled."""
+        enabled = self.second_pass_mode_selector.currentData() != "off"
+        for widget in (self.second_pass_logprob_label, self.second_pass_logprob_input,
+                       self.second_pass_prompt_label, self.second_pass_prompt_input):
+            widget.setEnabled(enabled)
 
     def _restore_default_transcription_prompt(self) -> None:
         """Put the default prompt for the selected input language (else the UI language) into the editor."""
