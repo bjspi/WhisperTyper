@@ -26,10 +26,19 @@ from app.core.timing import OperationTiming
 
 #: Pause before reopening the stream after a failed read, so a broken driver is not hammered.
 _READ_RETRY_S = 0.2
+#: Longest pause between open attempts while no microphone can be opened (doubling from ``_READ_RETRY_S``).
+_OPEN_RETRY_MAX_S = 3.0
 #: Ceiling for waiting on the in-flight read at stop, for a hung audio driver.
 _TAIL_WAIT_S = 0.25
+#: Ceiling for joining a reader thread; a driver read that never returns must not freeze the GUI.
+_JOIN_WAIT_S = 1.5
 #: Pre-roll kept while idle, so the first words before the hotkey are not clipped.
 _PREROLL_S = 0.75
+
+
+def _preroll_blocks(samplerate: int, chunk_size: int) -> int:
+    """Number of blocks that hold ``_PREROLL_S`` of audio at the given rate."""
+    return max(1, int(samplerate * _PREROLL_S / chunk_size))
 
 
 class MicrophoneInput:
@@ -179,26 +188,35 @@ class HotMicCapture:
 
     def __init__(self, mic: MicrophoneInput, *, idle_expired: Callable[[], bool],
                  on_block: Callable[[bytes], None],
-                 on_recording_audio: Optional[Callable[[], None]] = None) -> None:
+                 on_recording_audio: Optional[Callable[[], None]] = None,
+                 on_failure: Optional[Callable[[], None]] = None) -> None:
         """Bind the microphone, the idle-timeout check and the level-meter callback.
 
         ``on_recording_audio`` is called once per recording (reader thread) when the first block
         captured after the start lands in the recording: the microphone is really delivering.
+        ``on_failure`` is called once per recording (reader thread) when the microphone cannot be
+        opened while that recording is running.
         """
         self._mic = mic
         self._idle_expired = idle_expired
         self._on_block = on_block
         self._on_recording_audio = on_recording_audio
+        self._on_failure = on_failure
         self._announce_audio = False
+        self._failure_reported = False
         self._lock = threading.Lock()
         self._recording = False
         self._paused = False
         self._frames: list[bytes] = []
-        self._preroll: deque[bytes] = deque(maxlen=max(1, int(mic.target_samplerate * _PREROLL_S / mic.chunk_size)))
+        # Sized for the app rate; resized once the stream opened at the device's native rate.
+        self._preroll_samplerate = mic.target_samplerate
+        self._preroll: deque[bytes] = deque(maxlen=_preroll_blocks(mic.target_samplerate, mic.chunk_size))
         self._read_pending = False
         self._pending_stop: Optional[_PendingStop] = None
         self._running = False
         self._thread: Optional[threading.Thread] = None
+        # Cuts the pause between open attempts short: a stop or a starting recording must not wait for it.
+        self._wake = threading.Event()
 
     @property
     def running(self) -> bool:
@@ -213,13 +231,24 @@ class HotMicCapture:
         self._thread = threading.Thread(target=self._loop, name="HotMicCapture", daemon=True)
         self._thread.start()
 
-    def stop(self) -> None:
-        """Stop the reader (joined before the stream closes; closing mid-read segfaults PortAudio)."""
+    def stop(self) -> bool:
+        """Stop the reader and close the stream; return whether the reader really stopped.
+
+        The reader is joined before the stream closes, because closing mid-read segfaults
+        PortAudio. A reader stuck in a driver read keeps the stream (it closes it once the read
+        returns) and stays the reader, so no second one is started next to it.
+        """
         self._running = False
+        self._wake.set()
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=1.5)
+            self._thread.join(timeout=_JOIN_WAIT_S)
+            if self._thread.is_alive():
+                logging.warning(f"Background audio capture thread did not stop within {_JOIN_WAIT_S}s; "
+                                "the stream stays open until its read returns.")
+                return False
         self._thread = None
         self._mic.close()
+        return True
 
     def start_recording(self) -> None:
         """Begin a recording that already contains the pre-roll."""
@@ -228,6 +257,9 @@ class HotMicCapture:
             self._recording = True
             self._paused = False
             self._announce_audio = True
+            self._failure_reported = False
+        # A reader pausing between failed open attempts retries right away for the recording.
+        self._wake.set()
 
     def restart_recording(self) -> None:
         """Discard the take so far and keep recording; audio from before the restart is not kept."""
@@ -281,6 +313,7 @@ class HotMicCapture:
     def _loop(self) -> None:
         """Read continuously, feeding the pre-roll and, while recording, the recording."""
         logging.info("Background audio capture thread started.")
+        open_failures = 0
         while self._running:
             if not self._recording and self._idle_expired():
                 logging.info("Stopping background audio capture due to Windows prewarm idle timeout.")
@@ -288,6 +321,14 @@ class HotMicCapture:
                 break
             try:
                 stream = self._mic.open()
+            except Exception as e:
+                open_failures += 1
+                self._open_failed(e, open_failures)
+                continue
+            open_failures = 0
+            self._fit_preroll()
+            read_failed = False
+            try:
                 with self._lock:
                     self._read_pending = True
                 data = stream.read(self._mic.chunk_size, exception_on_overflow=False)
@@ -305,22 +346,53 @@ class HotMicCapture:
                     self._retain_tail(stream, data, pending)
             except Exception as e:
                 logging.warning(f"Background audio capture error: {e}")
+                read_failed = True
                 with self._lock:
-                    pending, self._pending_stop = self._pending_stop, None
+                    if self._pending_stop is not None:
+                        self._pending_stop.timing.mark("recording_tail_read_failed")
+            finally:
+                # The one place that releases a stop waiting for this read, whether it succeeded or not.
+                with self._lock:
                     self._read_pending = False
+                    pending, self._pending_stop = self._pending_stop, None
                 if pending:
-                    pending.timing.mark("recording_tail_read_failed")
                     pending.done.set()
+            if read_failed:
                 self._mic.close()
                 time.sleep(_READ_RETRY_S)
-            finally:
-                with self._lock:
-                    self._read_pending = False
-                    pending, self._pending_stop = self._pending_stop, None
-                if pending:
-                    pending.done.set()
         self._mic.close()
         logging.info("Background audio capture thread finished.")
+
+    def _open_failed(self, error: Exception, failures: int) -> None:
+        """Report a recording the microphone cannot serve, then pause before the next open attempt.
+
+        Consecutive failures double the pause up to ``_OPEN_RETRY_MAX_S``; a stop or a starting
+        recording cuts it short, so a microphone that is back is picked up without a long wait.
+        """
+        delay = min(_READ_RETRY_S * 2 ** (failures - 1), _OPEN_RETRY_MAX_S)
+        logging.warning(f"Background audio capture could not open the microphone: {error}; "
+                        f"next attempt in {delay:.1f}s")
+        self._wake.clear()
+        with self._lock:
+            report = self._recording and not self._failure_reported
+            if report:
+                self._failure_reported = True
+        if report and self._on_failure:
+            self._on_failure()
+        if self._running:
+            self._wake.wait(delay)
+
+    def _fit_preroll(self) -> None:
+        """Size the pre-roll for the rate the stream really opened at; it may be the device's native rate.
+
+        Blocks captured at another rate are dropped: audio of two rates cannot be joined.
+        """
+        samplerate = self._mic.samplerate
+        if samplerate == self._preroll_samplerate:
+            return
+        with self._lock:
+            self._preroll_samplerate = samplerate
+            self._preroll = deque(maxlen=_preroll_blocks(samplerate, self._mic.chunk_size))
 
     def _retain_tail(self, stream: Any, data: bytes, pending: _PendingStop) -> None:
         """Append the stopped block plus already buffered samples, unless the stop timed out."""
@@ -400,9 +472,12 @@ class OnDemandCapture:
         self._join()
 
     def _join(self) -> None:
-        """Wait for the reader thread to finish its last read."""
+        """Wait for the reader thread to finish its last read, at most ``_JOIN_WAIT_S`` (GUI thread)."""
         if self._thread and self._thread.is_alive():
-            self._thread.join()
+            self._thread.join(timeout=_JOIN_WAIT_S)
+            if self._thread.is_alive():
+                logging.warning(f"Audio recording thread did not stop within {_JOIN_WAIT_S}s; "
+                                "using the audio read so far.")
 
     def _read(self) -> None:
         """Read blocks until the recording stops."""

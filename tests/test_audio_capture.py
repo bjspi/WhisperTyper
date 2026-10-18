@@ -55,12 +55,13 @@ class Microphone:
     def __init__(self, stream):
         """Hand out the given fake stream."""
         self.stream = stream
+        self.closed = 0
 
     def open(self):
         return self.stream
 
     def close(self):
-        pass
+        self.closed += 1
 
 
 def recording(fail=False, drain_fail=False):
@@ -278,3 +279,110 @@ def test_device_fallback_is_reported_only_when_a_connected_device_fails(monkeypa
         mic.close()
     assert reports == notified
 
+
+def test_stop_leaves_the_stream_to_a_reader_stuck_in_a_read(monkeypatch):
+    monkeypatch.setattr(capture_module, "_JOIN_WAIT_S", 0.05)
+    capture, stream = recording()
+    try:
+        assert capture.stop() is False  # The reader never returned from its first read.
+        assert capture.running and capture._mic.closed == 0  # Closing under the read would crash PortAudio.
+        stream.release.set()
+        capture._thread.join(1)
+        assert not capture.running and capture._mic.closed == 1  # The reader closes it once the read returns.
+        assert capture.stop() is True
+    finally:
+        finish(capture, stream)
+
+
+def test_on_demand_collect_returns_the_audio_so_far_while_the_reader_hangs(monkeypatch):
+    monkeypatch.setattr(capture_module, "_JOIN_WAIT_S", 0.05)
+    stream = Stream([SimpleNamespace()])
+    capture = OnDemandCapture(Microphone(stream), on_block=lambda _data: None, on_failure=lambda: None)
+    capture.start_recording()
+    assert stream.entered.wait(1)
+    collect = capture.stop_recording(OperationTiming("recording"))
+    started = time.monotonic()
+    assert collect() == []
+    assert time.monotonic() - started < 1 and capture._thread.is_alive()
+    stream.release.set()
+    capture._thread.join(1)
+    assert not capture._thread.is_alive()
+
+
+class FailingStream:
+    """A stream whose reads fail, so the reader closes it and opens the microphone again."""
+
+    def read(self, _frames, **_kwargs):
+        raise OSError("synthetic read failure")
+
+
+class UnopenableMicrophone(Microphone):
+    """Cannot be opened, except for one open that hands out a stream that fails to read."""
+
+    def __init__(self, opens_on):
+        """Succeed on the ``opens_on``-th open only."""
+        super().__init__(FailingStream())
+        self.opens = 0
+        self.opens_on = opens_on
+
+    def open(self):
+        self.opens += 1
+        if self.opens != self.opens_on:
+            raise OSError("no input device")
+        return self.stream
+
+
+class RecordedWake:
+    """Stands in for the reader's pause between open attempts: records the delays instead of waiting."""
+
+    def __init__(self):
+        """Start with no pauses recorded."""
+        self.delays: list[float] = []
+
+    def clear(self):
+        pass
+
+    def set(self):
+        pass
+
+    def wait(self, delay):
+        self.delays.append(delay)
+        time.sleep(0.001)
+        return False
+
+
+def test_open_failures_back_off_and_a_recording_is_reported_once(monkeypatch):
+    monkeypatch.setattr(capture_module, "_READ_RETRY_S", 0.01)
+    monkeypatch.setattr(capture_module, "_OPEN_RETRY_MAX_S", 0.04)
+    failures: list[None] = []
+    capture = HotMicCapture(UnopenableMicrophone(opens_on=3), idle_expired=lambda: False,
+                            on_block=lambda _data: None, on_failure=lambda: failures.append(None))
+    wake = RecordedWake()
+    capture._wake = wake
+    capture.start()
+    try:
+        wait_for(lambda: len(wake.delays) >= 6)
+        assert failures == []  # Nothing to report while no recording runs.
+        capture.start_recording()
+        wait_for(lambda: failures)
+        wait_for(lambda: len(wake.delays) >= 10)
+        assert failures == [None]
+        capture.cancel_recording()
+    finally:
+        capture.stop()
+    # The third open succeeded and its read failed: the pause starts over from the shortest one.
+    assert wake.delays[:6] == [0.01, 0.02, 0.01, 0.02, 0.04, 0.04]
+
+
+def test_preroll_is_sized_for_the_rate_the_stream_opened_at():
+    stream = CountingStream()
+    microphone = Microphone(stream)
+    microphone.samplerate = 48000  # The device's native rate; the app rate stays 16 kHz.
+    capture = HotMicCapture(microphone, idle_expired=lambda: False, on_block=lambda _data: None)
+    assert capture._preroll.maxlen == 11
+    capture.start()
+    try:
+        wait_for(lambda: stream.blocks > 0)
+    finally:
+        capture.stop()
+    assert capture._preroll.maxlen == 35 and len(capture._preroll) >= 1

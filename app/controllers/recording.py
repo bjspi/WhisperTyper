@@ -52,8 +52,8 @@ class RecordingController(QObject):
 
     #: True when a recording starts, False when it stops, is cancelled or fails to start.
     state_changed = pyqtSignal(bool)
-    # The per-recording capture thread reports a failed stream open; the palette closes on the GUI thread.
-    _capture_failed = pyqtSignal()
+    # The capture thread reports that the stream could not be opened for a take; the recording ends on the GUI thread.
+    _capture_failed = pyqtSignal(int)
     # The capture thread reports the first recorded block of a take; the palette opens on the GUI thread.
     _recording_audio = pyqtSignal(int)
 
@@ -97,12 +97,13 @@ class RecordingController(QObject):
                                           self._notify_input_device_fallback)
         self.hot_mic = HotMicCapture(self.microphone, idle_expired=self._hot_mic_idle_expired,
                                      on_block=self._update_latest_audio_level,
-                                     on_recording_audio=self._report_recording_audio)
+                                     on_recording_audio=self._report_recording_audio,
+                                     on_failure=self._on_capture_open_failed)
         self.on_demand = OnDemandCapture(self.microphone, on_block=self._update_latest_audio_level,
                                          on_failure=self._on_capture_open_failed,
                                          on_recording_audio=self._report_recording_audio)
         self.mac_recorder = macos_recorder.MacRecorder()
-        self._capture_failed.connect(self.abandon_prompt_selection)
+        self._capture_failed.connect(self._on_capture_failed)
         self._recording_audio.connect(self._on_recording_audio)
 
     # --- Capture strategy ----------------------------------------------------------------
@@ -171,9 +172,22 @@ class RecordingController(QObject):
         return self.latest_audio_level
 
     def _on_capture_open_failed(self) -> None:
-        """The per-recording stream could not be opened (capture thread): end the recording."""
+        """The stream could not be opened for the take (capture thread): hand over to the GUI thread."""
+        self._capture_failed.emit(self._take)
+
+    def _on_capture_failed(self, take: int) -> None:
+        """The microphone cannot serve this take: end the recording like a failed start does."""
+        if take != self._take or not self.is_recording or self.mac_recorder.active:
+            return
+        logging.error("Recording ended: the audio input stream could not be opened.")
         self.is_recording = False
-        self._capture_failed.emit()
+        self.is_paused = False
+        self.push_to_talk_active = False
+        self._feedback_pending = False
+        self.abandon_prompt_selection()
+        self.active_capture().cancel_recording()
+        self.state_changed.emit(False)
+        self._notifier.show(self._ctx.tr("no_microphone_signal_message"), BALLOON_INFO_MS)
 
     def _report_recording_audio(self) -> None:
         """The first block of the take was recorded (capture thread): hand over to the GUI thread."""
@@ -200,8 +214,9 @@ class RecordingController(QObject):
 
     def stop_background_capture(self) -> None:
         """Stop the Windows background mic reader and release the capture device."""
-        self.hot_mic.stop()
-        self.microphone.terminate()
+        # A reader stuck in a driver read still owns the stream; terminating PortAudio under it would crash.
+        if self.hot_mic.stop():
+            self.microphone.terminate()
 
     def apply_settings(self) -> None:
         """Start or stop the warm microphone after the settings were saved."""
