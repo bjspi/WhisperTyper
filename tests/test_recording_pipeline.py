@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 import app.controllers.recording as recording_module  # noqa: E402
 import app.controllers.text_output as text_output_module  # noqa: E402
-from app.audio.capture import HotMicCapture  # noqa: E402
+from app.audio.capture import HotMicCapture, OnDemandCapture  # noqa: E402
 from app.audio.store import RecordingStore  # noqa: E402
 from app.context import AppContext  # noqa: E402
 from app.controllers.permissions import MacPermissions  # noqa: E402
@@ -325,3 +325,57 @@ def test_palette_waits_for_audio_and_its_buttons_restart_and_cancel(api, tmp_pat
 
     assert states == [True, False]
     assert len(FakeApi.uploads) == uploads  # Cancelled: nothing was sent.
+
+
+class UnopenableMicrophone(FakeMicrophone):
+    """A microphone without a usable device: every open fails."""
+
+    device_name = ""
+
+    def open(self):
+        raise OSError("no input device")
+
+
+def test_failed_stream_open_ends_the_recording_on_the_gui_thread(tmp_path, monkeypatch):
+    config = copy.deepcopy(DEFAULT_CONFIG)
+    config.update(
+        api_endpoint="http://127.0.0.1:9/v1/audio/transcriptions",
+        api_key_profiles=[{"id": "p", "name": "Local", "provider": "custom", "key": "test-key"}],
+        transcription_key_profile_id="p", windows_keep_mic_hot=False,
+        macos_microphone_info_shown=True, macos_accessibility_info_shown=True,
+    )
+    monkeypatch.setattr(recording_module.macos_recorder, "available", lambda: False)  # Per-recording PyAudio path.
+    ctx = AppContext(MemoryConfigStore(config), RecordingStore(str(tmp_path)))
+    workers = WorkerThreads()
+    warmup = WarmupScheduler(config, is_recording=lambda: False, rephrasing_first=lambda: False)
+    warmup.http.schedule = Mock()
+    permissions = MacPermissions(ctx, dialog_parent=lambda: None)
+    output = Paster(config, ctx.tr, ctx.notifier.show, permissions.warn)
+    pipeline = TranscriptionPipeline(ctx, output, warmup, workers)
+    recording = RecordingController(ctx, permissions=permissions, warmup=warmup, output=output, pipeline=pipeline,
+                                    sounds=Mock(), open_settings=Mock(), palette_anchor=lambda: None)
+    recording._capture_selection_context = Mock()
+    recording._notifier = Mock()
+    recording.on_demand = OnDemandCapture(UnopenableMicrophone(), on_block=recording._update_latest_audio_level,
+                                          on_failure=recording._on_capture_open_failed)
+    states: list[bool] = []
+    recording.state_changed.connect(states.append)
+
+    try:
+        recording.toggle()
+        recording.push_to_talk_active = True  # As the hotkey listener sets it while the key is held.
+        assert recording.is_recording and states == [True]
+        deadline = time.monotonic() + 5
+        while recording.is_recording and time.monotonic() < deadline:
+            QAPP.processEvents()
+            time.sleep(0.005)
+        for _ in range(20):
+            QAPP.processEvents()
+    finally:
+        workers.drain()
+        warmup.close()
+
+    assert states == [True, False]  # The tray meter and the cancel action follow the failed take.
+    assert not (recording.is_recording or recording.is_paused or recording.push_to_talk_active)
+    assert not recording._feedback_pending
+    recording._notifier.show.assert_called_with(ctx.tr("no_microphone_signal_message"), recording_module.BALLOON_INFO_MS)
