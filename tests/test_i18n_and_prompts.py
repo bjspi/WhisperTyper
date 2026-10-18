@@ -162,3 +162,22 @@ class TestDefaultTranscriptionPrompt:
     def test_auto_detect_or_unknown_language_uses_ui_language(self):
         assert default_transcription_prompt("", "fr") == DEFAULT_TRANSCRIPTION_PROMPTS["fr"].strip()
         assert default_transcription_prompt("it", "de") == DEFAULT_TRANSCRIPTION_PROMPTS["de"].strip()
+
+
+class TestPreviousTranscriptionPrompts:
+    def test_an_earlier_default_counts_as_unedited_and_follows_the_spoken_language(self):
+        from app.core.prompts import PREVIOUS_TRANSCRIPTION_PROMPTS, is_default_transcription_prompt
+        assert is_default_transcription_prompt(PREVIOUS_TRANSCRIPTION_PROMPTS["de"])
+        assert transcription_prompt_for(PREVIOUS_TRANSCRIPTION_PROMPTS["de"], "de") == DEFAULT_TRANSCRIPTION_PROMPTS["de"]
+        assert not is_default_transcription_prompt("my custom prompt")
+
+    def test_an_earlier_default_is_replaced_by_the_current_one_in_the_same_language(self):
+        from app.core.prompts import PREVIOUS_TRANSCRIPTION_PROMPTS, updated_default_transcription_prompt
+        for language, previous in PREVIOUS_TRANSCRIPTION_PROMPTS.items():
+            assert updated_default_transcription_prompt(previous) == DEFAULT_TRANSCRIPTION_PROMPTS[language].strip()
+        assert updated_default_transcription_prompt(DEFAULT_TRANSCRIPTION_PROMPTS["de"]) is None
+        assert updated_default_transcription_prompt("edited") is None
+
+    def test_the_defaults_ask_for_every_word(self):
+        assert "wortgetreue" in DEFAULT_TRANSCRIPTION_PROMPTS["de"]
+        assert all("Füllwörter" not in prompt and "filler" not in prompt for prompt in DEFAULT_TRANSCRIPTION_PROMPTS.values())

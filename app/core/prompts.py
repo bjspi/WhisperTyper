@@ -8,6 +8,16 @@ from typing import Any, Dict, List, Optional
 # and has NOT manually edited a prompt (i.e. it still matches one of these known defaults),
 # the prompt is swapped to the new language's default automatically.
 DEFAULT_TRANSCRIPTION_PROMPTS = {
+    "en": """The following is a verbatim transcription of a voice input; every spoken word is kept. Please pay attention to spelling, capitalization, and sensible punctuation, including periods and commas. I also use "Germanized" English terms, especially from the tech and IT scene, from the areas of gadgets, smartphones, automotive, AI, and Python programming. Please recognize these as well.""",
+    "de": """Das Folgende ist eine wortgetreue Transkription einer Spracheingabe; jedes gesprochene Wort bleibt erhalten. Bitte achte auf Rechtschreibung, Groß- und Kleinschreibung sowie sinnvolle Zeichensetzung einschließlich Punkten und Kommas. Ich verwende außerdem „eingedeutschte“ englische Begriffe, besonders aus der Tech- und IT-Szene, aus den Bereichen Gadgets, Smartphones, Automotive, KI und Python-Programmierung. Bitte erkenne auch diese.""",
+    "es": """Lo siguiente es una transcripción literal de una entrada de voz; se conserva cada palabra pronunciada. Presta atención a la ortografía, el uso de mayúsculas y una puntuación sensata, incluidos puntos y comas. También utilizo términos ingleses adaptados, especialmente del ámbito tecnológico y de TI, de las áreas de gadgets, smartphones, automoción, IA y programación en Python. Reconócelos también.""",
+    "fr": """Ce qui suit est une transcription mot à mot d'une entrée vocale ; chaque mot prononcé est conservé. Veille à l'orthographe, aux majuscules et à une ponctuation sensée, y compris les points et les virgules. J'utilise aussi des termes anglais adaptés, notamment issus de la scène tech et IT, des domaines des gadgets, smartphones, automobile, IA et programmation Python. Merci de les reconnaître également.""",
+}
+
+# Earlier defaults asked to remove filler words, which made Whisper drop short phrases and, on some
+# recordings, whole sentence starts. A saved prompt still equal to one of them counts as unedited:
+# it is replaced by the current default on load and follows the spoken language like a default.
+PREVIOUS_TRANSCRIPTION_PROMPTS = {
     "en": """The following is a transcription of a voice input. The transcription should be almost perfect to the original, only filler words and silence/emptiness should be removed. Please pay attention to spelling, capitalization, and sensible punctuation, including periods and commas. I also use "Germanized" English terms, especially from the tech and IT scene, from the areas of gadgets, smartphones, automotive, AI, and Python programming. Please recognize these as well.""",
     "de": """Das Folgende ist eine Transkription einer Spracheingabe. Die Transkription sollte nahezu perfekt dem Original entsprechen, nur Füllwörter und Stille/Leere sollten entfernt werden. Bitte achte auf Rechtschreibung, Groß- und Kleinschreibung sowie sinnvolle Zeichensetzung einschließlich Punkten und Kommas. Ich verwende außerdem „eingedeutschte“ englische Begriffe, besonders aus der Tech- und IT-Szene, aus den Bereichen Gadgets, Smartphones, Automotive, KI und Python-Programmierung. Bitte erkenne auch diese.""",
     "es": """Lo siguiente es una transcripción de una entrada de voz. La transcripción debe ser casi perfecta respecto al original; solo se deben eliminar las muletillas y los silencios/vacíos. Presta atención a la ortografía, el uso de mayúsculas y una puntuación sensata, incluidos puntos y comas. También utilizo términos ingleses adaptados, especialmente del ámbito tecnológico y de TI, de las áreas de gadgets, smartphones, automoción, IA y programación en Python. Reconócelos también.""",
@@ -125,6 +135,21 @@ def _is_known_default_prompt(prompt_map: Dict[str, str], text: str) -> bool:
     return any(normalized == value.strip() for value in prompt_map.values())
 
 
+def is_default_transcription_prompt(text: str) -> bool:
+    """Whether ``text`` is a current or earlier default transcription prompt (any language), i.e. unedited."""
+    return (_is_known_default_prompt(DEFAULT_TRANSCRIPTION_PROMPTS, text)
+            or _is_known_default_prompt(PREVIOUS_TRANSCRIPTION_PROMPTS, text))
+
+
+def updated_default_transcription_prompt(text: str) -> str | None:
+    """The current default for an earlier default prompt, in the same language; None for any other text."""
+    normalized = (text or "").strip()
+    for language, previous in PREVIOUS_TRANSCRIPTION_PROMPTS.items():
+        if normalized == previous.strip():
+            return DEFAULT_TRANSCRIPTION_PROMPTS[language].strip()
+    return None
+
+
 def default_transcription_prompt(input_language: str, ui_language: str) -> str:
     """The default prompt for the spoken language; the UI language's default when there is none (or auto-detect)."""
     language = (input_language or "").lower()
@@ -141,7 +166,7 @@ def transcription_prompt_for(prompt: str, input_language: str) -> str:
     largely translated). Edited prompts and languages without a default are sent unchanged.
     """
     language = (input_language or "").lower()
-    if language in DEFAULT_TRANSCRIPTION_PROMPTS and _is_known_default_prompt(DEFAULT_TRANSCRIPTION_PROMPTS, prompt):
+    if language in DEFAULT_TRANSCRIPTION_PROMPTS and is_default_transcription_prompt(prompt):
         return DEFAULT_TRANSCRIPTION_PROMPTS[language].strip()
     return prompt
 

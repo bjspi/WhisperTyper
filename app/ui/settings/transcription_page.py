@@ -7,7 +7,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy
 
 from app.core.models import prompt_token_limit, transcription_supports_prompt, transcription_supports_temperature
-from app.core.prompts import DEFAULT_TRANSCRIPTION_PROMPTS, _is_known_default_prompt, default_transcription_prompt
+from app.core.prompts import default_transcription_prompt, is_default_transcription_prompt
 from app.core.textutil import estimate_tokens
 from app.services.ffmpeg import probe_version, resolve_ffmpeg
 from app.ui.settings.base import SettingsWindowBase
@@ -136,7 +136,7 @@ class TranscriptionPage(SettingsWindowBase):
     def swap_default_transcription_prompt(self, input_language: str, ui_language: str) -> None:
         """Replace an unedited default prompt with the default for the given languages; edited prompts stay."""
         current = self.prompt_input.toPlainText()
-        if not _is_known_default_prompt(DEFAULT_TRANSCRIPTION_PROMPTS, current):
+        if not is_default_transcription_prompt(current):
             return
         new_default = default_transcription_prompt(input_language, ui_language)
         if current.strip() != new_default:
