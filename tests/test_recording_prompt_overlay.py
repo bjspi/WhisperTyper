@@ -213,3 +213,17 @@ def test_hotkey_id_is_read_from_a_native_wm_hotkey_message():
     msg.message = 0x0200  # WM_MOUSEMOVE
     assert hotkey_id_of(b"windows_generic_MSG", address) is None
 
+
+
+def test_texts_bundle_stands_in_for_the_single_string_parameters(qapp):
+    from app.ui.floating_buttons import RecordingPaletteTexts
+    texts = RecordingPaletteTexts(status_text="Recording…", none_text="None", paused_text="Paused",
+                                  pause_tooltip="Pause", resume_tooltip="Resume", move_tooltip="Drag to move")
+    palette = RecordingPromptOverlay(PROMPTS, on_selection_changed=lambda _prompt: None, use_system_position=False,
+                                     on_pause=lambda: None, texts=texts)
+    assert palette.status_label.text() == "Recording" and palette._prompt_buttons[0].text() == "None"
+    assert palette.pause_button is not None and palette.pause_button.toolTip() == "Pause"
+    assert palette.move_handle is not None and palette.move_handle.toolTip() == "Drag to move"
+    palette.set_paused(True)
+    assert palette.status_label.text() == "Paused" and palette.pause_button.toolTip() == "Resume"
+    assert RecordingPaletteTexts().status_text == "" and RecordingPaletteTexts().device_tooltip == ""

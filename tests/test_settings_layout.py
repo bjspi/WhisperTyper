@@ -69,3 +69,21 @@ def test_tab_order_puts_api_keys_right_after_the_api_providers(window):
     assert pages == [window.transcription_tab, window._api_keys_tab, window.post_rephrasing_tab,
                      window._replacements_tab, window.general_tab]
     assert window.tabs.tabText(0) == "API Providers"
+
+
+def test_muted_labels_are_styled_by_the_theme_not_per_widget(window):
+    from app.ui import theme
+    assert window.prompt_token_label.styleSheet() == "" and window.transformations_tab_description_label.styleSheet() == ""
+    for dark in (False, True):
+        qss = theme.build_stylesheet(dark)
+        assert f'QLabel#transformations_tab_description_label {{ color: {theme.palette(dark)["muted"]};' in qss
+        assert f'QLabel#prompt_token_label[level="over"] {{ color: {theme.palette(dark)["warn"]}; }}' in qss
+
+
+def test_open_log_action_follows_the_log_file_in_refresh_actions(window):
+    window._files.log_file_exists.return_value = True
+    window.refresh_actions()
+    assert window.open_log_file_action.isEnabled()
+    window._files.log_file_exists.return_value = False
+    window.refresh_actions()
+    assert not window.open_log_file_action.isEnabled()

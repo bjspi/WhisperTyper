@@ -1,7 +1,6 @@
 """macOS menu-bar icons: a crisp monochrome WhisperTyper mark and its recording variant."""
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 from PyQt6.QtCore import QRectF, Qt
@@ -9,56 +8,8 @@ from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import QApplication
 
 from app.core.env import is_MACOS
-from app.core.paths import resource_path
 
 _WHITE = QColor(255, 255, 255)
-
-
-def _status_icon() -> QIcon:
-    """Return the bundled menu-bar status icon, preferring a template image."""
-    if not is_MACOS:
-        return QIcon()
-    for icon_path in (resource_path("resources", "whispertyperStatusTemplate.png"),
-                      resource_path("resources", "whispertyper-status.png")):
-        if os.path.exists(icon_path):
-            icon = QIcon(icon_path)
-            if not icon.isNull():
-                return icon
-    return QIcon()
-
-
-def _tint(pixmap: QPixmap, color: QColor) -> QPixmap:
-    """Tint a pixmap while preserving its original alpha mask."""
-    if pixmap.isNull():
-        return QPixmap()
-    tinted = QPixmap(pixmap.size())
-    tinted.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(tinted)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    painter.drawPixmap(0, 0, pixmap)
-    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-    painter.fillRect(tinted.rect(), color)
-    painter.end()
-    return tinted
-
-
-def _crop_to_visible_bounds(pixmap: QPixmap) -> QPixmap:
-    """Trim transparent padding around a pixmap so status icons render at full size."""
-    if pixmap.isNull():
-        return QPixmap()
-    image = pixmap.toImage()
-    min_x, min_y, max_x, max_y = image.width(), image.height(), -1, -1
-    for y in range(image.height()):
-        for x in range(image.width()):
-            if image.pixelColor(x, y).alpha() > 0:
-                min_x, min_y = min(min_x, x), min(min_y, y)
-                max_x, max_y = max(max_x, x), max(max_y, y)
-    if max_x < min_x or max_y < min_y:
-        return pixmap
-    padding = max(1, int(round(max(max_x - min_x + 1, max_y - min_y + 1) * 0.05)))
-    min_x, min_y = max(0, min_x - padding), max(0, min_y - padding)
-    max_x, max_y = min(image.width() - 1, max_x + padding), min(image.height() - 1, max_y + padding)
-    return QPixmap.fromImage(image.copy(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1))
 
 
 def _status_symbol(size: int, color: QColor) -> QPixmap:
@@ -85,22 +36,10 @@ def _status_symbol(size: int, color: QColor) -> QPixmap:
 
 
 def _status_pixmap(size: int, color: Optional[QColor] = None) -> QPixmap:
-    """A scaled menu-bar status pixmap, optionally recolored."""
-    if is_MACOS:
-        symbol = _status_symbol(size, color if color is not None else QColor(0, 0, 0))
-        if not symbol.isNull():
-            return symbol
-    icon = _status_icon()
-    if icon.isNull():
+    """A scaled menu-bar status pixmap, optionally recolored (empty off macOS)."""
+    if not is_MACOS:
         return QPixmap()
-    source_size = max(size * 8, 128)
-    pixmap = _crop_to_visible_bounds(icon.pixmap(source_size, source_size))
-    if not pixmap.isNull():
-        pixmap = pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio,
-                               Qt.TransformationMode.SmoothTransformation)
-    if pixmap.isNull() or color is None:
-        return pixmap
-    return _tint(pixmap, color)
+    return _status_symbol(size, color if color is not None else QColor(0, 0, 0))
 
 
 def _device_pixel_ratio() -> float:

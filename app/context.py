@@ -1,13 +1,15 @@
 """Shared runtime dependencies handed to every controller and window by the composition root."""
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Callable, Dict, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtWidgets import QApplication
 
 from app.audio.store import RecordingStore
 from app.core.config_store import ConfigStore
 from app.core.i18n import TranslationManager
+from app.ui import theme
 from app.ui.durations import BALLOON_SHORT_MS
 from app.ui.tooltip import MouseFollowerTooltip
 
@@ -22,16 +24,22 @@ class Notifier(QObject):
     _show = pyqtSignal(str, int, bool, bool, str, str)
     _hide = pyqtSignal()
 
-    def __init__(self) -> None:
-        """Connect the cross-thread signals to slots of this GUI-thread object."""
+    def __init__(self, dark: Optional[Callable[[], bool]] = None) -> None:
+        """Connect the cross-thread signals to slots of this GUI-thread object.
+
+        ``dark`` tells, on the GUI thread, whether the balloon is drawn in the dark palette (the
+        app's resolved colour theme); without it the balloon follows the operating system.
+        """
         super().__init__()
+        self._dark = dark
         self._show.connect(self._show_slot)
         self._hide.connect(self._hide_slot)
 
     def _show_slot(self, message: str, timeout_ms: int, spinner: bool, check: bool, detail: str,
                    detail_level: str) -> None:
         """GUI thread: display the balloon."""
-        MouseFollowerTooltip.show_tooltip(message, timeout_ms, spinner, check, detail, detail_level)
+        dark = self._dark() if self._dark is not None else None
+        MouseFollowerTooltip.show_tooltip(message, timeout_ms, spinner, check, detail, detail_level, dark)
 
     def _hide_slot(self) -> None:
         """GUI thread: dismiss the balloon."""
@@ -65,7 +73,8 @@ class AppContext(QObject):
         if migrated:
             self.save_config()
         self.translator = TranslationManager(initial_language=self.config.get("ui_language", "en"))
-        self.notifier = Notifier()
+        self.notifier = Notifier(dark=lambda: theme.resolve_dark(self.config.get("color_theme", "system"),
+                                                                  QApplication.instance()))
         self.recordings = recordings
 
     def tr(self, key: str, **kwargs: Any) -> str:  # type: ignore[override]  # Qt's static tr() is unused
@@ -86,3 +95,15 @@ class AppContext(QObject):
     def save_config(self) -> None:
         """Persist the current configuration."""
         self._store.save(self.config)
+
+    def save_config_keys(self, *keys: str) -> None:
+        """Persist only ``keys`` of the current configuration; the file keeps its other values.
+
+        For values that apply at once (window size, colour theme) while the settings form may
+        still hold unsaved edits mirrored into the live config.
+        """
+        stored, _migrated = self._store.load()
+        for key in keys:
+            if key in self.config:
+                stored[key] = self.config[key]
+        self._store.save(stored)

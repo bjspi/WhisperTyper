@@ -511,9 +511,6 @@
        </item>
        <item>
         <widget class="QLabel" name="prompt_token_label">
-         <property name="styleSheet">
-          <string>color: #555;</string>
-         </property>
          <property name="text">
           <string/>
          </property>
@@ -543,9 +540,6 @@
          </property>
          <property name="wordWrap">
           <bool>true</bool>
-         </property>
-         <property name="styleSheet">
-          <string>margin-bottom: 10px; font-style: italic; color: #aaa;</string>
          </property>
         </widget>
        </item>

@@ -678,6 +678,7 @@ def main() -> int:
         with (patch("app.ui.connection_tester.net.run_transcription_connection_test", return_value=("ok", "")) as connection,
               patch("app.ui.connection_tester.QMessageBox.information")):
             sw._connection_tester.test_transcription()
+            sw._connection_tester.wait()
         check("keys: connection test uses the unsaved automatic key", connection.call_args.args[1] == "gsk-smoke-a-edited")
         tab.groq_rotation.setChecked(True)
         with patch.object(sw, "_collect_validation_warnings", return_value=[]):
@@ -797,6 +798,7 @@ def main() -> int:
         with (patch("app.ui.connection_tester.net.run_transcription_connection_test", return_value=("ok", "")) as connection,
               patch("app.ui.connection_tester.QMessageBox")):
             sw._connection_tester.test_transcription()
+            sw._connection_tester.wait()
         check("models: transcription connection test uses the typed model",
               connection.called and connection.call_args.args[2] == "my-custom-transcriber")
         sw.transcription_provider_selector.setCurrentIndex(sw.transcription_provider_selector.findData("groq"))

@@ -1,11 +1,11 @@
-"""Rephrase hotkey palette: chips wrap, a click reports prompt and selection, Escape closes (Qt, not shown)."""
+"""Rephrase hotkey palette: chips wrap, a click reports prompt and selection, Escape closes, focus (Qt offscreen)."""
 from __future__ import annotations
 
 import pytest
 
 QtCore = pytest.importorskip("PyQt6.QtCore")
-QtGui = pytest.importorskip("PyQt6.QtGui")
 QtWidgets = pytest.importorskip("PyQt6.QtWidgets")
+QtTest = pytest.importorskip("PyQt6.QtTest")
 
 from app.ui.floating_buttons import FloatingButtonWindow  # noqa: E402
 
@@ -55,6 +55,14 @@ def test_selection_preview_is_one_shortened_line(qapp):
 
 def test_escape_closes_the_palette(qapp):
     palette = window([])
-    event = QtGui.QKeyEvent(QtCore.QEvent.Type.KeyPress, QtCore.Qt.Key.Key_Escape, QtCore.Qt.KeyboardModifier.NoModifier)
-    palette.keyPressEvent(event)
+    QtTest.QTest.keyClick(palette, QtCore.Qt.Key.Key_Escape)
     assert FloatingButtonWindow._instance is None
+
+
+def test_the_palette_takes_the_focus_when_shown(qapp, monkeypatch):
+    monkeypatch.setattr(FloatingButtonWindow, "show", lambda self: QtWidgets.QWidget.show(self))  # undo the fixture's no-op
+    palette = window([])
+    qapp.processEvents()
+    assert palette.isVisible() and palette.isActiveWindow()
+    assert palette.focusPolicy() == QtCore.Qt.FocusPolicy.StrongFocus and palette.hasFocus()
+    assert not palette.testAttribute(QtCore.Qt.WidgetAttribute.WA_ShowWithoutActivating)
