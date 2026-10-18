@@ -28,6 +28,16 @@ class TestContainsTrigger:
     def test_no_triggers_configured(self):
         assert not liveprompt.contains_trigger("prompt do things", [], 5)
 
+    def test_trigger_matches_whole_words_only(self):
+        assert not liveprompt.contains_trigger("Die Kinder spielen", ["ki"], 5)
+        assert liveprompt.contains_trigger("KI, schreib was", ["ki"], 5)
+        assert liveprompt.contains_trigger("Hey KI: schreib was", ["ki"], 5)
+        assert liveprompt.contains_trigger("Schreib was, KI", ["ki"], 5)
+
+    def test_multi_word_trigger(self):
+        assert liveprompt.contains_trigger("Das als Anweisung: schreib was", ["als anweisung"], 5)
+        assert not liveprompt.contains_trigger("Das als Anweisungen", ["als anweisung"], 5)
+
 
 class TestStripTrigger:
     def test_strips_trigger_and_leading_punctuation(self):
@@ -43,3 +53,10 @@ class TestStripTrigger:
 
     def test_empty_remainder_falls_back_to_full_text(self):
         assert liveprompt.strip_trigger("prompt", ["prompt"]) == "prompt"
+
+    def test_trigger_inside_a_word_is_not_stripped(self):
+        assert liveprompt.strip_trigger("Die Kinder spielen", ["ki"]) == "Die Kinder spielen"
+        assert liveprompt.strip_trigger("Kinder, KI: schreib was", ["ki"]) == "schreib was"
+
+    def test_multi_word_trigger_is_stripped(self):
+        assert liveprompt.strip_trigger("Das als Anweisung: schreib was", ["als anweisung"]) == "schreib was"

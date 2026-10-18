@@ -1,7 +1,8 @@
 """Application constants and config defaults.
 
 Static configuration data; the launch-time system language comes from app.platform.
-No Qt, no app state.
+No Qt, no app state. The app data directory is created by the bootstrap and the config store,
+not at import.
 """
 
 from __future__ import annotations
@@ -41,7 +42,6 @@ LANGUAGES = {
 
 USER_HOME_DIR = os.path.expanduser("~")
 APP_DATA_DIR = os.path.join(USER_HOME_DIR, ".WhisperTyper")
-os.makedirs(APP_DATA_DIR, exist_ok=True)
 
 CONFIG_FILE: str = os.path.join(APP_DATA_DIR, "config.json")
 LOG_FILE_PATH: str = os.path.join(APP_DATA_DIR, "WhisperTyper.log")

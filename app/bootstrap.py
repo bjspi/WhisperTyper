@@ -45,7 +45,16 @@ def redirect_std_streams_if_windowed() -> None:
     This redirects both streams to a file inside the app data directory and installs an
     ``excepthook`` so uncaught exceptions are always recorded, even before the Qt app and
     its logging handlers are initialized.
+
+    As the first bootstrap step it also creates the app data directory (config, logs) that
+    every launch needs.
     """
+    app_data_dir = os.path.join(os.path.expanduser("~"), ".WhisperTyper")
+    try:
+        os.makedirs(app_data_dir, exist_ok=True)
+    except OSError:
+        pass  # the config store creates it again when saving; a failure surfaces there
+
     exe_name = os.path.basename(sys.executable or "").lower()
     is_windowed = (
         sys.stderr is None
@@ -61,8 +70,6 @@ def redirect_std_streams_if_windowed() -> None:
     os.environ["WHISPERTYPER_WINDOWED"] = "1"
 
     try:
-        app_data_dir = os.path.join(os.path.expanduser("~"), ".WhisperTyper")
-        os.makedirs(app_data_dir, exist_ok=True)
         stderr_path = os.path.join(app_data_dir, "WhisperTyper.stderr.log")
         # Truncate per launch (single-instance app) so the file stays bounded but keeps
         # the full current session including any crash traceback.

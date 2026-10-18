@@ -44,6 +44,10 @@ class TestNormalizeHotkeyString:
         assert hotkeys.normalize_hotkey_string("Ctrl+Plus") == "<ctrl>+<plus>"
         assert hotkeys.normalize_hotkey_string("<ctrl>+<plus>") == "<ctrl>+<plus>"
 
+    def test_minus_key_is_not_an_underscore(self):
+        assert hotkeys.normalize_hotkey_string("<ctrl>+-") == "<ctrl>+-"
+        assert hotkeys.normalize_hotkey_string("Ctrl+Caps-Lock") == "<ctrl>+<caps_lock>"
+
     def test_typed_plus_key_is_not_lost(self):
         assert hotkeys.normalize_hotkey_string("Ctrl++") == "<ctrl>+<plus>"
         assert hotkeys.normalize_hotkey_string("+") == "<plus>"

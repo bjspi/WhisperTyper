@@ -21,9 +21,16 @@ def key(name=None, char=None, vk=None):
     (key(char="A"), {"a"}),
     (key(name="alt_gr"), {"<alt_gr>", "<ctrl>", "<alt>"}),
     (key(char="+"), {"<plus>"}),
+    (key(char="\x03"), set()),  # Ctrl+C as reported on Windows: a control char is not a key name
+    (key(char=" "), set()),
 ])
 def test_pynput_events(event, expected):
     assert pynput_key_tokens(event) == expected
+
+
+def test_windows_ctrl_letter_is_named_by_its_virtual_key(monkeypatch):
+    monkeypatch.setattr(key_tokens, "is_WINDOWS", True)
+    assert pynput_key_tokens(key(char="\x03", vk=0x43)) == {"c"}
 
 
 def test_qt_capture_maps_modifiers_function_keys_and_punctuation(monkeypatch):
