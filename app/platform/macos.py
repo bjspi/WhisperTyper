@@ -31,6 +31,7 @@ if is_MACOS:
         NSURL = None
 
     AVAudioRecorder = None
+    AVCaptureDevice = None
     if objc:
         try:
             _avfoundation_globals: Dict[str, Any] = {}
@@ -40,8 +41,10 @@ if is_MACOS:
                 bundle_path=objc.pathForFramework('/System/Library/Frameworks/AVFoundation.framework'),
             )
             AVAudioRecorder = _avfoundation_globals.get("AVAudioRecorder")
+            AVCaptureDevice = _avfoundation_globals.get("AVCaptureDevice")
         except Exception:
             AVAudioRecorder = None
+            AVCaptureDevice = None
 else:
     AXIsProcessTrustedWithOptions = None
     kAXTrustedCheckOptionPrompt = None
@@ -50,6 +53,7 @@ else:
     objc = None
     NSURL = None
     AVAudioRecorder = None
+    AVCaptureDevice = None
 
 
 def frontmost_app_name() -> str:

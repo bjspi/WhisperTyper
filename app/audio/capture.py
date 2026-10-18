@@ -21,6 +21,7 @@ import pyaudio
 
 from app.audio.device_selector import InputDeviceSelector
 from app.core.env import is_MACOS
+from app.core.textutil import demojibake
 from app.core.timing import OperationTiming
 
 #: Pause before reopening the stream after a failed read, so a broken driver is not hammered.
@@ -90,6 +91,8 @@ class MicrophoneInput:
             self.samplerate = candidate["samplerate"]
             self.device_index = candidate["index"]
             self.device_name = candidate["name"]
+            if candidate["index"] is None:
+                self.device_name = _default_input_name(audio) or self.device_name
             logging.info(
                 f"Opened audio input stream on '{self.device_name}' "
                 f"(index={self.device_index}, rate={self.samplerate} Hz)."
@@ -138,6 +141,14 @@ class MicrophoneInput:
                 "recording from the system default instead."
             )
             self._on_device_fallback(configured)
+
+
+def _default_input_name(audio: pyaudio.PyAudio) -> str:
+    """Name of the device PortAudio opens as its default input, or "" when it is unknown."""
+    try:
+        return demojibake(str(audio.get_default_input_device_info().get("name", "")))
+    except Exception:
+        return ""
 
 
 def _open_input_stream(audio: pyaudio.PyAudio, candidate: Mapping[str, Any], chunk_size: int) -> Any:

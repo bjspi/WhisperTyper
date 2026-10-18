@@ -126,6 +126,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "use_local_px_proxy": False,
     "network_ip_family": "auto",  # "auto" | "ipv4" | "ipv6"
     "gain_db": 10,
+    # Lift each recording's peak to -1 dBFS instead of the fixed gain; gain_db is then the upper limit.
+    "gain_normalize": True,
     "systray_double_click_copy": True,
     # Target of "Mark last recording as bad" (audio + JSON with the sent request). Empty = <app data>/bad_recordings.
     "bad_recordings_dir": "",
