@@ -27,6 +27,9 @@ class ModelSpec(NamedTuple):
     diarization: bool = False
     #: Transcription: the language is sent as ``languages[]`` instead of ``language``.
     language_list: bool = False
+    #: Transcription: how to ask for confidence details — "verbose" (Whisper ``verbose_json`` with
+    #: segment log-probabilities and word timestamps), "logprobs" (per-token log-probabilities) or "".
+    diagnostics: str = ""
     #: Rephrasing: accepted ``reasoning_effort`` values, empty for models without reasoning control.
     reasoning_efforts: Tuple[str, ...] = ()
     #: Rephrasing: the effort the model uses when none is sent (None where the provider does not document it).
@@ -35,14 +38,14 @@ class ModelSpec(NamedTuple):
 
 # Verified against the providers' official model pages on 2026-10-10 (active models only).
 TRANSCRIPTION_MODELS: Dict[str, ModelSpec] = {
-    "gpt-transcribe": ModelSpec("openai", temperature=False, language_list=True),
-    "gpt-4o-transcribe": ModelSpec("openai"),
-    "gpt-4o-mini-transcribe": ModelSpec("openai"),
-    "gpt-4o-mini-transcribe-2025-12-15": ModelSpec("openai"),
+    "gpt-transcribe": ModelSpec("openai", temperature=False, language_list=True, diagnostics="logprobs"),
+    "gpt-4o-transcribe": ModelSpec("openai", diagnostics="logprobs"),
+    "gpt-4o-mini-transcribe": ModelSpec("openai", diagnostics="logprobs"),
+    "gpt-4o-mini-transcribe-2025-12-15": ModelSpec("openai", diagnostics="logprobs"),
     "gpt-4o-transcribe-diarize": ModelSpec("openai", temperature=False, diarization=True),
-    "whisper-1": ModelSpec("openai", prompt_token_limit=WHISPER_PROMPT_TOKEN_LIMIT),
-    "whisper-large-v3-turbo": ModelSpec("groq", prompt_token_limit=WHISPER_PROMPT_TOKEN_LIMIT),
-    "whisper-large-v3": ModelSpec("groq", prompt_token_limit=WHISPER_PROMPT_TOKEN_LIMIT),
+    "whisper-1": ModelSpec("openai", prompt_token_limit=WHISPER_PROMPT_TOKEN_LIMIT, diagnostics="verbose"),
+    "whisper-large-v3-turbo": ModelSpec("groq", prompt_token_limit=WHISPER_PROMPT_TOKEN_LIMIT, diagnostics="verbose"),
+    "whisper-large-v3": ModelSpec("groq", prompt_token_limit=WHISPER_PROMPT_TOKEN_LIMIT, diagnostics="verbose"),
 }
 
 # Reasoning effort scales as documented per model family.
@@ -130,8 +133,12 @@ def prompt_token_limit(model: str) -> int | None:
     return _spec(TRANSCRIPTION_MODELS, model).prompt_token_limit
 
 
-def transcription_form_fields(model: str, prompt: str, temperature: float, language: str) -> Dict[str, Any]:
-    """Build the multipart form fields the selected transcription model accepts."""
+def transcription_form_fields(model: str, prompt: str, temperature: float, language: str,
+                              diagnostics: bool = False) -> Dict[str, Any]:
+    """Build the multipart form fields the selected transcription model accepts.
+
+    ``diagnostics`` also asks for the model's confidence details, where the model offers them.
+    """
     model = clean_model_name(model)
     spec = _spec(TRANSCRIPTION_MODELS, model)
     data: Dict[str, Any] = {"model": model}
@@ -144,4 +151,8 @@ def transcription_form_fields(model: str, prompt: str, temperature: float, langu
     # An empty language lets the API auto-detect.
     if language:
         data["languages[]" if spec.language_list else "language"] = language
+    if diagnostics and spec.diagnostics == "verbose":
+        data.update({"response_format": "verbose_json", "timestamp_granularities[]": ["word", "segment"]})
+    elif diagnostics and spec.diagnostics == "logprobs":
+        data["include[]"] = "logprobs"
     return data

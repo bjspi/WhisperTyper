@@ -91,6 +91,8 @@
   "file_logging_checkbox": "Protokolldatei in den Anwendungsordner schreiben (WhisperTyper.log)",
   "redact_log_checkbox": "Transkript-/Prompt-Text im Protokoll schwärzen (redacted)",
   "redact_log_tooltip": "Wenn aktiviert, werden nur die ersten Zeichen von Transkripten und Prompts ins Protokoll geschrieben; der Rest wird geschwärzt. Aus Datenschutzgründen empfohlen. Standardmäßig aktiviert.",
+  "transcription_diagnostics_checkbox": "Transkriptions-Konfidenz protokollieren (Log-Wahrscheinlichkeiten)",
+  "transcription_diagnostics_tooltip": "Fragt bei der Transkriptions-API die Konfidenzdetails mit ab: Whisper (Groq, whisper-1) liefert Log-Wahrscheinlichkeiten pro Segment und Zeitstempel pro Wort, die GPT-Transkriptionsmodelle von OpenAI eine Log-Wahrscheinlichkeit pro Token. Eine Zusammenfassung landet im Protokoll; „Letzte Aufnahme als schlecht markieren“ speichert alle Details Wort für Wort. Der transkribierte Text ändert sich dadurch nicht. Standardmäßig aktiviert.",
   "hotkey_listening_button": "Höre... Tasten drücken",
   "tray_ready_tooltip": "WhisperTyper bereit.\nHotkey: {hotkey}",
   "tray_started_message": "WhisperTyper gestartet!",

@@ -91,6 +91,8 @@
   "file_logging_checkbox": "Écrire le fichier journal dans le dossier de l'application (WhisperTyper.log)",
   "redact_log_checkbox": "Masquer le texte de transcription/prompt dans le fichier journal",
   "redact_log_tooltip": "Si activé, seuls les premiers caractères des transcriptions et des prompts sont écrits dans le journal ; le reste est masqué. Recommandé pour la confidentialité. Activé par défaut.",
+  "transcription_diagnostics_checkbox": "Journaliser la confiance de la transcription (log-probabilités)",
+  "transcription_diagnostics_tooltip": "Demande à l'API de transcription ses détails de confiance : Whisper (Groq, whisper-1) renvoie des log-probabilités par segment et des horodatages par mot, les modèles de transcription GPT d'OpenAI une log-probabilité par jeton. Un résumé est écrit dans le journal ; « Marquer le dernier enregistrement comme mauvais » enregistre tous les détails mot par mot. Le texte transcrit ne change pas. Activé par défaut.",
   "hotkey_listening_button": "Écoute... Appuyez sur les touches",
   "tray_ready_tooltip": "WhisperTyper prêt.\nRaccourci : {hotkey}",
   "tray_started_message": "WhisperTyper démarré !",

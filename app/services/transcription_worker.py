@@ -21,6 +21,8 @@ class TranscriptionWorker(QObject):
     # Emitted just before an oversized file is compressed, so the tray can show a distinct
     # "compressing…" spinner during the (blocking) re-encode before the transcription phase.
     compressing = pyqtSignal(str)
+    # Confidence details of the response (see transcription_diagnostics), emitted before ``finished``.
+    diagnostics = pyqtSignal(object)
 
     def __init__(self, request: TranscriptionRequest, timing: Optional[OperationTiming] = None,
                  tr: Optional[Translate] = None) -> None:
@@ -43,7 +45,8 @@ class TranscriptionWorker(QObject):
         self.timing.mark("transcription_worker_start")
         try:
             text = transcribe(self.request, self.timing, self.tr,
-                              on_compressing=self.compressing.emit, on_transcribing=self.transcribing.emit)
+                              on_compressing=self.compressing.emit, on_transcribing=self.transcribing.emit,
+                              on_diagnostics=self.diagnostics.emit)
         except TranscriptionError as e:
             self._fail(str(e))
             return

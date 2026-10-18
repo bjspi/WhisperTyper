@@ -77,6 +77,7 @@ BINDINGS: Tuple[Binding, ...] = (
     Binding("debug_logging_checkbox", "debug_logging", "check"),
     Binding("file_logging_checkbox", "file_logging", "check"),
     Binding("redact_log_checkbox", "redact_transcription_in_log", "check"),
+    Binding("transcription_diagnostics_checkbox", "transcription_diagnostics", "check"),
     Binding("systray_double_click_copy_checkbox", "systray_double_click_copy", "check"),
     Binding("recording_prompt_overlay_system_position_checkbox", "recording_prompt_overlay_system_position", "check"),
     Binding("recording_prompt_overlay_digit_keys_checkbox", "recording_prompt_overlay_digit_keys", "check", "windows"),

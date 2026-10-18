@@ -91,6 +91,8 @@
   "file_logging_checkbox": "Write log file to application folder (WhisperTyper.log)",
   "redact_log_checkbox": "Redact transcript/prompt text in the log file",
   "redact_log_tooltip": "When enabled, only the first few characters of transcripts and prompts are written to the log; the rest is redacted. Recommended for privacy. Enabled by default.",
+  "transcription_diagnostics_checkbox": "Log transcription confidence (log-probabilities)",
+  "transcription_diagnostics_tooltip": "Asks the transcription API for its confidence details: Whisper (Groq, whisper-1) returns log-probabilities per segment plus word timestamps, OpenAI's GPT transcription models a log-probability per token. A summary goes into the log; \"Mark last recording as bad\" stores all details word by word. The transcribed text does not change. Enabled by default.",
   "hotkey_listening_button": "Listening... Press keys",
   "tray_ready_tooltip": "WhisperTyper ready.\nHotkey: {hotkey}",
   "tray_started_message": "WhisperTyper started!",

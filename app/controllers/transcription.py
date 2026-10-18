@@ -136,10 +136,12 @@ class TranscriptionPipeline:
             recording_bitrate_kbps=int(config.get("recording_aac_bitrate_kbps", 64)),
             ffmpeg_setting=config.get("ffmpeg_path", ""),
             hedge_api_key=hedge_api_key or None,
+            diagnostics=bool(config.get("transcription_diagnostics", True)),
         )
         worker = TranscriptionWorker(request, timing=timing, tr=self._ctx.tr)
         if recording_format is not None:
             self._remember_request(request, transformation_prompt)
+            worker.diagnostics.connect(lambda details, path=audio_path: self._remember_diagnostics(path, details))
             # Connected before the delivery handlers, so the raw result is stored first.
             worker.finished.connect(lambda text, path=audio_path: self._remember_outcome(path, transcription=text))
             worker.error.connect(lambda message, path: self._remember_outcome(path, error=message))
@@ -169,7 +171,7 @@ class TranscriptionPipeline:
     def _remember_request(self, request: TranscriptionRequest, transformation_prompt: Optional[str]) -> None:
         """Store what is sent for a recording (no API key); a retry of the same file replaces its entry."""
         fields = transcription_form_fields(request.model, request.prompt, request.temperature,
-                                           request.language.lower() if request.language else "")
+                                           request.language.lower() if request.language else "", request.diagnostics)
         # Retained recordings are pruned by age; drop the entries of files that are gone.
         self._recording_requests = {path: entry for path, entry in self._recording_requests.items()
                                     if os.path.exists(path)}
@@ -183,6 +185,7 @@ class TranscriptionPipeline:
             "rephrasing_prompt": transformation_prompt,
             "transcription": None,
             "error": None,
+            "diagnostics": None,
         }
 
     def _remember_outcome(self, audio_path: str, transcription: Optional[str] = None,
@@ -191,6 +194,12 @@ class TranscriptionPipeline:
         entry = self._recording_requests.get(audio_path)
         if entry is not None:
             entry.update(transcription=transcription, error=error)
+
+    def _remember_diagnostics(self, audio_path: str, details: Dict[str, Any]) -> None:
+        """Attach the response's confidence details (segments, words, summary) to the request."""
+        entry = self._recording_requests.get(audio_path)
+        if entry is not None:
+            entry["diagnostics"] = details
 
     def recording_request(self, audio_path: str) -> Optional[Dict[str, Any]]:
         """The latest request sent for a retained recording, if it ran in this session."""

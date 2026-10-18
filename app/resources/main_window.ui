@@ -1014,6 +1014,13 @@
              </property>
             </widget>
            </item>
+           <item>
+            <widget class="QCheckBox" name="transcription_diagnostics_checkbox">
+             <property name="text">
+              <string>Log transcription confidence (log-probabilities)</string>
+             </property>
+            </widget>
+           </item>
          </layout>
         </widget>
        </item>

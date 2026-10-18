@@ -91,6 +91,8 @@
   "file_logging_checkbox": "Escribir archivo de registro en la carpeta de la aplicación (WhisperTyper.log)",
   "redact_log_checkbox": "Ocultar el texto de transcripción/prompt en el archivo de registro",
   "redact_log_tooltip": "Si está activado, solo se escriben los primeros caracteres de las transcripciones y prompts en el registro; el resto se oculta. Recomendado por privacidad. Activado de forma predeterminada.",
+  "transcription_diagnostics_checkbox": "Registrar la confianza de la transcripción (log-probabilidades)",
+  "transcription_diagnostics_tooltip": "Solicita a la API de transcripción sus detalles de confianza: Whisper (Groq, whisper-1) devuelve log-probabilidades por segmento y marcas de tiempo por palabra; los modelos de transcripción GPT de OpenAI, una log-probabilidad por token. Un resumen va al registro; «Marcar la última grabación como mala» guarda todos los detalles palabra por palabra. El texto transcrito no cambia. Activado por defecto.",
   "hotkey_listening_button": "Escuchando... Pulse las teclas",
   "tray_ready_tooltip": "WhisperTyper listo.\nAtajo: {hotkey}",
   "tray_started_message": "¡WhisperTyper iniciado!",

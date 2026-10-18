@@ -122,6 +122,7 @@ TEXTS: Tuple[Text, ...] = (
     _check("debug_logging_checkbox", "debug_logging_checkbox"),
     _check("file_logging_checkbox", "file_logging_checkbox"),
     _check("redact_log_checkbox", "redact_log_checkbox", "redact_log_tooltip"),
+    _check("transcription_diagnostics_checkbox", "transcription_diagnostics_checkbox", "transcription_diagnostics_tooltip"),
     Text("proxy_url_label", "proxy_url_label", "proxy_url_tooltip", ("proxy_url_input",)),
     _check("use_px_proxy_checkbox", "use_px_proxy_checkbox", "use_px_proxy_tooltip"),
     Text("network_ip_family_label", "network_ip_family_label", "network_ip_family_tooltip",
