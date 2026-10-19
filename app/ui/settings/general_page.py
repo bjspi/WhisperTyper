@@ -71,7 +71,7 @@ class GeneralPage(SettingsWindowBase):
             self.input_device_selector.addItem(self.translator.tr("input_device_default"), "")
             for device in self._recording.selectable_input_devices():
                 self.input_device_selector.addItem(device["name"], device["name"])
-            configured = self.config.get("input_device_name", "") or ""
+            configured = (self.config.get("input_device_name", "") or "").strip()
             if self.input_device_selector.findData(configured) < 0:
                 # Keep a device that is not connected right now selected instead of switching to the default.
                 self.input_device_selector.addItem(

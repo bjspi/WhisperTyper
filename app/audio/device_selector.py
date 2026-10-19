@@ -64,8 +64,9 @@ class InputDeviceSelector:
             if int(info.get("hostApi", -1)) != default_host:
                 continue
             # PyAudio/MME returns names in a mangled encoding (e.g. 'IntelÂ®'); repair for
-            # display + storage so it matches on the next enumeration.
-            name = demojibake(str(info.get("name", f"Input {index}")))
+            # display + storage so it matches on the next enumeration. MME also cuts names
+            # at 31 characters, often leaving a trailing space, which the stored name has not.
+            name = demojibake(str(info.get("name", f"Input {index}"))).strip()
             # The "Sound Mapper" pseudo-device is just the system default (already offered separately).
             if "mapper" in name.lower() or name in seen:
                 continue

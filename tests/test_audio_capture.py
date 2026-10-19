@@ -386,3 +386,30 @@ def test_preroll_is_sized_for_the_rate_the_stream_opened_at():
     finally:
         capture.stop()
     assert capture._preroll.maxlen == 35 and len(capture._preroll) >= 1
+
+
+def test_a_device_name_cut_by_mme_with_a_trailing_space_is_still_found(monkeypatch):
+    """MME truncates names at 31 characters, often ending in a space; the stored name is stripped."""
+    from app.audio import device_selector as selector_module
+
+    monkeypatch.setattr(selector_module, "is_MACOS", False)
+    mme_name = "Mikrofonarray (2- Intel® Smart "  # 31 characters, as MME reports it
+    infos = {
+        0: {"index": 0, "name": "Microsoft Soundmapper - Input", "maxInputChannels": 2, "hostApi": 0},
+        1: {"index": 1, "name": mme_name, "maxInputChannels": 2, "hostApi": 0, "defaultSampleRate": 48000.0},
+    }
+    audio = SimpleNamespace(
+        get_default_host_api_info=lambda: {"index": 0},
+        get_device_count=lambda: len(infos),
+        get_device_info_by_index=lambda index: infos[index],
+        get_default_input_device_info=lambda: infos[1],
+    )
+    config = {"input_device_name": ""}
+    selector = selector_module.InputDeviceSelector(lambda: config, 16000, lambda: audio)
+    devices = selector.selectable_input_devices()
+    assert devices == [{"index": 1, "name": mme_name.strip()}]  # what the menus offer and store
+
+    config["input_device_name"] = devices[0]["name"]
+    candidates = selector.preferred_input_stream_candidates(audio)
+    assert [c["index"] for c in candidates] == [1, 1, None]  # the chosen device first, at 16 kHz and natively
+    assert capture_module._default_input_name(audio) == mme_name.strip()
