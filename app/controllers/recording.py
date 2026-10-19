@@ -127,8 +127,14 @@ class RecordingController(QObject):
         if self.mac_recorder.active:
             if not self._mac_device_name:
                 self._mac_device_name = macos_recorder.default_input_name()
-            return self._mac_device_name
-        return self.microphone.device_name
+            name = self._mac_device_name
+        else:
+            name = self.microphone.device_name
+        # Without a configured device the name is whatever the system default resolves to right now.
+        configured = str(self._config.get("input_device_name", "") or "").strip()
+        if name and not configured:
+            return self._ctx.tr("recording_device_system_default", device=name)
+        return name
 
     def _device_menu_entries(self) -> List[tuple]:
         """(label, config value) pairs for the palette's microphone menu."""

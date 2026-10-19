@@ -143,6 +143,7 @@
   "recording_cancel_tooltip": "Cancelar grabación",
   "recording_restart_tooltip": "Reiniciar grabación",
   "recording_device_tooltip": "Cambiar micrófono (la grabación empieza de nuevo)",
+  "recording_device_system_default": "{device} (predeterminado del sistema)",
   "recording_move_tooltip": "Arrastra para mover",
   "recording_paused_message": "Grabación en pausa",
   "recording_pause_tooltip": "Pausar grabación (la tecla de detener también envía desde la pausa)",
