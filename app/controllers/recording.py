@@ -139,7 +139,7 @@ class RecordingController(QObject):
     def _device_menu_entries(self) -> List[tuple]:
         """(label, config value) pairs for the palette's microphone menu."""
         entries = [(self._ctx.tr("input_device_default"), "")]
-        entries += [(device["name"], device["name"]) for device in self.selectable_input_devices()]
+        entries += [(device.get("label", device["name"]), device["name"]) for device in self.selectable_input_devices()]
         return entries
 
     def switch_input_device(self, name: str) -> None:

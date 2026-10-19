@@ -102,6 +102,7 @@ class MicrophoneInput:
             self.device_name = candidate["name"]
             if candidate["index"] is None:
                 self.device_name = _default_input_name(audio) or self.device_name
+            self.device_name = self.devices.display_name(self.device_name)
             configured = str(self._config().get("input_device_name", "") or "").strip()
             logging.info(
                 f"Opened audio input stream on '{self.device_name}' "
