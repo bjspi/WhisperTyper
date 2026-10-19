@@ -102,9 +102,11 @@ class MicrophoneInput:
             self.device_name = candidate["name"]
             if candidate["index"] is None:
                 self.device_name = _default_input_name(audio) or self.device_name
+            configured = str(self._config().get("input_device_name", "") or "").strip()
             logging.info(
                 f"Opened audio input stream on '{self.device_name}' "
-                f"(index={self.device_index}, rate={self.samplerate} Hz)."
+                f"(index={self.device_index}, rate={self.samplerate} Hz, "
+                f"configured={configured or 'system default'!r})."
             )
             self._report_fallback(candidate, failed)
             return self._stream

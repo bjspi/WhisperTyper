@@ -142,6 +142,8 @@ class RecordingController(QObject):
         Audio from two devices (possibly at different sample rates) cannot be joined, so the
         take so far is discarded, like the restart button does.
         """
+        logging.info(f"Input device switch requested: {name or 'System Default'!r} "
+                     f"(recording={self.is_recording}, was {self.microphone.device_name!r}).")
         self._config["input_device_name"] = name
         self._ctx.save_config()
         if not self.is_recording or self.mac_recorder.active:
@@ -162,7 +164,7 @@ class RecordingController(QObject):
         if overlay is not None:
             overlay.set_paused(False)
             overlay.restart_timer()
-        logging.info(f"Input device switched during recording to {name or 'System Default'!r}; take restarted.")
+        logging.info("Take restarted on the new input device; the stream opens on the reader thread.")
 
     def level(self) -> float:
         """Current input level for the tray meter (the macOS recorder meters natively)."""
