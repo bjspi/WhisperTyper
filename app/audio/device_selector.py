@@ -140,7 +140,8 @@ class InputDeviceSelector:
         configured = str(self._config.get("input_device_name", "") or "").strip()
         candidates: List[Dict[str, Any]] = []
         if configured:
-            match = next((d for d in self.selectable_input_devices() if d["name"] == configured), None)
+            devices = self.selectable_input_devices()
+            match = next((d for d in devices if d["name"] == configured), None)
             if match:
                 try:
                     info = audio_instance.get_device_info_by_index(match["index"])
@@ -152,7 +153,9 @@ class InputDeviceSelector:
                 if native != self._samplerate:
                     candidates.append({"index": match["index"], "name": match["name"], "channels": 1, "samplerate": max(8000, native)})
             else:
-                logging.info(f"Configured input device {configured!r} is not connected; using the system default.")
+                # A warning with the names on offer: a name that never matches shows up here.
+                logging.warning(f"Configured input device {configured!r} is not among the input devices "
+                                f"{[d['name'] for d in devices]}; using the system default.")
         candidates.append({"index": None, "name": "default input", "channels": 1, "samplerate": self._samplerate})
         return candidates
 
