@@ -155,7 +155,7 @@ class MicrophoneInput:
 def _default_input_name(audio: pyaudio.PyAudio) -> str:
     """Name of the device PortAudio opens as its default input, or "" when it is unknown."""
     try:
-        return demojibake(str(audio.get_default_input_device_info().get("name", "")))
+        return demojibake(str(audio.get_default_input_device_info().get("name", ""))).strip()
     except Exception:
         return ""
 
