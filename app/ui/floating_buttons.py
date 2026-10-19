@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
     QLayout,
     QMenu,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -595,6 +596,7 @@ class RecordingPromptOverlay(_PromptCard):
         self._clock.start()
 
         self._fit_card(card_layout, top)
+        self._update_device_name(refit=True)
         self._finish_placement(use_system_position, system_anchor, digit_keys)
         self.show()
 
@@ -689,7 +691,9 @@ class RecordingPromptOverlay(_PromptCard):
             self.device_button.clicked.connect(lambda _checked=False: self._show_device_menu())
         else:
             self.device_button.setEnabled(False)
-        top.addWidget(self.device_button, 0, Qt.AlignmentFlag.AlignLeft)
+        # The line takes the width the header and the chips give the card; it never widens it.
+        self.device_button.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        top.addWidget(self.device_button)
         self._update_device_name()
 
     def _build_chips(self, card_layout: QVBoxLayout, prompts: List[Dict[str, Any]]) -> None:
@@ -831,12 +835,15 @@ class RecordingPromptOverlay(_PromptCard):
         seconds = int(end - self._started - self._paused_total)
         self.timer_label.setText(f"{seconds // 60}:{seconds % 60:02d}")
 
-    def _update_device_name(self) -> None:
-        """Show the microphone in use; it may change once the stream is (re)opened."""
+    def _update_device_name(self, refit: bool = False) -> None:
+        """Show the microphone in use; it may change once the stream is (re)opened.
+
+        ``refit`` shortens the name again for the card width the fitting settled on.
+        """
         if self.device_button is None or self._device_name is None:
             return
         name = self._device_name() or "…"
-        if name == self.device_button.property("device"):
+        if name == self.device_button.property("device") and not refit:
             return
         self.device_button.setProperty("device", name)
         arrow = " ▾" if self.device_button.isEnabled() else ""
