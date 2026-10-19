@@ -143,6 +143,7 @@
   "recording_cancel_tooltip": "Aufnahme abbrechen",
   "recording_restart_tooltip": "Aufnahme neu starten",
   "recording_device_tooltip": "Mikrofon wechseln (die Aufnahme beginnt dann neu)",
+  "recording_device_system_default": "{device} (Systemstandard)",
   "recording_move_tooltip": "Ziehen, um zu verschieben",
   "recording_paused_message": "Aufnahme pausiert",
   "recording_pause_tooltip": "Aufnahme pausieren (der Stopp-Hotkey sendet auch aus der Pause)",

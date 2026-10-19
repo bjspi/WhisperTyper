@@ -143,6 +143,7 @@
   "recording_cancel_tooltip": "Annuler l'enregistrement",
   "recording_restart_tooltip": "Recommencer l'enregistrement",
   "recording_device_tooltip": "Changer de micro (l'enregistrement recommence)",
+  "recording_device_system_default": "{device} (par défaut du système)",
   "recording_move_tooltip": "Faire glisser pour déplacer",
   "recording_paused_message": "Enregistrement en pause",
   "recording_pause_tooltip": "Mettre l'enregistrement en pause (le raccourci d'arrêt envoie aussi depuis la pause)",
