@@ -17,6 +17,17 @@ import pyaudio
 from app.core.env import is_MACOS
 from app.core.textutil import demojibake
 
+#: MME cuts device names to this many characters; shorter names are complete already.
+_MME_NAME_LIMIT = 31
+
+
+def _longest_completion(name: str, candidates: List[str]) -> str:
+    """The longest of ``candidates`` beginning with ``name`` when ``name`` looks cut by MME, else ``name``."""
+    if len(name) < _MME_NAME_LIMIT - 1:  # a trailing space may already be stripped
+        return name
+    longer = [candidate for candidate in candidates if candidate.startswith(name) and len(candidate) > len(name)]
+    return max(longer, key=len) if longer else name
+
 
 class InputDeviceSelector:
     """Enumerates input devices and builds prioritized open-stream candidates."""
@@ -32,6 +43,8 @@ class InputDeviceSelector:
         self._get_config = config
         self._samplerate = samplerate
         self._audio = audio
+        #: Full names for the names MME cuts at 31 characters, from the other host APIs (display only).
+        self._display_names: Dict[str, str] = {}
 
     @property
     def _config(self) -> Mapping[str, Any]:
@@ -54,6 +67,7 @@ class InputDeviceSelector:
             return devices
 
         seen: set = set()
+        other_names: List[str] = []  # input device names of the other host APIs, at full length
         for index in range(device_count):
             try:
                 info = audio.get_device_info_by_index(index)
@@ -61,17 +75,22 @@ class InputDeviceSelector:
                 continue
             if int(info.get("maxInputChannels", 0) or 0) <= 0:
                 continue
-            if int(info.get("hostApi", -1)) != default_host:
-                continue
             # PyAudio/MME returns names in a mangled encoding (e.g. 'IntelÂ®'); repair for
             # display + storage so it matches on the next enumeration. MME also cuts names
             # at 31 characters, often leaving a trailing space, which the stored name has not.
             name = demojibake(str(info.get("name", f"Input {index}"))).strip()
+            if int(info.get("hostApi", -1)) != default_host:
+                other_names.append(name)
+                continue
             # The "Sound Mapper" pseudo-device is just the system default (already offered separately).
             if "mapper" in name.lower() or name in seen:
                 continue
             seen.add(name)
             devices.append({"index": int(info.get("index", index)), "name": name})
+        # The stored name stays the one of the default host API; the label is the full name for showing.
+        self._display_names = {device["name"]: _longest_completion(device["name"], other_names) for device in devices}
+        for device in devices:
+            device["label"] = self._display_names[device["name"]]
         t_end = time.perf_counter()
         logging.info(
             "Input device enumeration: %d device(s) from %d entries in %.0fms "
@@ -80,6 +99,12 @@ class InputDeviceSelector:
             (t_instance - t0) * 1000, (t_meta - t_instance) * 1000, (t_end - t_meta) * 1000,
         )
         return devices
+
+    def display_name(self, name: str) -> str:
+        """The full name of a device for showing it (MME cuts names at 31 characters); other names as they are."""
+        if not self._display_names:
+            self.selectable_input_devices()
+        return self._display_names.get(name, name)
 
     def preferred_input_stream_candidates(self, audio_instance: pyaudio.PyAudio) -> List[Dict[str, Any]]:
         """Build prioritized input stream candidates for the current platform."""

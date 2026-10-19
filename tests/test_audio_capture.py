@@ -397,6 +397,7 @@ def test_a_device_name_cut_by_mme_with_a_trailing_space_is_still_found(monkeypat
     infos = {
         0: {"index": 0, "name": "Microsoft Soundmapper - Input", "maxInputChannels": 2, "hostApi": 0},
         1: {"index": 1, "name": mme_name, "maxInputChannels": 2, "hostApi": 0, "defaultSampleRate": 48000.0},
+        2: {"index": 2, "name": "Mikrofonarray (2- Intel® Smart Sound Technologie)", "maxInputChannels": 2, "hostApi": 1},
     }
     audio = SimpleNamespace(
         get_default_host_api_info=lambda: {"index": 0},
@@ -407,7 +408,10 @@ def test_a_device_name_cut_by_mme_with_a_trailing_space_is_still_found(monkeypat
     config = {"input_device_name": ""}
     selector = selector_module.InputDeviceSelector(lambda: config, 16000, lambda: audio)
     devices = selector.selectable_input_devices()
-    assert devices == [{"index": 1, "name": mme_name.strip()}]  # what the menus offer and store
+    # The stored name is the cut one; the label for showing comes from the other host API.
+    assert devices == [{"index": 1, "name": mme_name.strip(), "label": "Mikrofonarray (2- Intel® Smart Sound Technologie)"}]
+    assert selector.display_name(mme_name.strip()) == "Mikrofonarray (2- Intel® Smart Sound Technologie)"
+    assert selector.display_name("Headset") == "Headset"
 
     config["input_device_name"] = devices[0]["name"]
     candidates = selector.preferred_input_stream_candidates(audio)

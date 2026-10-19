@@ -840,8 +840,11 @@ class RecordingPromptOverlay(_PromptCard):
             return
         self.device_button.setProperty("device", name)
         arrow = " ▾" if self.device_button.isEnabled() else ""
-        max_width = self.card.width() - 2 * self._CARD_PADDING - 30 if self.card.width() > 100 else 360
-        caption = self.device_button.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight, max_width)
+        # Before the card is fitted the line may use the full card width; afterwards the fitted width.
+        padding = 2 * self._CARD_PADDING + 2 * self.card.frameWidth()
+        card_width = self.card.width() if self.card.width() > 100 else self.MAX_CARD_WIDTH
+        max_width = card_width - padding - 24  # room for the menu arrow
+        caption = self.device_button.fontMetrics().elidedText(name, Qt.TextElideMode.ElideMiddle, max_width)
         self.device_button.setText(caption + arrow)
         if not self.device_button.isEnabled():
             self.device_button.setToolTip(name)
