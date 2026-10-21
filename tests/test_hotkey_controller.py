@@ -74,6 +74,24 @@ def test_own_injected_keystrokes_are_never_suppressed():
     assert hk._manual_listener._suppress is False  # the app's own simulated Ctrl+C reaches the target
 
 
+def test_push_to_talk_never_swallows_the_key_up_of_a_key_the_application_saw_go_down():
+    hk = controller({"push_to_talk": True}, hotkey="<caps_lock>+<ctrl>")
+    hk._recording.push_to_talk_active = True
+    hk._manual_listener = SimpleNamespace(_suppress=None)
+    ctrl, caps = 0xA2, 0x14  # VK_LCONTROL, VK_CAPITAL
+    events = [(0x0100, ctrl), (0x0100, caps), (0x0101, ctrl), (0x0101, caps)]
+    suppressed = []
+    for msg, vk in events:
+        if msg == 0x0100:
+            hk._pressed |= hotkeys.vk_to_hotkey_tokens(vk)
+        hk._win32_event_filter(msg, SimpleNamespace(vkCode=vk, flags=0))
+        suppressed.append(hk._manual_listener._suppress)
+        if msg == 0x0101:
+            hk._pressed -= hotkeys.vk_to_hotkey_tokens(vk)
+    # Ctrl went down to the application, so its key-up must reach it too (else Ctrl stays held).
+    assert suppressed == [False, True, False, True]
+
+
 def test_macos_capture_records_a_chord_until_the_first_release(qapp, monkeypatch):
     for module in (key_tokens, hotkey_controller):
         monkeypatch.setattr(module, "is_MACOS", True)

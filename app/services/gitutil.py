@@ -11,7 +11,7 @@ import os
 import shutil
 import subprocess
 import sys
-from typing import Optional
+from typing import List, Optional
 
 from app.core.paths import resource_path
 from app.platform.system import no_window_kwargs
@@ -62,6 +62,24 @@ def current_head(root: str) -> Optional[str]:
     if result.returncode != 0:
         return None
     return result.stdout.strip() or None
+
+
+def changed_paths(root: str, old: str, new: str, paths: List[str]) -> List[str]:
+    """Which of ``paths`` differ between commits ``old`` and ``new`` (empty on any git failure)."""
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", old, new, "--", *paths],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            **no_window_kwargs(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if result.returncode != 0:
+        return []
+    return [line for line in result.stdout.splitlines() if line.strip()]
 
 
 def count_behind_upstream(root: str) -> Optional[int]:

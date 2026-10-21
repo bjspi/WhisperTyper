@@ -264,17 +264,21 @@ class HotMicCapture:
 
         The reader is joined before the stream closes, because closing mid-read segfaults
         PortAudio. A reader stuck in a driver read keeps the stream (it closes it once the read
-        returns) and stays the reader, so no second one is started next to it.
+        returns) and stays the reader, so no second one is started next to it. Without a live
+        reader the shared stream is left alone: a reader that ended (idle timeout) closed it
+        itself, and an on-demand take may be reading it now.
         """
         self._running = False
         self._wake.set()
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=_JOIN_WAIT_S)
-            if self._thread.is_alive():
-                logging.warning(f"Background audio capture thread did not stop within {_JOIN_WAIT_S}s; "
-                                "the stream stays open until its read returns.")
-                return False
-        self._thread = None
+        thread, self._thread = self._thread, None
+        if thread is None or not thread.is_alive():
+            return True
+        thread.join(timeout=_JOIN_WAIT_S)
+        if thread.is_alive():
+            self._thread = thread
+            logging.warning(f"Background audio capture thread did not stop within {_JOIN_WAIT_S}s; "
+                            "the stream stays open until its read returns.")
+            return False
         self._mic.close()
         return True
 
@@ -506,6 +510,11 @@ class OnDemandCapture:
         self._frames: list[bytes] = []
         self._thread: Optional[threading.Thread] = None
         self._start_timing: OperationTiming = NO_TIMING
+
+    @property
+    def reading(self) -> bool:
+        """Whether a reader thread still uses the microphone stream."""
+        return bool(self._thread and self._thread.is_alive())
 
     def start_recording(self, timing: OperationTiming = NO_TIMING) -> None:
         """Start reading on a new thread; ``timing`` gets the phases up to the first block."""

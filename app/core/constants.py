@@ -55,7 +55,7 @@ UI_LANG_FILES = [
 # Default UI language used to pick the initial default prompts.
 _DEFAULT_UI_LANG = SYS_LANG if SYS_LANG in UI_LANG_FILES else "en"
 
-CONFIG_SCHEMA_VERSION = 3
+CONFIG_SCHEMA_VERSION = 4
 
 # Window sizing: default on fresh install + the enforced minimum the user can't shrink past.
 # Shorter windows use the settings pages' scroll areas.

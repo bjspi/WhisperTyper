@@ -79,6 +79,11 @@ def test_custom_url_survives_switching_to_an_official_provider(make_window):
     window.transcription_provider_selector.setCurrentIndex(window.transcription_provider_selector.findData("custom"))
     assert not window.api_endpoint_input.isHidden() and not window.transcription_key_profile_selector.isHidden()
     window.api_endpoint_input.setText(CUSTOM_URL)
+    # A custom server gets no automatic key (it may belong to another server): it must be chosen.
+    assert window._ui_api_key("transcription") == ""
+    assert window.transcription_key_status_label.property("key_status") == "missing"
+    selector = window.transcription_key_profile_selector
+    selector.setCurrentIndex(selector.findData("c1"))
     assert window._ui_api_key("transcription") == "custom-test-key"
     window.transcription_provider_selector.setCurrentIndex(window.transcription_provider_selector.findData("groq"))
     window.transcription_provider_selector.setCurrentIndex(window.transcription_provider_selector.findData("custom"))

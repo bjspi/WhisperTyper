@@ -97,6 +97,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self._init_api_settings()
         self._sync_transformations_to_config()  # Store the normalized templates once.
         self._snapshot_live_config()
+        ctx.set_unsaved_values(self._unsaved_live_values)
         self._connection_tester = ConnectionTester(self)
         self.test_transcription_api_button.clicked.connect(self._connection_tester.test_transcription)
         self.test_rephrasing_api_button.clicked.connect(self._connection_tester.test_rephrasing)
@@ -223,6 +224,11 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         """Remember the saved values of the live-mirrored keys (taken after loading and after each Save)."""
         self._live_snapshot: Dict[str, Any] = {key: copy.deepcopy(self.config.get(key)) for key in _LIVE_MIRRORED_KEYS}
 
+    def _unsaved_live_values(self) -> Dict[str, Any]:
+        """Saved values of the live-mirrored keys that hold edits not saved yet ({} without any)."""
+        return {key: copy.deepcopy(saved) for key, saved in self._live_snapshot.items()
+                if self.config.get(key) != saved}
+
     def _discard_live_edits(self) -> None:
         """Put the live-mirrored keys back to their saved values and reload the pages showing them."""
         language = self._live_snapshot["ui_language"]
@@ -313,8 +319,13 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self._save_recording_controls()
         self._sync_transformations_to_config()
         hotkeys_changed = self._apply_pending_hotkeys()
+        # Push-to-talk needs the key-up, which an OS-registered hotkey never reports: the
+        # listeners are rebuilt for the new mode.
+        hotkeys_changed |= bool(before.get("push_to_talk")) != bool(self.config.get("push_to_talk"))
 
-        self.ctx.save_config()
+        if not self.ctx.save_config(with_unsaved_edits=True, notify=False):
+            QMessageBox.warning(self, self.translator.tr("settings_save_failed_title"),
+                                self.translator.tr("settings_save_failed_text", error=self.ctx.save_error()))
         logging.info("settings_saved changes: %s", describe_changes(before, self.config))
         self._snapshot_live_config()
         self.update_brand_header()

@@ -181,7 +181,15 @@ def test_digit_keys_are_taken_only_while_the_mouse_is_over_the_palette(qapp, mon
     palette = RecordingPromptOverlay(PROMPTS, "Recording…", "None", selected.append,
                                      use_system_position=False, digit_keys=True)
     assert registered == {}
-    QtWidgets.QApplication.sendEvent(palette, QtGui.QEnterEvent(QtCore.QPointF(), QtCore.QPointF(), QtCore.QPointF()))
+    def enter():
+        return QtGui.QEnterEvent(QtCore.QPointF(), QtCore.QPointF(), QtCore.QPointF())
+
+    # Whether the test platform maps the window is not the point: visibility is set explicitly.
+    monkeypatch.setattr(palette, "isVisible", lambda: False)
+    QtWidgets.QApplication.sendEvent(palette, enter())
+    assert registered == {}  # A late Enter of a closed palette takes no keys nothing would release.
+    monkeypatch.setattr(palette, "isVisible", lambda: True)
+    QtWidgets.QApplication.sendEvent(palette, enter())
     # "None" and two prompts: 1-3 on the number row and the number pad.
     assert sorted(registered.values()) == [0x31, 0x32, 0x33, 0x61, 0x62, 0x63]
     palette.select_by_digit(3)

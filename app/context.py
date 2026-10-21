@@ -1,7 +1,8 @@
 """Shared runtime dependencies handed to every controller and window by the composition root."""
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+import logging
+from typing import Any, Callable, Dict, Mapping, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QApplication
@@ -10,7 +11,7 @@ from app.audio.store import RecordingStore
 from app.core.config_store import ConfigStore
 from app.core.i18n import TranslationManager
 from app.ui import theme
-from app.ui.durations import BALLOON_SHORT_MS
+from app.ui.durations import BALLOON_SHORT_MS, BALLOON_WARNING_MS
 from app.ui.tooltip import MouseFollowerTooltip
 
 
@@ -70,8 +71,12 @@ class AppContext(QObject):
         self._store = store
         self.config: Dict[str, Any]
         self.config, migrated = store.load()
+        #: Saved values of keys the open settings form holds unsaved edits of (see ``set_unsaved_values``).
+        self._unsaved_values: Optional[Callable[[], Mapping[str, Any]]] = None
+        #: Whether the last full save reached the disk.
+        self.last_save_ok = True
         if migrated:
-            self.save_config()
+            store.save(self.config)
         self.translator = TranslationManager(initial_language=self.config.get("ui_language", "en"))
         self.notifier = Notifier(dark=lambda: theme.resolve_dark(self.config.get("color_theme", "system"),
                                                                   QApplication.instance()))
@@ -92,18 +97,52 @@ class AppContext(QObject):
         else:
             self.recordings.prune(minutes * 60, keep_newest=not startup)
 
-    def save_config(self) -> None:
-        """Persist the current configuration."""
-        self._store.save(self.config)
+    def set_unsaved_values(self, provider: Optional[Callable[[], Mapping[str, Any]]]) -> None:
+        """Register the settings form's unsaved edits: ``provider`` returns their saved values.
+
+        The form mirrors some edits (prompts, UI language) into the live config before its Save.
+        A save from elsewhere (microphone picked in the palette, …) writes the saved values of
+        those keys instead, so closing the form without saving really discards the edits.
+        """
+        self._unsaved_values = provider
+
+    def save_config(self, *, with_unsaved_edits: bool = False, notify: bool = True) -> bool:
+        """Persist the current configuration; False when writing failed.
+
+        ``with_unsaved_edits`` is the settings form's own Save. A failed write is shown in a
+        warning balloon unless ``notify`` is off (the caller reports it itself).
+        """
+        config = self.config
+        if not with_unsaved_edits and self._unsaved_values is not None:
+            saved = self._unsaved_values()
+            if saved:
+                config = {**self.config, **saved}
+        ok = bool(self._store.save(config))
+        self.last_save_ok = ok
+        if not ok and notify:
+            self._report_save_failure()
+        return ok
+
+    def save_error(self) -> str:
+        """Why the last save failed."""
+        return str(getattr(self._store, "last_error", "") or "?")
+
+    def _report_save_failure(self) -> None:
+        self.notifier.show(self.tr("config_save_failed_message", error=self.save_error()), BALLOON_WARNING_MS)
 
     def save_config_keys(self, *keys: str) -> None:
         """Persist only ``keys`` of the current configuration; the file keeps its other values.
 
         For values that apply at once (window size, colour theme) while the settings form may
-        still hold unsaved edits mirrored into the live config.
+        still hold unsaved edits mirrored into the live config. An unreadable file (e.g. a typo
+        from editing it by hand) is left as it is, instead of being replaced by the defaults.
         """
+        if self._store.read_existing() is None:
+            logging.warning("Config file is unreadable; %s not saved and the file left untouched.", ", ".join(keys))
+            return
         stored, _migrated = self._store.load()
         for key in keys:
             if key in self.config:
                 stored[key] = self.config[key]
-        self._store.save(stored)
+        if not self._store.save(stored):
+            self._report_save_failure()

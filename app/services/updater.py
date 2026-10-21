@@ -10,7 +10,7 @@ from typing import Callable, List, Optional
 
 from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, pyqtSignal
 
-from app.services.gitutil import count_behind_upstream, current_head, find_git_root, git_available
+from app.services.gitutil import changed_paths, count_behind_upstream, current_head, find_git_root, git_available
 
 # The first fetch runs shortly after launch so startup isn't slowed; after that the watcher
 # polls until an update is found. Offline / failed fetches are retried on the next tick.
@@ -42,6 +42,8 @@ class GitUpdater(QObject):
         # The git commands of the running update that are still to come, and their collected output.
         self._pending_steps: List[List[str]] = []
         self._pull_output: List[str] = []
+        #: The last update changed requirements.txt (dependencies to install before restarting).
+        self.requirements_changed = False
         self._fetch: Optional[QProcess] = None
         self._pre_pull_head: Optional[str] = None
         self._initial_check_scheduled = False
@@ -80,7 +82,10 @@ class GitUpdater(QObject):
         stashed first, so ``git stash list`` still has them; replaced local commits stay in the
         reflog, and the output names the previous HEAD. The result arrives via ``pull_finished``.
         """
-        self._run_update([["fetch", "--quiet"],
+        # Without an upstream (detached HEAD, untracked branch) the reset would fail after the
+        # stash had already taken the local changes away, so that is checked first.
+        self._run_update([["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+                          ["fetch", "--quiet"],
                           ["stash", "push", "--include-untracked", "-m", FORCE_UPDATE_STASH_MESSAGE],
                           ["reset", "--hard", "@{u}"]])
 
@@ -88,6 +93,11 @@ class GitUpdater(QObject):
         """Run the git commands one after another; the first failing one ends the update."""
         if not self.root or self._pull is not None:
             return
+        if self._fetch is not None:
+            # Two git processes would fight over the ref locks; the update fetches anyway.
+            self._fetch.kill()
+            self._fetch.waitForFinished(2000)
+        self.requirements_changed = False
         logging.info("Running git update %s in %s", " / ".join(" ".join(step) for step in steps), self.root)
         # HEAD before the pull tells a real update from "already up to date" without
         # depending on git's localized wording.
@@ -167,6 +177,9 @@ class GitUpdater(QObject):
             # The pending update was consumed; watch for the next upstream commit.
             self._set_available(False)
             self.start_watching()
+            # New requirements must be installed before the restart, or the new code cannot start.
+            self.requirements_changed = bool(pre_head and new_head and changed_paths(
+                self.root or "", pre_head, new_head, ["requirements.txt"]))
         self.pull_finished.emit(True, changed, output)
 
     def _fetch_in_background(self) -> None:

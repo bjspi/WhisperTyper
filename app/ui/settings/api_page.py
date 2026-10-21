@@ -161,8 +161,10 @@ class ApiPage(SettingsWindowBase):
         self._refresh_api_state()
 
     def _refresh_key_profile_selectors(self) -> None:
-        """List the provider's profiles behind "Automatic" (custom: then "no key needed"); a provider
-        change resets to automatic.
+        """List the provider's profiles behind "Automatic"; a provider change resets to automatic.
+
+        A custom endpoint has no automatic key (custom profiles are not tied to a server): its
+        first entry asks for a choice, followed by "no key needed".
         """
         profiles = self._api_keys_tab.profiles()
         for task in API_TASKS:
@@ -180,7 +182,8 @@ class ApiPage(SettingsWindowBase):
                 selected_id = ""
             with QSignalBlocker(selector):
                 selector.clear()
-                selector.addItem(self.translator.tr("api_key_automatic"), "")
+                selector.addItem(self.translator.tr("api_key_choose" if provider == "custom" else "api_key_automatic"),
+                                 "")
                 if provider == "custom":
                     selector.addItem(self.translator.tr("api_key_none"), NO_KEY_PROFILE_ID)
                 for profile in profiles:
@@ -238,11 +241,14 @@ class ApiPage(SettingsWindowBase):
         elif profile is not None:
             widgets.key_status.setText(self.translator.tr(
                 "api_key_status_ok", name=profile["name"], masked=masked_api_key(profile["key"])))
-        else:
+        usable = usable_profile_ids(form["api_key_profiles"], provider)
+        if profile is None and custom and usable:
+            # Keys exist, but a custom server only gets the one chosen for it.
+            widgets.key_status.setText(self.translator.tr("api_key_status_choose"))
+        elif profile is None:
             widgets.key_status.setText(self.translator.tr(
                 "api_key_status_missing", provider=self._provider_label(provider)))
         set_style_state(widgets.key_status, "key_status", "ok" if profile is not None else "missing")
-        usable = usable_profile_ids(form["api_key_profiles"], provider)
         widgets.key_choose.setVisible(not show_selector and len(usable) > 1)
         widgets.key_add.setVisible(profile is None)
 
@@ -269,9 +275,11 @@ class ApiPage(SettingsWindowBase):
         for task in API_TASKS:
             widgets = self._task_widgets(task)
             chosen = widgets.key_profile.currentData() or ""
-            usable = usable_profile_ids(profiles, provider_for_url(widgets.endpoint.text()))
-            if usable and chosen == usable[0]:
+            provider = provider_for_url(widgets.endpoint.text())
+            usable = usable_profile_ids(profiles, provider)
+            if provider != "custom" and usable and chosen == usable[0]:
                 # Same key the automatic choice picks: store "automatic", so it follows a later reordering.
+                # (A custom endpoint has no automatic choice: its key stays explicit.)
                 chosen = ""
                 widgets.key_profile.setCurrentIndex(0)
             self.config[TASK_KEY_FIELDS[task][1]] = chosen

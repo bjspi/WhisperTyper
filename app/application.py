@@ -141,7 +141,9 @@ class WhisperTyperApp(QObject):
         self.recording.apply_settings()
         self.sound_player.set_enabled(bool(self.ctx.config.get("play_sounds", True)))
         self.pipeline.reload_replacements()
-        self.ctx.notifier.show(self.ctx.tr("settings_saved_message", hotkey=self.ctx.config["hotkey"]), BALLOON_SHORT_MS)
+        if self.ctx.last_save_ok:  # A failed write was already reported by the settings window.
+            self.ctx.notifier.show(self.ctx.tr("settings_saved_message", hotkey=self.ctx.config["hotkey"]),
+                                   BALLOON_SHORT_MS)
         self.tray.set_tooltip(self.ctx.tr("tray_ready_tooltip", hotkey=self.ctx.config["hotkey"]))
         self.apply_logging_configuration()
         set_ip_family(self.ctx.config.get("network_ip_family", "auto"))
@@ -179,6 +181,9 @@ class WhisperTyperApp(QObject):
 
         if not QProcess.startDetached(program, arguments):
             logging.error("Failed to launch a new instance for restart.")
+            # This instance keeps running: give it its hotkeys and warm microphone back.
+            self.hotkeys.restart()
+            self.recording.apply_settings()
             self.ctx.notifier.show(self.ctx.tr("restart_failed_message"), BALLOON_INFO_MS)
             return
         app = QApplication.instance()
