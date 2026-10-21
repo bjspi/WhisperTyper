@@ -10,6 +10,7 @@ from PyQt6.QtCore import QObject, QPoint, QTimer
 from PyQt6.QtGui import QAction, QCursor, QIcon
 from PyQt6.QtWidgets import QApplication, QDialogButtonBox, QFileDialog, QLabel, QMessageBox, QStyle, QSystemTrayIcon, QWidget
 
+from app.bootstrap import requirements_install_command
 from app.context import AppContext
 from app.controllers.file_actions import FileActions
 from app.controllers.recording import RecordingController
@@ -454,6 +455,9 @@ class TrayController(QObject):
             return
         restart = tr("update_restart_button")
         message = tr("update_force_success_text" if forced else "update_success_text")
+        if self.updater.requirements_changed:
+            # The new code may need packages the running interpreter lacks; it could not start.
+            message += "\n\n" + tr("update_requirements_hint", command=requirements_install_command())
         if run_update_dialog(self._window, title, message, details,
                              [(restart, QDialogButtonBox.ButtonRole.AcceptRole),
                               (tr("update_later_button"), QDialogButtonBox.ButtonRole.RejectRole)]) == restart:

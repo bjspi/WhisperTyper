@@ -91,17 +91,41 @@ def rephrasing_configured(config: Mapping[str, Any]) -> bool:
 def resolve_key_profile(config: Mapping[str, Any], task: str) -> dict[str, str] | None:
     """The profile a task sends with: the explicit choice if it fits the endpoint's provider,
     otherwise the first profile of that provider with a sendable key (API Keys tab order).
-    A custom endpoint set to "no key needed" resolves to a keyless profile with the ID
-    :data:`NO_KEY_PROFILE_ID`.
+
+    A custom endpoint only sends the key chosen for it: custom profiles are not tied to a host,
+    so "the first custom key" may belong to a different server. Set to "no key needed", it
+    resolves to a keyless profile with the ID :data:`NO_KEY_PROFILE_ID`.
     """
     endpoint_field, selection_field, _ = TASK_KEY_FIELDS[task]
     provider = provider_for_url(config.get(endpoint_field, ""))
-    if provider == "custom" and config.get(selection_field, "") == NO_KEY_PROFILE_ID:
+    selected_id = config.get(selection_field, "")
+    if provider == "custom" and selected_id == NO_KEY_PROFILE_ID:
         return {"id": NO_KEY_PROFILE_ID, "name": "", "provider": "custom", "key": ""}
     usable = [profile for profile in config.get("api_key_profiles", [])
               if profile["provider"] == provider and _clean_key(profile["key"])]
-    selected_id = config.get(selection_field, "")
-    return next((profile for profile in usable if profile["id"] == selected_id), usable[0] if usable else None)
+    chosen = next((profile for profile in usable if profile["id"] == selected_id), None)
+    if chosen is not None or provider == "custom":
+        return chosen
+    return usable[0] if usable else None
+
+
+def pin_custom_key_choices(config: dict[str, Any]) -> bool:
+    """Make the key a custom endpoint used automatically its explicit choice (upgrade, once).
+
+    Custom endpoints no longer fall back to the first custom key; a setup that relied on that
+    keeps working with the same key, now visibly selected.
+    """
+    changed = False
+    for endpoint_field, selection_field, _legacy in TASK_KEY_FIELDS.values():
+        if provider_for_url(str(config.get(endpoint_field, ""))) != "custom" or config.get(selection_field, ""):
+            continue
+        first = next((profile for profile in config.get("api_key_profiles", [])
+                      if profile["provider"] == "custom" and _clean_key(profile["key"])), None)
+        if first is not None:
+            config[selection_field] = first["id"]
+            logging.info("Custom endpoint key pinned to profile %s (%s).", first["id"], selection_field)
+            changed = True
+    return changed
 
 
 def selected_api_key(config: Mapping[str, Any], task: str) -> str:

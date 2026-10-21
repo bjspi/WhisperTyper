@@ -570,6 +570,7 @@ class RecordingPromptOverlay(_PromptCard):
             RecordingPromptOverlay._instance.close()
         super().__init__()
         RecordingPromptOverlay._instance = self
+        self._device_menu: Optional[QMenu] = None
         if texts is None:
             texts = RecordingPaletteTexts(
                 status_text=status_text, none_text=none_text, paused_text=paused_text,
@@ -774,7 +775,9 @@ class RecordingPromptOverlay(_PromptCard):
     def enterEvent(self, event: Any) -> None:  # noqa: N802 - Qt API
         """Take the digit keys for the chips while the mouse is over the palette."""
         super().enterEvent(event)
-        if not self._digit_keys or self._registered_hotkeys:
+        # An Enter queued just before the palette closed must not register keys nothing releases:
+        # the number keys would stay dead in every other application.
+        if not self._digit_keys or self._registered_hotkeys or not self.isVisible():
             return
         hwnd = int(self.winId())
         for index in range(min(10, len(self._prompt_buttons))):
@@ -874,6 +877,9 @@ class RecordingPromptOverlay(_PromptCard):
             return
         menu = QMenu(self)
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        # Closed with the palette: an open popup would otherwise stay in the foreground and
+        # receive the dictation's paste.
+        self._device_menu = menu
         current = self.device_button.property("configured") or ""
         for label, value in self._devices():
             action = menu.addAction(label)
@@ -949,6 +955,12 @@ class RecordingPromptOverlay(_PromptCard):
         self._dot.stop()
         if self.wave is not None:
             self.wave.stop()
+        menu, self._device_menu = self._device_menu, None
+        if menu is not None:
+            try:
+                menu.close()
+            except RuntimeError:
+                pass  # already closed and deleted (WA_DeleteOnClose)
         self._release_digit_keys()
         if RecordingPromptOverlay._instance is self:
             RecordingPromptOverlay._instance = None

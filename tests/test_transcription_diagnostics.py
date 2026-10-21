@@ -160,9 +160,50 @@ def test_the_first_result_stays_when_the_second_is_less_confident_or_fails(tmp_p
 
 def test_an_empty_result_gets_a_second_transcription(tmp_path, monkeypatch):
     empty = {"text": "", "duration": 5.0, "segments": [], "words": []}
-    text, calls, _received, _timing = run_second_pass(tmp_path, monkeypatch, "doubtful", empty, verbose(" Text", -0.8))
+    text, calls, _received, _timing = run_second_pass(tmp_path, monkeypatch, "doubtful", empty, verbose(" Text", -0.2))
     assert text == " Text"
     assert len(calls) == 2
+
+
+def silence_phrase(no_speech_prob, avg_logprob):
+    payload = verbose(" Untertitel im Auftrag des ZDF", avg_logprob)
+    payload["segments"][0]["no_speech_prob"] = no_speech_prob
+    return payload
+
+
+@pytest.mark.parametrize("second", [silence_phrase(0.0, -1.4), silence_phrase(0.95, -0.2)], ids=["doubtful", "no-speech"])
+def test_an_empty_result_does_not_turn_into_invented_text(tmp_path, monkeypatch, second):
+    empty = {"text": "", "duration": 5.0, "segments": [], "words": []}
+    text, calls, received, _timing = run_second_pass(tmp_path, monkeypatch, "doubtful", empty, second)
+    assert text == "" and len(calls) == 2
+    assert received[0]["second_pass"]["chosen"] == "first"
+
+
+def test_a_second_result_that_echoes_its_prompt_is_not_used(tmp_path, monkeypatch):
+    source = tmp_path / "recording.wav"
+    dsp.write_wav(str(source), b"\x01\x00" * 1600, 16000)
+
+    def fake_request(method, url, **kwargs):
+        second = kwargs["data"]["prompt"] == "Diktat."
+        payload = verbose(" Diktat." if second else " Gäste,", -0.1 if second else -0.99)
+        return Mock(status_code=200, json=lambda: payload, text="")
+
+    monkeypatch.setattr(service, "request", fake_request)
+    req = TranscriptionRequest("key", "https://api.groq.com/openai/v1/audio/transcriptions", str(source), "Long.",
+                               "whisper-large-v3-turbo", "de", 0.0, recording_format="wav", second_pass="doubtful",
+                               second_pass_prompt="Diktat.")
+    text = service.transcribe(req, OperationTiming("recording"), lambda key, **_kw: key,
+                              on_compressing=Mock(), on_transcribing=Mock())
+    assert text == " Gäste,"
+
+
+def test_odd_responses_never_hang_or_lose_the_result(tmp_path, monkeypatch):
+    # "text": null and segments with string times: no details, but the text is kept and nothing waits forever.
+    odd = {"text": None, "segments": [{"start": "0", "end": "5", "avg_logprob": -0.1}]}
+    text, _calls, _received, _timing = run_second_pass(tmp_path, monkeypatch, "always", verbose(" Gäste,", -0.99), odd)
+    assert text == " Gäste,"
+    text, _calls, _received, _timing = run_second_pass(tmp_path, monkeypatch, "doubtful", verbose(" Gäste,", -0.99), odd)
+    assert text == " Gäste,"
 
 
 @pytest.mark.parametrize("first", [{"text": "Hallo"}, {"text": ""}, verbose(" Hallo", 0.0), verbose("", 0.0)],

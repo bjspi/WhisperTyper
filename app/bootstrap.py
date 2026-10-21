@@ -182,6 +182,30 @@ def _crashed(session: str) -> bool:
     return False
 
 
+def requirements_install_command() -> str:
+    """The pip command that installs the checkout's requirements into the running interpreter."""
+    return f'"{sys.executable}" -m pip install -r "{os.path.join(_PROJECT_ROOT, "requirements.txt")}"'
+
+
+def report_missing_dependency(module: str) -> None:
+    """Tell the user which package is missing, typically after an update added a requirement.
+
+    Started windowless, a failed import would only end in the stderr file and the tray icon
+    would simply not appear. PyQt6 itself is there (its absence is handled by the venv re-exec).
+    """
+    command = requirements_install_command()
+    message = (f"WhisperTyper cannot start: the Python package '{module}' is not installed.\n\n"
+               f"An update may have added it. Install the requirements, then start WhisperTyper again:\n\n{command}")
+    logging.critical("Missing dependency %s; install it with: %s", module, command)
+    try:
+        from PyQt6.QtWidgets import QApplication, QMessageBox
+
+        _app = QApplication.instance() or QApplication([sys.argv[0]])
+        QMessageBox.critical(None, "WhisperTyper", message)
+    except Exception:
+        pass
+
+
 def install_qt_message_handler() -> None:
     """Route Qt's own warnings into the log; on a windowless launch they would vanish on stderr."""
     from PyQt6.QtCore import QtMsgType, qInstallMessageHandler

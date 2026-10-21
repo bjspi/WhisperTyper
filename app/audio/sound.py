@@ -24,6 +24,8 @@ from app.core.env import is_WINDOWS
 #: Pause between two silence writes of the Windows keepalive, and the length of each.
 _KEEPALIVE_INTERVAL_S = 5.0
 _KEEPALIVE_SILENCE_S = 0.02
+#: Longest wait of close() for a running write (sounds are a few hundred milliseconds).
+_CLOSE_WAIT_S = 2.0
 
 
 class SoundPlayer:
@@ -174,9 +176,19 @@ class SoundPlayer:
         threading.Thread(target=_play_cached, daemon=True).start()
 
     def close(self) -> None:
-        """Stop the keepalive, close all output streams and terminate PyAudio."""
+        """Stop the keepalive, close all output streams and terminate PyAudio.
+
+        Runs on the GUI thread. A blocking MME write never gives up on an output device that
+        vanished, so a write that still holds the lock is not waited for: its streams are left
+        alone (closing them under the write would crash PortAudio) and no sound plays any more.
+        """
         self._keepalive_stop.set()
-        with self._play_lock:
+        if not self._play_lock.acquire(timeout=_CLOSE_WAIT_S):
+            logging.warning("Sound output did not finish a write within %.0f s; leaving its streams open.",
+                            _CLOSE_WAIT_S)
+            self._enabled = False
+            return
+        try:
             for s in self._streams.values():
                 try:
                     s.stop_stream()
@@ -190,3 +202,5 @@ class SoundPlayer:
                 except Exception:
                     pass
                 self._pa = None
+        finally:
+            self._play_lock.release()

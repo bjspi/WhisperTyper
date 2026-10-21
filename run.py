@@ -16,6 +16,7 @@ from app.bootstrap import (
     mark_clean_exit,
     maybe_reexec_with_project_venv,
     redirect_std_streams_if_windowed,
+    report_missing_dependency,
 )
 
 redirect_std_streams_if_windowed()
@@ -30,6 +31,8 @@ try:
 except ModuleNotFoundError as exc:
     if exc.name == "PyQt6":
         maybe_reexec_with_project_venv()
+    else:
+        report_missing_dependency(exc.name or str(exc))
     raise
 
 

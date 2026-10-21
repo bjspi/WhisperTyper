@@ -10,9 +10,9 @@ import json
 import logging
 import os
 import time
-from typing import Any, Callable, Dict, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
-from app.core.api_keys import migrate_api_keys
+from app.core.api_keys import migrate_api_keys, pin_custom_key_choices
 from app.core.constants import (
     CONFIG_SCHEMA_VERSION,
     DEFAULT_CONFIG,
@@ -42,6 +42,10 @@ _LEGACY_LIVEPROMPT_FIELDS = {
 }
 
 #: Keys the migrations index or compute with; a hand-edited value of another type counts as missing.
+#: Replacing the config file is retried this often, this far apart, while another process holds it.
+_REPLACE_ATTEMPTS = 10
+_REPLACE_RETRY_S = 0.1
+
 _EXPECTED_TYPES: Dict[str, Any] = {
     "prompt": str, "hotkey": str, "post_rephrase_hotkey": str, "ui_language": str,
     "api_endpoint": str, "rephrasing_api_url": str, "post_rephrasing_entries": list,
@@ -61,6 +65,10 @@ class ConfigStore:
         """
         self.config_file = config_file
         self._normalize_hotkey = normalize_hotkey
+        #: The file could not be read nor set aside: it is never overwritten in this session.
+        self._keep_unreadable_file = False
+        #: Why the last ``save`` failed ("" after a successful one).
+        self.last_error = ""
 
     def load(self) -> Tuple[Dict[str, Any], bool]:
         """Load the config, applying migrations and filling in defaults.
@@ -94,15 +102,37 @@ class ConfigStore:
             os.replace(self.config_file, backup)
         except OSError as e:
             logging.error(f"Config file {self.config_file} is unusable ({reason}) and could not be set aside: {e}")
+            # It may be the only copy of the user's keys and prompts: never write defaults over it.
+            self._keep_unreadable_file = True
             return
         logging.warning(f"Config file is unusable ({reason}); kept as {backup}, using defaults.")
 
-    def save(self, config: Dict[str, Any]) -> None:
-        """Write the current configuration to the JSON file.
+    def read_existing(self) -> Optional[Dict[str, Any]]:
+        """The stored settings as they are ({} without a file), or None when the file is unreadable.
+
+        Unlike ``load`` this neither migrates nor sets an unreadable file aside.
+        """
+        try:
+            with open(self.config_file, 'r', encoding='utf-8') as f:
+                stored = json.load(f)
+        except FileNotFoundError:
+            return {}
+        except (OSError, ValueError):
+            return None
+        return stored if isinstance(stored, dict) else None
+
+    def save(self, config: Dict[str, Any]) -> bool:
+        """Write the current configuration to the JSON file; False (and ``last_error``) when it failed.
 
         The JSON goes to a sibling ``.tmp`` file first and replaces the config in one step, so a
-        crash while writing leaves the previous file intact.
+        crash while writing leaves the previous file intact. A virus scanner, indexer or backup
+        tool may hold the file for a moment, so the replace is retried briefly.
         """
+        self.last_error = ""
+        if self._keep_unreadable_file:
+            self.last_error = f"{self.config_file} is unreadable and could not be set aside"
+            logging.error(f"Configuration not saved: {self.last_error}.")
+            return False
         tmp_file = self.config_file + ".tmp"
         try:
             directory = os.path.dirname(self.config_file)
@@ -112,14 +142,28 @@ class ConfigStore:
                 # ensure_ascii=False keeps the file human-readable UTF-8 (ü, é, …) and,
                 # paired with the utf-8 read above, avoids the classic mojibake round-trip.
                 json.dump(config, f, indent=4, ensure_ascii=False)
-            os.replace(tmp_file, self.config_file)
+            self._replace_with_retry(tmp_file)
             logging.info(f"Configuration saved to {self.config_file}")
+            return True
         except Exception as e:
+            self.last_error = str(e)
             logging.error(f"Failed to save configuration: {e}")
             try:
                 os.remove(tmp_file)
             except OSError:
                 pass
+            return False
+
+    def _replace_with_retry(self, tmp_file: str) -> None:
+        """``os.replace`` onto the config file, retried while another process briefly locks it."""
+        for attempt in range(_REPLACE_ATTEMPTS):
+            try:
+                os.replace(tmp_file, self.config_file)
+                return
+            except PermissionError:
+                if attempt == _REPLACE_ATTEMPTS - 1:
+                    raise
+                time.sleep(_REPLACE_RETRY_S)
 
     def _migrate(self, cfg: Dict[str, Any]) -> bool:
         """Apply all in-place migrations/defaults to ``cfg``; return True if it changed."""
@@ -190,7 +234,10 @@ class ConfigStore:
 
         # Schema migration: configs from before the redesign (no/older schema version) get their
         # window height bumped to at least the minimum that fits the new UI, once.
-        if cfg.get("config_schema_version", 0) < CONFIG_SCHEMA_VERSION:
+        schema_version = cfg.get("config_schema_version", 0)
+        if not isinstance(schema_version, int):
+            schema_version = 0
+        if schema_version < CONFIG_SCHEMA_VERSION:
             current_h = int(cfg.get("window_height", DEFAULT_CONFIG["window_height"]) or 0)
             cfg["window_height"] = max(current_h, WINDOW_MIN_HEIGHT)
             cfg["config_schema_version"] = CONFIG_SCHEMA_VERSION
@@ -203,6 +250,9 @@ class ConfigStore:
                 changed = True
 
         changed = migrate_api_keys(cfg) or changed
+        if schema_version < 4:
+            # Schema 4: custom endpoints send only their chosen key (no automatic first custom key).
+            changed = pin_custom_key_choices(cfg) or changed
         changed = self._migrate_instruction_entry(cfg) or changed
 
         # Self-heal hotkeys polluted by a captured control char. If "Set hotkey" was active while

@@ -58,6 +58,8 @@ class HotkeyController(QObject):
         self._manual_bindings: List[Dict[str, Any]] = []
         self._pressed: Set[str] = set()
         self._active_actions: Set[str] = set()
+        #: Windows: virtual-key codes whose key-down the hook swallowed (their key-up is swallowed too).
+        self._suppressed_vks: Set[Any] = set()
         #: Monotonic time of the last press/release seen by the manual listener.
         self._last_event_at = 0.0
         #: macOS: actions armed on press (with arm time) that fire once their keys are released.
@@ -160,28 +162,24 @@ class HotkeyController(QObject):
         """Return the configured binding for a given action, if any."""
         return next((binding for binding in self.bindings if binding["action"] == action), None)
 
-    def _should_suppress_manual_windows_event(self, key_tokens: Set[str], is_press: bool) -> bool:
-        """Return whether the current manual Windows event should be suppressed."""
+    def _should_suppress_manual_windows_press(self, key_tokens: Set[str]) -> bool:
+        """Return whether the current manual Windows key press should be suppressed."""
         if not key_tokens:
             return False
-
-        if is_press:
-            projected_tokens = self._pressed.union(key_tokens)
-            for binding in self._manual_bindings:
-                if not hotkeys.binding_needs_manual_suppression(binding):
-                    continue
-                if (
-                    "<caps_lock>" in key_tokens
-                    and "<caps_lock>" in binding["tokens"]
-                    and projected_tokens.issubset(binding["tokens"])
-                    and bool((projected_tokens - {"<caps_lock>"}).intersection(binding["tokens"]))
-                ):
-                    return True
-                if hotkeys.binding_matches_current_press(binding, projected_tokens, key_tokens):
-                    return True
-            return False
-
-        return self._is_push_to_talk_release(key_tokens)
+        projected_tokens = self._pressed.union(key_tokens)
+        for binding in self._manual_bindings:
+            if not hotkeys.binding_needs_manual_suppression(binding):
+                continue
+            if (
+                "<caps_lock>" in key_tokens
+                and "<caps_lock>" in binding["tokens"]
+                and projected_tokens.issubset(binding["tokens"])
+                and bool((projected_tokens - {"<caps_lock>"}).intersection(binding["tokens"]))
+            ):
+                return True
+            if hotkeys.binding_matches_current_press(binding, projected_tokens, key_tokens):
+                return True
+        return False
 
     def _is_push_to_talk_release(self, released_tokens: Set[str]) -> bool:
         """Whether ``released_tokens`` end the push-to-talk recording started by the hotkey.
@@ -205,12 +203,20 @@ class HotkeyController(QObject):
             if listener:
                 listener._suppress = False
             return True
-        key_tokens = hotkeys.vk_to_hotkey_tokens(getattr(data, "vkCode", None))
-        is_press = msg in (0x0100, 0x0104)  # WM_KEYDOWN / WM_SYSKEYDOWN
-        is_release = msg in (0x0101, 0x0105)  # WM_KEYUP / WM_SYSKEYUP
+        vk = getattr(data, "vkCode", None)
+        key_tokens = hotkeys.vk_to_hotkey_tokens(vk)
+        suppress = False
+        if msg in (0x0100, 0x0104):  # WM_KEYDOWN / WM_SYSKEYDOWN
+            suppress = self._should_suppress_manual_windows_press(key_tokens)
+            if suppress:
+                self._suppressed_vks.add(vk)
+        elif msg in (0x0101, 0x0105):  # WM_KEYUP / WM_SYSKEYUP
+            # A key-up is swallowed exactly when its key-down was: a key the application saw go
+            # down (Ctrl of the hotkey, pressed first) must see it go up, or Windows keeps it held.
+            suppress = vk in self._suppressed_vks
+            self._suppressed_vks.discard(vk)
         if listener:
-            listener._suppress = bool(key_tokens and (is_press or is_release)
-                                      and self._should_suppress_manual_windows_event(key_tokens, is_press))
+            listener._suppress = suppress
         return True
 
     def _on_press(self, key: Any, injected: bool = False) -> None:

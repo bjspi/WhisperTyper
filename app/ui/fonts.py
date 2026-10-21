@@ -25,4 +25,8 @@ def install_emoji_font() -> None:
     if not families:
         logging.warning("Bundled emoji font could not be loaded: %s", _EMOJI_FONT)
         return
+    # PyQt6 before 6.9 lacks the call; a checkout updated without its new requirements must still start.
+    if not hasattr(QFontDatabase, "addApplicationEmojiFontFamily"):
+        logging.warning("PyQt6 is older than 6.9: emoji keep the system font (pip install -r requirements.txt).")
+        return
     QFontDatabase.addApplicationEmojiFontFamily(families[0])

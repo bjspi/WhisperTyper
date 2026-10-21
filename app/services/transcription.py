@@ -162,7 +162,7 @@ def transcribe(req: TranscriptionRequest, timing: OperationTiming, tr: Translate
             text, details = _transcribe_twice(req, upload, timing, tr, temp.release)
         else:
             text, payload = _send(req, upload, timing, tr)
-            details = transcription_diagnostics.extract(payload) if req.wants_details else None
+            details = _details(payload, timing) if req.wants_details else None
             if req.second_pass == "doubtful" and _doubtful(req, text, details):
                 text, details = _choose(req, timing, text, details, _second_pass(req, upload, timing, tr))
     finally:
@@ -206,13 +206,22 @@ def _second_pass(req: TranscriptionRequest, upload: _Upload, timing: OperationTi
                      hedge_api_key=None)
     try:
         text, payload = _send(second, upload, second_timing, tr)
+        details = _details(payload, timing)
+        logging.info("transcription_second_pass op=%s finished avg_logprob=%s words=%s", timing.operation_id,
+                     _average_logprob(details), len(text.split()))
     except Exception as error:
         logging.warning("transcription_second_pass op=%s failed error=%s", timing.operation_id, error)
         return None, error
-    details = transcription_diagnostics.extract(payload)
-    logging.info("transcription_second_pass op=%s finished avg_logprob=%s words=%s", timing.operation_id,
-                 _average_logprob(details), len(text.split()))
     return (text, details), None
+
+
+def _details(payload: Dict[str, Any], timing: OperationTiming) -> Optional[Dict[str, Any]]:
+    """Confidence details of a response; odd fields (custom servers) mean no details, never a failed result."""
+    try:
+        return transcription_diagnostics.extract(payload)
+    except Exception as error:
+        logging.warning("transcription_diagnostics op=%s unreadable details error=%r", timing.operation_id, error)
+        return None
 
 
 def _transcribe_twice(req: TranscriptionRequest, upload: _Upload, timing: OperationTiming,
@@ -224,10 +233,13 @@ def _transcribe_twice(req: TranscriptionRequest, upload: _Upload, timing: Operat
     second: "queue.SimpleQueue[_Outcome]" = queue.SimpleQueue()
 
     def run_second() -> None:
+        outcome: _Outcome = (None, RuntimeError("the second transcription ended unexpectedly"))
         try:
-            second.put(_second_pass(req, upload, timing, tr))
+            outcome = _second_pass(req, upload, timing, tr)
         finally:
             on_second_done()
+            # The first request may wait for this queue: it gets an outcome, whatever happened here.
+            second.put(outcome)
 
     threading.Thread(target=run_second, name="TranscriptionSecondPass", daemon=True).start()
     try:
@@ -242,7 +254,7 @@ def _transcribe_twice(req: TranscriptionRequest, upload: _Upload, timing: Operat
         info: Dict[str, Any] = {"mode": req.second_pass, "prompt": req.second_pass_prompt, "chosen": "second",
                                 "first": {"error": str(error)}, "second": _side(*result)}
         return result[0], {**(result[1] or _NO_DETAILS), "second_pass": info}
-    details = transcription_diagnostics.extract(payload)
+    details = _details(payload, timing)
     if not _doubtful(req, text, details):
         # Confident: deliver now; the second request finishes (and is logged) in the background.
         logging.info("transcription_second_pass op=%s chosen=first reason=confident avg_logprob=%s threshold=%s",
@@ -255,6 +267,8 @@ def _transcribe_twice(req: TranscriptionRequest, upload: _Upload, timing: Operat
 
 
 _NO_DETAILS: Dict[str, Any] = {"summary": {}, "segments": [], "words": []}
+#: Whisper's own silence rule: a segment this likely to hold no speech is probably invented text.
+_NO_SPEECH_LIMIT = 0.6
 
 
 def _side(text: str, details: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -265,8 +279,10 @@ def _choose(req: TranscriptionRequest, timing: OperationTiming, text: str, detai
             outcome: _Outcome) -> Tuple[str, Optional[Dict[str, Any]]]:
     """Pick between a doubtful first result and the second one; the details carry a ``second_pass`` entry.
 
-    An empty first result loses to any text; otherwise the higher average log-probability wins.
-    A failed second request keeps the first result.
+    An empty first result loses only to a second text that is confident itself and not likely
+    silence: without speech, Whisper tends to invent a phrase ("Untertitel im Auftrag des ZDF"),
+    and that must not be typed. Otherwise the higher average log-probability wins. A failed
+    second request, or one that only echoes its prompt, keeps the first result.
     """
     result, error = outcome
     first_average = _average_logprob(details)
@@ -280,8 +296,15 @@ def _choose(req: TranscriptionRequest, timing: OperationTiming, text: str, detai
     second_text, second_details = result
     second_average = _average_logprob(second_details)
     info["second"] = _side(second_text, second_details)
-    better = bool(second_text.strip()) and (not text.strip() or first_average is None or (
-        second_average is not None and second_average > first_average))
+    echoed = bool(req.second_pass_prompt.strip()) and second_text.strip().lower() == req.second_pass_prompt.strip().lower()
+    if not second_text.strip() or echoed:
+        better = False
+    elif not text.strip():
+        no_speech = second_details["summary"].get("max_no_speech_prob") if second_details else None
+        better = (second_average is not None and second_average >= req.second_pass_threshold
+                  and not (isinstance(no_speech, (int, float)) and no_speech >= _NO_SPEECH_LIMIT))
+    else:
+        better = first_average is None or (second_average is not None and second_average > first_average)
     info["chosen"] = "second" if better else "first"
     timing.notes["second_pass"] = info["chosen"]
     logging.info("transcription_second_pass op=%s chosen=%s reason=first_doubtful first_avg_logprob=%s "
@@ -438,13 +461,23 @@ def _parse(response: httpx.Response, tr: Translate) -> _Parsed:
     if response.status_code != 200:
         raise TranscriptionError(tr("transcription_api_error", status=response.status_code,
                                     details=api_error_details(response)))
-    payload: Dict[str, Any] = response.json()
-    return payload.get("text", ""), payload
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise TranscriptionError(tr("transcription_api_error", status=response.status_code,
+                                    details=api_error_details(response)))
+    # A server may send "text": null; the rest of the pipeline works with strings.
+    text = payload.get("text")
+    return (text if isinstance(text, str) else ""), payload
 
 
-def hedge_thresholds(upload_bytes: int, response_wait_s: float = DEFAULT_HEDGE_RESPONSE_WAIT_S) -> Tuple[float, float]:
-    """(upload budget, response wait after the upload) before a second attempt starts, in seconds."""
-    megabytes = upload_bytes / (1024 * 1024)
+def hedge_thresholds(upload_bytes: int, response_wait_s: float = DEFAULT_HEDGE_RESPONSE_WAIT_S,
+                     audio_bytes: Optional[int] = None) -> Tuple[float, float]:
+    """(upload budget, response wait after the upload) before a second attempt starts, in seconds.
+
+    The server's time grows with the audio's length, so the response wait scales with
+    ``audio_bytes`` (the retained WAV of a recording uploaded as compressed AAC), else the upload.
+    """
+    megabytes = (upload_bytes if audio_bytes is None else max(upload_bytes, audio_bytes)) / (1024 * 1024)
     return (max(_HEDGE_UPLOAD_MIN_S, upload_bytes / _HEDGE_UPLOAD_BYTES_PER_S),
             response_wait_s + megabytes * _HEDGE_RESPONSE_S_PER_MB)
 
@@ -498,7 +531,8 @@ def _send_hedged(req: TranscriptionRequest, upload: _Upload, timing: OperationTi
         threading.Thread(target=attempt, args=(index, api_key, stage, fresh),
                          name=f"TranscriptionAttempt{index}", daemon=True).start()
 
-    upload_budget, response_wait = hedge_thresholds(upload.size, req.hedge_response_wait_s)
+    audio_bytes = _file_size(req.audio_path) if req.recording_format is not None else None
+    upload_budget, response_wait = hedge_thresholds(upload.size, req.hedge_response_wait_s, audio_bytes)
     timing.mark("transcription_request_start")
     started = time.monotonic()
     launch(1, req.api_key, "transcription", False)
@@ -524,6 +558,13 @@ def _send_hedged(req: TranscriptionRequest, upload: _Upload, timing: OperationTi
             elif now >= started + upload_budget:
                 trigger = "upload"
             continue
+        return _finish(timing, parsed, error, winner=1, trigger="")
+    try:
+        # The first attempt may have answered right at the deadline: then no second request is paid for.
+        _index, parsed, error = results.get_nowait()
+    except queue.Empty:
+        pass
+    else:
         return _finish(timing, parsed, error, winner=1, trigger="")
 
     hedged.set()

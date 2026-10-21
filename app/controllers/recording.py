@@ -105,6 +105,11 @@ class RecordingController(QObject):
                                          on_failure=self._on_capture_open_failed,
                                          on_recording_audio=self._report_recording_audio)
         self.mac_recorder = macos_recorder.MacRecorder()
+        #: The PyAudio capture of the running take, fixed at its start: a settings change mid-take
+        #: must not route its stop to the other capture.
+        self._capture: Optional[Union[HotMicCapture, OnDemandCapture]] = None
+        #: Saved settings that change the capture wait for the end of the running take.
+        self._capture_settings_pending = False
         self._capture_failed.connect(self._on_capture_failed)
         self._recording_audio.connect(self._on_recording_audio)
 
@@ -197,6 +202,7 @@ class RecordingController(QObject):
         self._feedback_pending = False
         self.abandon_prompt_selection()
         self.active_capture().cancel_recording()
+        self._end_take_capture()
         self.state_changed.emit(False)
         self._notifier.show(self._ctx.tr("no_microphone_signal_message"), BALLOON_INFO_MS)
 
@@ -213,8 +219,17 @@ class RecordingController(QObject):
         return is_WINDOWS and self._config.get("windows_keep_mic_hot", True)
 
     def active_capture(self) -> Union[HotMicCapture, OnDemandCapture]:
-        """The PyAudio capture strategy for the current settings."""
+        """The PyAudio capture of the running take, else the one the current settings pick."""
+        if self._capture is not None:
+            return self._capture
         return self.hot_mic if self.keep_mic_hot() else self.on_demand
+
+    def _end_take_capture(self) -> None:
+        """The take no longer uses its capture: release it and apply settings saved meanwhile."""
+        self._capture = None
+        if self._capture_settings_pending:
+            self._capture_settings_pending = False
+            self.apply_settings()
 
     def start_background_capture(self) -> None:
         """Start the Windows background mic reader to avoid clipped leading audio."""
@@ -225,12 +240,18 @@ class RecordingController(QObject):
 
     def stop_background_capture(self) -> None:
         """Stop the Windows background mic reader and release the capture device."""
-        # A reader stuck in a driver read still owns the stream; terminating PortAudio under it would crash.
-        if self.hot_mic.stop():
+        # A reader stuck in a driver read still owns the stream, and an on-demand take may be
+        # reading the shared one: terminating PortAudio under either would crash.
+        if self.hot_mic.stop() and not self.on_demand.reading:
             self.microphone.terminate()
 
     def apply_settings(self) -> None:
         """Start or stop the warm microphone after the settings were saved."""
+        if self.is_recording:
+            # The take keeps the capture it started with; the change follows when it ends.
+            self._capture_settings_pending = True
+            logging.info("Capture settings deferred until the current recording stops.")
+            return
         if self.keep_mic_hot():
             self.touch_activity()
             self.start_background_capture()
@@ -239,6 +260,9 @@ class RecordingController(QObject):
 
     def shutdown(self) -> None:
         """Release every capture resource at quit."""
+        if self.is_recording and not self.mac_recorder.active:
+            # Join the take's reader first: PortAudio must not be terminated under its read.
+            self.active_capture().cancel_recording()
         self.stop_background_capture()
         if self.mac_recorder.active:
             self.mac_recorder.stop(discard=True)
@@ -337,6 +361,7 @@ class RecordingController(QObject):
         stream_was_open = self.microphone.stream_open
         timing.mark("capture_request_start")
         if hot:
+            self._capture = self.hot_mic
             self.hot_mic.start_recording(timing)
             self.start_background_capture()
         elif macos_recorder.available():
@@ -350,6 +375,7 @@ class RecordingController(QObject):
                 self._notifier.show(self._ctx.tr("no_microphone_signal_message"), BALLOON_INFO_MS)
                 return
         else:
+            self._capture = self.on_demand
             self.on_demand.start_recording(timing)
         timing.mark("capture_request_end")
 
@@ -474,6 +500,7 @@ class RecordingController(QObject):
         self._notifier.show(self._ctx.tr("recording_stopped_message"), BALLOON_SHORT_MS)
         recorded_file_path = self.mac_recorder.stop() if collect is None else None
         frames = collect() if collect else []
+        self._end_take_capture()
         timing.mark("recording_stopped")
         logging.info("Recording stopped. Processing audio.")
         self._sounds.play('sound_end.wav')
@@ -505,6 +532,7 @@ class RecordingController(QObject):
             self.mac_recorder.stop(discard=True)
         else:
             self.active_capture().cancel_recording()
+        self._end_take_capture()
         timing.mark("recording_stopped")
         timing.finish("cancelled")
 

@@ -94,7 +94,7 @@ class MemoryConfigStore:
         return self.config, False
 
     def save(self, _config):
-        pass
+        return True
 
 
 class Paster(TextOutput):

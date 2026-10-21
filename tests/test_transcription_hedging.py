@@ -113,6 +113,9 @@ def test_thresholds_grow_with_the_upload_size():
     assert small_upload == service._HEDGE_UPLOAD_MIN_S and large_upload > small_upload
     assert large_wait > small_wait >= service.DEFAULT_HEDGE_RESPONSE_WAIT_S
     assert service.hedge_thresholds(50_000, 3.0)[1] > small_wait + 1.9
+    # A compressed upload waits as long as its audio (the retained WAV) needs, not as its smaller file.
+    aac_upload, aac_wait = service.hedge_thresholds(500_000, audio_bytes=4 * 1024 * 1024)
+    assert aac_upload == service.hedge_thresholds(500_000)[0] and aac_wait > service.hedge_thresholds(500_000)[1] + 1.5
 
 
 def test_upload_finishing_late_starts_the_response_deadline_instead_of_hedging(tmp_path, monkeypatch):
