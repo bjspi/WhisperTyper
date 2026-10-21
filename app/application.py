@@ -87,6 +87,9 @@ class WhisperTyperApp(QObject):
         self.settings.saved.connect(self._on_settings_saved)
         self.settings.hotkeys_changed.connect(self.hotkeys.restart)
         self.settings.language_changed.connect(self._on_language_changed)
+        # The modern tray menu draws its icons in the theme's colours.
+        self.settings.appearance_changed.connect(self.tray.build)
+        self.settings.restart_requested.connect(self.restart_app)
 
         self.tray.set_tooltip(self.ctx.tr("tray_ready_tooltip", hotkey=config["hotkey"]))
         logging.info(f"Application started. Press '{config['hotkey']}' to start/stop recording.")
@@ -136,6 +139,7 @@ class WhisperTyperApp(QObject):
         self.recording.apply_settings()
         self.pipeline.reload_replacements()
         self.ctx.notifier.show(self.ctx.tr("settings_saved_message", hotkey=self.ctx.config["hotkey"]), BALLOON_SHORT_MS)
+        self.tray.set_tooltip(self.ctx.tr("tray_ready_tooltip", hotkey=self.ctx.config["hotkey"]))
         self.apply_logging_configuration()
         set_ip_family(self.ctx.config.get("network_ip_family", "auto"))
         self.warmup.schedule(activate=True)

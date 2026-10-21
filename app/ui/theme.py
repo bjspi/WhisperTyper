@@ -26,6 +26,30 @@ DARK: Dict[str, str] = {
 }
 
 
+#: The modern design: soft grey canvas, white cards, one blue accent.
+MODERN_LIGHT: Dict[str, str] = {
+    "bg": "#f3f5f8", "panel": "#ffffff", "panel2": "#f1f4f8", "text": "#1f2329",
+    "muted": "#6b727c", "border": "#e3e7ed", "group_border": "#e3e7ed", "field": "#ffffff", "field_border": "#cfd5dd",
+    "accent": "#2f7de1", "accent_hover": "#2a72cf", "accent_press": "#2565b8",
+    "on_accent": "#ffffff", "warn": "#cf6a3f", "danger": "#e5484d", "hover": "#edf0f4",
+    "heading": "#15191e", "sidebar": "#eaedf2", "sidebar_border": "#dfe3e9", "nav_text": "#3a4049",
+    "nav_hover": "#e0e5ec", "nav_selected": "#1f5fb8", "menu_bg": "#f9f9fb", "menu_border": "#e0e3e8",
+    "menu_selected": "#e8ebf0", "menu_icon": "#5f6670", "switch_off": "#c5ccd6", "selection": "#bcd5f5",
+    "divider": "#eef1f4",
+}
+
+MODERN_DARK: Dict[str, str] = {
+    "bg": "#1b1d21", "panel": "#25282d", "panel2": "#2c3036", "text": "#e6e8eb",
+    "muted": "#9aa1ab", "border": "#33373e", "group_border": "#33373e", "field": "#1f2226", "field_border": "#40454d",
+    "accent": "#4c94ef", "accent_hover": "#5ea0f2", "accent_press": "#3d84de",
+    "on_accent": "#ffffff", "warn": "#e08b4a", "danger": "#ff5a52", "hover": "#2f333a",
+    "heading": "#f2f4f6", "sidebar": "#202327", "sidebar_border": "#2d3036", "nav_text": "#c9cdd3",
+    "nav_hover": "#2b2f35", "nav_selected": "#7fb2f5", "menu_bg": "#2b2d31", "menu_border": "#3a3d43",
+    "menu_selected": "#383c43", "menu_icon": "#aeb4bc", "switch_off": "#4a4f57", "selection": "#2f5a91",
+    "divider": "#2e3238",
+}
+
+
 def set_style_state(widget: Any, name: str, value: Any) -> None:
     """Set a dynamic property matched by a QSS selector and re-polish so it applies at once."""
     if widget.property(name) == value:
@@ -36,8 +60,10 @@ def set_style_state(widget: Any, name: str, value: Any) -> None:
     style.polish(widget)
 
 
-def palette(dark: bool) -> Dict[str, str]:
-    """Return the colour palette for the requested mode."""
+def palette(dark: bool, modern: bool = False) -> Dict[str, str]:
+    """Return the colour palette for the requested mode and design."""
+    if modern:
+        return MODERN_DARK if dark else MODERN_LIGHT
     return DARK if dark else LIGHT
 
 
@@ -262,6 +288,95 @@ QPushButton#brandPlayButton { border-radius: 10px; padding: 3px 12px; }
 """
 
 
+#: Added on top of ``_QSS`` in the modern design: sidebar navigation, page headers, cards and quiet menus.
+_MODERN_QSS = """
+QWidget { font-size: 10pt; }
+QFrame#sidebar { background: %(sidebar)s; border: none; border-right: 1px solid %(sidebar_border)s; }
+QLabel#brandName { font-size: 12pt; font-weight: 600; color: %(heading)s; }
+QLabel#brandVersion { color: %(muted)s; font-size: 8pt; }
+QListWidget#nav { background: transparent; border: none; padding: 0; }
+QListWidget#nav::item {
+    padding: 8px 10px; margin: 1px 0; border-radius: 8px; color: %(nav_text)s; border: 1px solid transparent;
+}
+QListWidget#nav::item:hover { background: %(nav_hover)s; }
+QListWidget#nav::item:selected { background: %(panel)s; color: %(nav_selected)s; border-color: %(border)s; }
+#sidebarButton {
+    background: transparent; border: 1px solid transparent; border-radius: 8px;
+    padding: 7px 10px; color: %(nav_text)s;
+}
+QToolButton#sidebarButton { padding-left: 17px; }
+#sidebarButton:hover { background: %(nav_hover)s; color: %(nav_text)s; border-color: transparent; }
+#sidebarButton:disabled { color: %(muted)s; }
+QToolButton#sidebarButton::menu-indicator { image: none; width: 0; }
+QLabel#pageTitle { font-size: 17pt; font-weight: 600; color: %(heading)s; }
+QLabel#pageSubtitle { color: %(muted)s; font-size: 9pt; padding-bottom: 6px; }
+
+QTabWidget#tabs::pane { border: none; }
+QGroupBox {
+    background: %(panel)s; border: 1px solid %(group_border)s; border-radius: 12px;
+    margin-top: 26px; padding: 0; font-weight: 400;
+}
+QGroupBox::title {
+    subcontrol-origin: margin; subcontrol-position: top left; left: 4px; padding: 0 0 6px 0;
+    color: %(muted)s; background: transparent; font-weight: 600; font-size: 8pt;
+}
+QWidget#cardBody, QWidget#settingRow { background: transparent; }
+QListWidget#promptList { background: transparent; border: none; padding: 0; }
+QWidget#post_rp_instruction_options { background: transparent; }
+QListWidget#promptList::item, QListWidget#promptList::item:selected { background: transparent; border: none; }
+QLabel#cardNote { color: %(muted)s; font-size: 9pt; font-style: normal; margin: 0; }
+QSplitter::handle { background: transparent; }
+QFrame#rowDivider { background: %(divider)s; border: none; }
+QLabel[rowTitle="true"] { font-weight: 600; color: %(text)s; }
+QLabel[rowTitle="true"]:disabled { color: %(muted)s; }
+QLabel#rowDescription { color: %(muted)s; font-size: 9pt; }
+QLabel#trayTitle { font-size: 10pt; }
+QLabel#trayStatus { font-size: 8pt; }
+QLabel#collapsible_title { color: %(text)s; }
+QFrame#collapsible_line { background: %(border)s; }
+
+QPushButton {
+    background: %(panel)s; color: %(text)s; border: 1px solid %(field_border)s; border-radius: 8px; padding: 5px 14px;
+}
+QPushButton:hover { background: %(hover)s; color: %(text)s; border-color: %(field_border)s; }
+QPushButton:pressed { background: %(panel2)s; }
+QPushButton#save_button { min-width: 110px; padding: 7px 18px; }
+QFrame#footer { background: %(panel)s; border: none; border-top: 1px solid %(border)s; }
+QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+    selection-background-color: %(selection)s; selection-color: %(text)s;
+}
+QListWidget::item:selected { background: %(selection)s; color: %(text)s; }
+QCheckBox { spacing: 10px; }
+QCheckBox::indicator, QCheckBox::indicator:checked, QCheckBox::indicator:hover {
+    width: 34px; height: 20px; border: none; background: transparent; border-radius: 0;
+}
+
+QMenu { background: %(menu_bg)s; border: 1px solid %(menu_border)s; border-radius: 0; padding: 4px; font-size: 9pt; }
+QMenu::item { padding: 7px 28px 7px 18px; border-radius: 4px; }
+QMenu::icon { left: 10px; }
+QMenu::item:selected { background: %(menu_selected)s; color: %(text)s; }
+QMenu::item:disabled { color: %(muted)s; }
+QMenu::separator { height: 1px; background: %(border)s; margin: 4px 10px; }
+QMenu#tray { padding: 6px; }
+QMenu#tray::item { padding: 7px 40px 7px 18px; border-radius: 6px; }
+QWidget#trayHeader { background: transparent; }
+QLabel#trayTitle { font-weight: 600; color: %(heading)s; }
+QLabel#trayStatus { color: %(muted)s; }
+
+QScrollBar:vertical { width: 8px; margin: 2px; }
+QScrollBar:horizontal { height: 8px; margin: 2px; }
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal { border-radius: 3px; }
+"""
+
+
+def _switch_svg(track: str, knob: str, on: bool, opacity: float = 1.0) -> str:
+    """SVG string for an on/off switch (34x20) that replaces the checkbox square in the modern design."""
+    knob_x = 24 if on else 10
+    return (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 20' opacity='{opacity}'>"
+            f"<rect x='0.5' y='1' width='33' height='18' rx='9' fill='{track}'/>"
+            f"<circle cx='{knob_x}' cy='10' r='6.5' fill='{knob}'/></svg>")
+
+
 def _check_svg(color: str) -> str:
     """SVG string for the checkbox checkmark in the given stroke colour."""
     return (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
@@ -317,7 +432,7 @@ def move_svg(color: str) -> str:
             f"</g></svg>")
 
 
-def write_icon_qss(dark: bool, cache_dir: str) -> str:
+def write_icon_qss(dark: bool, cache_dir: str, modern: bool = False) -> str:
     """Write themed checkmark/arrow SVGs into cache_dir and return QSS referencing them.
 
     Qt renders QSS ``image:`` from SVG *files* but not from ``data:`` URIs for spinbox
@@ -325,13 +440,20 @@ def write_icon_qss(dark: bool, cache_dir: str) -> str:
     """
     import os
     os.makedirs(cache_dir, exist_ok=True)
-    c = palette(dark)
-    suffix = "d" if dark else "l"
+    c = palette(dark, modern)
+    suffix = ("m" if modern else "") + ("d" if dark else "l")
     assets = {
         "check": _check_svg(c["on_accent"]),
         "up": _arrow_svg(c["accent"], True),
         "down": _arrow_svg(c["accent"], False),
     }
+    if modern:
+        assets.update({
+            "switch_off": _switch_svg(c["switch_off"], "#ffffff", False),
+            "switch_on": _switch_svg(c["accent"], "#ffffff", True),
+            "switch_off_disabled": _switch_svg(c["switch_off"], "#ffffff", False, 0.45),
+            "switch_on_disabled": _switch_svg(c["accent"], "#ffffff", True, 0.45),
+        })
     paths: Dict[str, str] = {}
     for name, svg in assets.items():
         fp = os.path.join(cache_dir, f"{name}_{suffix}.svg")
@@ -346,8 +468,16 @@ def write_icon_qss(dark: bool, cache_dir: str) -> str:
             with open(fp, "w", encoding="utf-8") as fh:
                 fh.write(svg)
         paths[name] = fp.replace("\\", "/")
-    return f"""
-QCheckBox::indicator:checked {{ image: url({paths['check']}); }}
+    if modern:
+        checkbox_qss = f"""
+QCheckBox::indicator {{ image: url({paths['switch_off']}); }}
+QCheckBox::indicator:checked {{ image: url({paths['switch_on']}); }}
+QCheckBox::indicator:disabled {{ image: url({paths['switch_off_disabled']}); }}
+QCheckBox::indicator:checked:disabled {{ image: url({paths['switch_on_disabled']}); }}"""
+    else:
+        checkbox_qss = f"""
+QCheckBox::indicator:checked {{ image: url({paths['check']}); }}"""
+    return checkbox_qss + f"""
 QComboBox::down-arrow {{ image: url({paths['down']}); width: 16px; height: 16px; }}
 QSpinBox, QDoubleSpinBox {{ padding-right: 26px; }}
 QSpinBox::up-button, QDoubleSpinBox::up-button {{
@@ -377,15 +507,17 @@ QToolTip {
 """
 
 
-def tooltip_stylesheet(dark: bool) -> str:
+def tooltip_stylesheet(dark: bool, modern: bool = False) -> str:
     """Tooltip QSS for the whole application.
 
     Set on the QApplication, not the window: Qt reuses an open tooltip when the pointer moves to
     the next widget and then drops the window's stylesheet, so its padding would vanish.
     """
-    return _TOOLTIP_QSS % palette(dark)
+    return _TOOLTIP_QSS % palette(dark, modern)
 
 
-def build_stylesheet(dark: bool) -> str:
+def build_stylesheet(dark: bool, modern: bool = False) -> str:
     """Build the base application QSS for light or dark mode (icons added by write_icon_qss)."""
+    if modern:
+        return (_QSS + _MODERN_QSS) % palette(dark, modern=True)
     return _QSS % palette(dark)

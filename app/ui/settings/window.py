@@ -28,6 +28,8 @@ from app.ui.replacements import ReplacementsTab
 from app.ui.settings.api_page import ApiPage
 from app.ui.settings.bindings import PLATFORMS, load_bindings, save_bindings
 from app.ui.settings.general_page import GeneralPage
+from app.ui.settings.modern_chrome import ModernChrome
+from app.ui.settings.modern_prompts import ModernPromptsPage
 from app.ui.settings.recording_page import RecordingPage
 from app.ui.settings.texts import apply_texts
 from app.ui.settings.theme_page import ThemePage
@@ -42,7 +44,8 @@ _DEFAULT_WINDOW_WIDTH = 760
 _LIVE_MIRRORED_KEYS = ("post_rephrasing_entries", "ui_language")
 
 
-class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, ThemePage):
+class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, ThemePage, ModernChrome,
+                     ModernPromptsPage):
     """Settings form; the runtime components react to its signals instead of being driven from here."""
 
     #: The form was validated and written to the config (and disk).
@@ -65,6 +68,8 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self._quit_app = quit_app
 
         uic.loadUi(resource_path("resources", "main_window.ui"), self)
+        # The design is fixed for the window's lifetime; switching it takes a restart.
+        self._modern = bool(self.config.get("modern_design", True))
         self._build_menu_bar()
 
         # Pages and controls the .ui file does not contain.
@@ -107,6 +112,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
             SliderWheelToScrollArea(self.transcription_temp_slider, self.transcription_scroll_area)
             SliderWheelToScrollArea(self.rephrasing_temp_slider, self.transcription_scroll_area)
         self._build_save_row()
+        self._install_modern_chrome()
         self.aac_bitrates_ready.connect(self._apply_aac_bitrates)
         ctx.files_changed.connect(self.refresh_actions)
 
@@ -117,17 +123,21 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self.setWindowIcon(icon)
         self.apply_theme()
         compact_layouts(self)
+        if self._modern:
+            self._build_modern_rows()
         self.retranslate_ui()
         self.refresh_actions()
 
         # Enforce a minimum window size and restore the last size.
-        self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
+        # The minimum width follows the design (see ``_apply_design``).
+        self.setMinimumHeight(WINDOW_MIN_HEIGHT)
         try:
             width = max(int(self.config.get("window_width", _DEFAULT_WINDOW_WIDTH)), WINDOW_MIN_WIDTH)
             height = max(int(self.config.get("window_height", WINDOW_MIN_HEIGHT)), WINDOW_MIN_HEIGHT)
         except (TypeError, ValueError):
             width, height = _DEFAULT_WINDOW_WIDTH, WINDOW_MIN_HEIGHT
-        self.resize(width, height)
+        self.resize(width + self.design_extra_width(), height)
+        self.fit_height_to_pages()
 
     def _build_menu_bar(self) -> None:
         """File/Help menus and the branding header above the tabs (captions come from retranslate)."""
@@ -373,6 +383,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         # The texts table sets the general temperature tooltip; models without temperature say why.
         self._update_prompt_token_counter()
         self.update_brand_header()
+        self._retranslate_modern_chrome()
         self.language_changed.emit()
 
     def show_window(self) -> None:
@@ -428,8 +439,9 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self._hotkeys.cancel_capture()
         self._discard_live_edits()
         try:
-            # Only the size is persisted: the form's other edits wait for Save.
-            self.config["window_width"] = self.width()
+            # Only the size is persisted: the form's other edits wait for Save. The width excludes
+            # the modern sidebar, so both designs open with pages of the same width.
+            self.config["window_width"] = self.width() - self.design_extra_width()
             self.config["window_height"] = self.height()
             self.ctx.save_config_keys("window_width", "window_height")
         except Exception as e:

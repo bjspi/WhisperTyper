@@ -57,7 +57,9 @@ def test_closing_without_save_drops_prompt_edits_and_leaves_the_file_alone(make_
     assert window.config["post_rephrasing_entries"] != saved_entries  # mirrored live for the palettes
     window.close()
     after = on_disk(path)
-    assert after["window_width"] == window.width() and after["window_height"] == window.height()
+    # The stored width leaves out the modern sidebar, so both designs open with equally wide pages.
+    assert after["window_width"] == window.width() - window.design_extra_width()
+    assert after["window_height"] == window.height()
     assert {k: v for k, v in after.items() if k not in ("window_width", "window_height")} == \
         {k: v for k, v in before.items() if k not in ("window_width", "window_height")}
     assert window.config["post_rephrasing_entries"] == saved_entries

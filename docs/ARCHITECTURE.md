@@ -37,7 +37,7 @@ flowchart TB
 
     subgraph ui ["UI (app/ui/)"]
         SET["settings/ — SettingsWindow + pages, bindings, texts"]
-        UIW["theme · tooltip · floating_buttons · connection_tester · api_keys<br/>replacements · transformations_tab · tray_menu · tray_icons · macos_icons · durations"]
+        UIW["theme · tooltip · floating_buttons · connection_tester · api_keys<br/>replacements · transformations_tab · tray_menu · tray_icons · line_icons · macos_icons · durations"]
     end
 
     subgraph services ["Services (app/services/) — I/O, workers, external tools"]
@@ -101,13 +101,19 @@ component's constructor documents its dependencies and tests can build it in iso
 | `PostRephraseController` | floating prompt palette for selected text | direct calls |
 | `TrayController` | tray icon, menu, level meter, git updater | — |
 | `MacPermissions` | one-time permission dialogs, startup prompts | — |
-| `SettingsWindow` | the form, theme, translations | `saved`, `hotkeys_changed`, `language_changed` |
+| `SettingsWindow` | the form, theme, translations | `saved`, `hotkeys_changed`, `language_changed`, `appearance_changed`, `restart_requested` |
 | `WarmupScheduler` / `WorkerThreads` | warm HTTP pool timer / QThread registry | — |
 
 The settings window is one widget whose controls come from `main_window.ui`. Its pages
 (`api_page`, `transcription_page`, `recording_page`, `general_page`, `theme_page`) are
 slices of that single widget on top of `SettingsWindowBase`, which declares every control
 so each page is type-checked on its own; they hold no state of their own.
+
+The design (`modern_design`, default on) is chosen at startup. The classic design shows the
+tabs of the .ui file. The modern one (`modern_chrome`, `modern_rows`, `modern_prompts`) wraps
+the same widgets in a sidebar, splits the long tabs into smaller pages and rebuilds the cards
+as rows (title and description left, control right); rows follow their control's visibility
+and enabled state, so the pages' logic and the bindings work unchanged in both designs.
 
 **The recording hot path is a chain of direct calls on the GUI thread:** the queued hotkey
 signal reaches `RecordingController`, which stops capture (retaining the in-flight block),

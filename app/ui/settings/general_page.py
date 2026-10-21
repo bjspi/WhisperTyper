@@ -37,12 +37,17 @@ class GeneralPage(SettingsWindowBase):
 
         self.post_rephrase_auto_select_all_checkbox = QCheckBox(self)
         self.misc_layout.addWidget(self.post_rephrase_auto_select_all_checkbox)
+        # Applies at once, like the colour theme above it.
+        self.modern_design_checkbox = QCheckBox(self)
+        self.modern_design_checkbox.setChecked(bool(self.config.get("modern_design", True)))
+        self.general_layout.insertWidget(self.general_layout.indexOf(self.misc_group), self.modern_design_checkbox)
 
     def _connect_general_page(self) -> None:
         """React to immediate-apply selectors and dependent checkboxes."""
         self.ui_language_selector.currentIndexChanged.connect(
             lambda _index: self.change_language(self.ui_language_selector.currentData()))
         self.color_theme_selector.currentIndexChanged.connect(self._on_color_theme_changed)
+        self.modern_design_checkbox.toggled.connect(self._on_modern_design_toggled)
         self.input_device_selector.currentIndexChanged.connect(self._on_input_device_changed)
         # The clipboard fallback only matters while direct Unicode input is enabled.
         self.windows_sendinput_fallback_checkbox.setEnabled(is_WINDOWS and self.windows_sendinput_text_checkbox.isChecked())
@@ -63,6 +68,18 @@ class GeneralPage(SettingsWindowBase):
         self.config["color_theme"] = self.color_theme_selector.currentData() or "system"
         self.ctx.save_config_keys("color_theme")
         self.apply_theme()
+
+    def _on_modern_design_toggled(self, checked: bool) -> None:
+        """Persist the design choice; it applies after a restart, which is offered right away."""
+        self.config["modern_design"] = checked
+        self.ctx.save_config_keys("modern_design")
+        if checked == self._modern:
+            return  # switched back before restarting
+        reply = QMessageBox.question(
+            self, self.translator.tr("modern_design_restart_title"), self.translator.tr("modern_design_restart_text"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
+        if reply == QMessageBox.StandardButton.Yes:
+            self.restart_requested.emit()
 
     def populate_input_devices(self) -> None:
         """Fill the input-device dropdown with the system default + available microphones."""
