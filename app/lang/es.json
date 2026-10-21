@@ -33,6 +33,8 @@
   "gain_tooltip": "Aumenta el volumen de su micrófono si es demasiado bajo. 0 dB es sin cambios. Los valores positivos amplifican.",
   "gain_normalize_checkbox": "Normalizar el volumen automáticamente (ganancia = límite superior)",
   "gain_normalize_tooltip": "Al detener, eleva cada grabación hasta que su momento más fuerte quede justo por debajo del máximo, como mucho en el valor de ganancia indicado arriba. Un único factor para toda la grabación: el silencio antes de la primera palabra no cambia nada y los pasajes fuertes nunca saturan.",
+  "play_sounds_checkbox": "Reproducir sonidos al iniciar y detener",
+  "play_sounds_tooltip": "Un sonido breve cuando una grabación empieza y cuando termina. Desactivado, WhisperTyper no abre ninguna salida de audio.",
   "transcription_prompt_label": "Prompt de transcripción (opcional):",
   "transcription_prompt_section": "Prompt de transcripción",
   "second_pass_section": "Respaldo de calidad",

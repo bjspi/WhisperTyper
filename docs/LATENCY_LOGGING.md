@@ -99,6 +99,20 @@ With the warm microphone and an open stream there are no stream phases, and the 
 already holds the pre-roll from before the hotkey. Without audio after 1.5 s the
 `no_audio_grace_elapsed` milestone is logged.
 
+For the warm microphone, `hotmic_start op=… last_block_age_ms=… read_in_flight_ms=…
+reader_alive=…` shows at each start whether the reader is alive, when its last block arrived
+and how long the current driver read has been running. Every pause of more than 150 ms between
+two blocks logs `hotmic_gap gap_ms=… read_ms=… outside_read_ms=… available_before=…
+recording=…`: `read_ms` is time inside the driver read, `outside_read_ms` time in Python between
+reads, `available_before` the frames the driver held before the read.
+
+On Windows, a sound played after about 20 s of silent audio output used to block the
+microphone's MME read in the windowless app for ~0.7 s (`hotmic_gap read_ms≈700
+outside_read_ms=0`), which delayed the recording feedback and the stop sound. While the
+start/stop sounds are on, a keepalive therefore writes 20 ms of silence to the open output
+streams every 5 s. With **Play sounds at start and stop** off, no output stream is opened and
+no keepalive runs.
+
 ## Recording boundary on Windows
 
 With **Keep mic hot**, stopping a recording attaches the active input read to

@@ -23,7 +23,7 @@ Run the same checks CI runs:
 ```bash
 ruff check app tests run.py                      # lint
 mypy app run.py                                  # types (every package is checked)
-pytest                                           # 100+ headless tests
+pytest -n auto                                   # 500+ headless tests, in parallel
 ```
 
 ## Ground rules

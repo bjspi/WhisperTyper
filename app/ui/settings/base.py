@@ -163,6 +163,7 @@ class SettingsWindowBase(QWidget):
     gain_label: QLabel
     gain_input: QLineEdit
     gain_normalize_checkbox: QCheckBox
+    play_sounds_checkbox: QCheckBox
 
     # Rephrasing API page
     shared_api_group: QGroupBox

@@ -363,6 +363,7 @@ class ModernChrome(SettingsWindowBase):
             row(self.input_language_label, self.language_input),
             row(self.gain_label, self.gain_input),
             switch(self.gain_normalize_checkbox),
+            switch(self.play_sounds_checkbox),
             switch(self.windows_keep_mic_hot_checkbox),
             row(self.windows_keep_mic_hot_idle_label, self.windows_keep_mic_hot_idle_input),
             row(self.min_recording_label, self.min_recording_input),

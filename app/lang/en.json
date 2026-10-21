@@ -33,6 +33,8 @@
   "gain_tooltip": "Increases the volume of your microphone if you are too quiet. 0 dB is no change. Positive values amplify.",
   "gain_normalize_checkbox": "Normalize volume automatically (gain above = upper limit)",
   "gain_normalize_tooltip": "After stopping, lifts each recording until its loudest moment sits just below full scale – by at most the gain value above. One constant factor for the whole recording: silence before the first word changes nothing, and loud passages never clip. Quiet recordings get louder, loud ones stay as they are.",
+  "play_sounds_checkbox": "Play sounds at start and stop",
+  "play_sounds_tooltip": "A short sound when a recording starts and when it stops. Turned off, WhisperTyper opens no audio output at all.",
   "transcription_prompt_label": "Transcription Prompt (optional):",
   "transcription_prompt_section": "Transcription prompt",
   "second_pass_section": "Quality fallback",
