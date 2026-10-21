@@ -38,9 +38,16 @@ def run_update_dialog(parent: Optional[QWidget], title: str, message: str, outpu
         layout.addWidget(text, 1)
     box = QDialogButtonBox(dialog)
     clicked: list[str] = []
+
+    def choose(caption: str) -> None:
+        clicked.append(caption)
+        dialog.accept()
+
     for index, (caption, role) in enumerate(buttons):
         button = box.addButton(caption, role)
-        button.clicked.connect(lambda _checked=False, caption=caption: (clicked.append(caption), dialog.accept()))
+        if button is None:
+            continue
+        button.clicked.connect(lambda _checked=False, caption=caption: choose(caption))
         if index == default:
             button.setDefault(True)
     layout.addWidget(box)

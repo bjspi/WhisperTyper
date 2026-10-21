@@ -162,7 +162,8 @@ class ApiPage(SettingsWindowBase):
 
     def _refresh_key_profile_selectors(self) -> None:
         """List the provider's profiles behind "Automatic" (custom: then "no key needed"); a provider
-        change resets to automatic."""
+        change resets to automatic.
+        """
         profiles = self._api_keys_tab.profiles()
         for task in API_TASKS:
             widgets = self._task_widgets(task)
