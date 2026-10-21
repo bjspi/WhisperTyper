@@ -11,6 +11,7 @@ from __future__ import annotations
 import faulthandler
 import logging
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -26,6 +27,10 @@ RESTART_WAIT_TIMEOUT_S = 5.0
 CRASH_LOG_NAME = "WhisperTyper.crash.log"
 _CRASH_LOG_MAX_BYTES = 512 * 1024
 _CRASH_SESSION_MARKER = "=== WhisperTyper session pid="
+_CRASH_CLEAN_EXIT = "=== clean exit ==="
+#: Exception codes below 0xC0000000 (warnings, COM/RPC HRESULTs) are handled by Windows itself;
+#: faulthandler names real crashes ("access violation", …) or prints an 0xC… NTSTATUS code.
+_HANDLED_WINDOWS_CODE = re.compile(r"code 0x[0-9a-b][0-9a-f]{7}$", re.IGNORECASE)
 #: Keeps the crash log open for the whole process: faulthandler writes to its descriptor.
 _crash_log_stream: Any = None
 
@@ -128,8 +133,8 @@ def enable_native_crash_log(app_data_dir: Optional[str] = None) -> Optional[str]
     except OSError:
         pass
     last_session = previous.rsplit(_CRASH_SESSION_MARKER, 1)[-1] if _CRASH_SESSION_MARKER in previous else ""
-    trace = last_session.split("\n", 1)[1].strip() if "\n" in last_session else ""
-    if trace:
+    if _crashed(last_session):
+        trace = last_session.split("\n", 1)[-1].strip()
         logging.warning("The previous session crashed natively (see %s); its last lines:\n%s",
                         path, "\n".join(trace.splitlines()[-40:]))
     try:
@@ -144,6 +149,37 @@ def enable_native_crash_log(app_data_dir: Optional[str] = None) -> Optional[str]
     _crash_log_stream = stream
     logging.info("Native crash traces go to %s", path)
     return path
+
+
+def mark_clean_exit() -> None:
+    """Note a normal end of the session in the crash log, so the next start reports nothing."""
+    stream = _crash_log_stream
+    if stream is None:
+        return
+    try:
+        faulthandler.disable()
+        stream.write(f"{_CRASH_CLEAN_EXIT}\n")
+        stream.flush()
+    except (OSError, ValueError):
+        pass
+
+
+def _crashed(session: str) -> bool:
+    """Whether a session's crash log part records a real native crash.
+
+    On Windows faulthandler also dumps exceptions that the system handles itself, typically
+    COM/RPC errors such as ``code 0x8001010d``; the process lives on. Real crashes are a
+    "Fatal Python error" or an NTSTATUS error (``0xC…``: access violation, stack overflow,
+    heap corruption), and a session that ended normally did not crash.
+    """
+    if _CRASH_CLEAN_EXIT in session:
+        return False
+    if "Fatal Python error" in session:
+        return True
+    for line in session.splitlines():
+        if line.startswith("Windows fatal exception:") and not _HANDLED_WINDOWS_CODE.search(line):
+            return True
+    return False
 
 
 def install_qt_message_handler() -> None:
