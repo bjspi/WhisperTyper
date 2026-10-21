@@ -13,6 +13,7 @@ from app.bootstrap import (
     configure_base_logging,
     enable_native_crash_log,
     install_qt_message_handler,
+    mark_clean_exit,
     maybe_reexec_with_project_venv,
     redirect_std_streams_if_windowed,
 )
@@ -74,6 +75,7 @@ def main() -> int:
     # The instance lock and the application stay referenced while the event loop runs.
     application = WhisperTyperApp(show_settings=args.show_settings)
     exit_code = app.exec()
+    mark_clean_exit()
     del application, instance_lock
     return exit_code
 

@@ -47,6 +47,18 @@ def test_crash_log_reports_a_native_crash_of_the_previous_session(tmp_path, monk
     monkeypatch.setattr(bootstrap, "_crash_log_stream", None)
 
 
+@pytest.mark.parametrize("session,crashed", [
+    ("1 ===\nWindows fatal exception: code 0x8001010d\n\nThread 0x1:\n", False),  # COM error Windows handles
+    ("1 ===\nWindows fatal exception: access violation\n\nThread 0x1:\n", True),
+    ("1 ===\nWindows fatal exception: code 0xc0000374\n", True),
+    ("1 ===\nFatal Python error: Segmentation fault\n", True),
+    ("1 ===\nWindows fatal exception: access violation\n=== clean exit ===\n", False),
+    ("1 ===\n", False),
+])
+def test_only_real_native_crashes_are_reported(session, crashed):
+    assert bootstrap._crashed(session) is crashed
+
+
 @pytest.mark.parametrize("value,expected", [(100, 1.0), (75, 0.75), (5, 0.3), (250, 1.0), ("bad", 1.0)])
 def test_overlay_opacity_is_clamped(value, expected):
     floating_buttons = pytest.importorskip("app.ui.floating_buttons")
