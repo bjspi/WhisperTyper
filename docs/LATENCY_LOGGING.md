@@ -383,3 +383,18 @@ Because Qt aborts the process after an uncaught exception in a slot (skipping
 records leading up to a crash reach the log file. Only a hard native crash
 (e.g. a segfault in a driver) can still lose the last queued records. A failing
 sink never stops the other sinks or the transcription pipeline.
+
+## Other diagnostics in the log
+
+- **Native crashes:** a crash inside PortAudio or Qt ends the process before Python can log
+  it. The Python stacks of all threads are then written to `WhisperTyper.crash.log` in the
+  app data folder (`~/.WhisperTyper`), and the next start logs `The previous session crashed
+  natively` with the last lines of that trace.
+- **Qt's own messages** (stylesheet errors, window geometry, plugins) are logged as
+  `qt category=… …` instead of going to the invisible stderr of a windowless launch.
+- **Saved settings:** `settings_saved changes: key=old->new …` lists every setting a save
+  changed. Credentials, proxy URLs, prompts, prompt entries and replacements appear only as
+  `key=changed`; endpoint URLs by host only.
+- **Prompt palette:** `prompt_palette shown prompts=… preselected=… position=… opacity=…`,
+  `prompt_palette selected=<caption> kind=…` (the caption is redacted like other user text)
+  and `prompt_palette closed prompt=chosen|automatic|none`.

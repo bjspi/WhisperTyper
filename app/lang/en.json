@@ -217,6 +217,8 @@
   "recording_prompt_overlay_system_position_tooltip": "When enabled, the prompt palette appears during a recording near the Windows system tray or at the top-right below the macOS menu bar. When disabled, it appears near the mouse pointer.",
   "recording_prompt_overlay_digit_keys_checkbox": "Pick prompts with the number keys while the mouse is over the prompt palette",
   "recording_prompt_overlay_digit_keys_tooltip": "While the mouse is over the prompt palette during a recording, the number keys pick the entries in the order shown: 1 is “None”, 2 the first prompt and so on. These keys then do not reach the active program; outside the palette they type as usual.",
+  "recording_overlay_opacity_label": "Palette opacity:",
+  "recording_overlay_opacity_tooltip": "How opaque the recording palette and the floating rephrase buttons are. Below 100 % the window behind them shows through; 100 % is fully opaque.",
   "quit_without_confirmation_checkbox": "Quit without confirmation",
   "quit_without_confirmation_tooltip": "If enabled, the app quits immediately without the \"Are you sure?\" confirmation dialog.",
   "macos_input_monitoring_title": "Input Monitoring Permission Required",

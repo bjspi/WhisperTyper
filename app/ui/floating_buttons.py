@@ -41,6 +41,18 @@ from app.platform.windows import hotkey_id_of, register_window_hotkey, unregiste
 from app.ui import theme
 from app.ui.flow_layout import FlowLayout
 
+#: Lowest palette opacity; anything fainter is hard to read over a busy window.
+_MIN_OPACITY_PERCENT = 30
+
+
+def overlay_opacity(config: Dict[str, Any]) -> float:
+    """Window opacity (0.3-1.0) of the recording palette and the floating buttons from the settings."""
+    try:
+        percent = int(config.get("recording_overlay_opacity", 100))
+    except (TypeError, ValueError):
+        percent = 100
+    return max(_MIN_OPACITY_PERCENT, min(100, percent)) / 100
+
 
 class _PromptCard(QWidget):
     """Frameless window holding a rounded, shadowed card with a wrapping row of prompt chips.

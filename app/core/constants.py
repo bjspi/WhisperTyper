@@ -101,6 +101,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "push_to_talk": False,
     # Start/stop sounds. Off, no audio output stream is opened at all.
     "play_sounds": True,
+    # Opacity (percent) of the recording palette and the floating rephrase buttons.
+    "recording_overlay_opacity": 100,
     "transcription_hedging": False,
     # Seconds without a response after the upload before the second attempt starts (plus 0.5 s per MB).
     # Endpoints on this computer (localhost, 127.0.0.1) are never hedged.

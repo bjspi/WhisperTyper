@@ -33,7 +33,7 @@ from app.ui.durations import (
     BALLOON_SHORT_MS,
     BALLOON_WARNING_MS,
 )
-from app.ui.floating_buttons import RecordingPromptOverlay
+from app.ui.floating_buttons import RecordingPromptOverlay, overlay_opacity
 from app.ui.tooltip import MouseFollowerTooltip
 
 #: Sample rate of uploaded recordings.
@@ -638,8 +638,15 @@ class RecordingController(QObject):
             on_device_selected=None if self.mac_recorder.active else self.switch_input_device,
             device_tooltip=self._ctx.tr("recording_device_tooltip"),
         )
-        if RecordingPromptOverlay._instance is not None:
-            RecordingPromptOverlay._instance.set_configured_device(self._config.get("input_device_name", "") or "")
+        overlay = RecordingPromptOverlay._instance
+        if overlay is not None:
+            overlay.set_configured_device(self._config.get("input_device_name", "") or "")
+            overlay.setWindowOpacity(overlay_opacity(self._config))
+        logging.info("prompt_palette shown prompts=%d preselected=%s position=%s opacity=%s shown=%s",
+                     len(prompts), next((index + 1 for index, entry in enumerate(prompts) if entry.get("auto_apply")),
+                                        "none"),
+                     "system" if use_system_position else "mouse", self._config.get("recording_overlay_opacity", 100),
+                     overlay is not None and overlay.isVisible())
         # A system-positioned palette can be far away from the user's current work. Keep the
         # original mouse-following recording status as a lightweight local reminder. When the
         # palette itself is mouse-relative, its own status label already provides that feedback.
@@ -656,6 +663,8 @@ class RecordingController(QObject):
         self.current_prompt = prompt["text"] if prompt else None
         self.current_prompt_is_instruction = bool(prompt and prompt.get("kind") == INSTRUCTION)
         self.use_auto_prompt = prompt is not None
+        logging.info("prompt_palette selected=%s kind=%s", redact_for_log(prompt.get("caption", "")) if prompt else "none",
+                     prompt.get("kind", "") if prompt else "-")
         if prompt:
             self._warmup.schedule(activate=True)
 
@@ -671,6 +680,9 @@ class RecordingController(QObject):
 
     def _close_prompt_palette(self) -> None:
         """Close the recording selector without changing the already selected prompt."""
+        if RecordingPromptOverlay._instance is not None:
+            logging.info("prompt_palette closed prompt=%s", "chosen" if self.current_prompt else
+                         "automatic" if self.use_auto_prompt else "none")
         RecordingPromptOverlay.close_current()
         mouse_status = self._palette_status
         self._palette_status = None

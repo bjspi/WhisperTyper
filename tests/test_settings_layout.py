@@ -190,3 +190,20 @@ def test_building_the_modern_rows_opens_no_windows(qapp, tmp_path):
         qapp.removeEventFilter(watch)
     assert shown == []
     window.deleteLater()
+
+
+@pytest.mark.parametrize("modern", [False, True])
+def test_palette_opacity_sits_below_the_palette_options(qapp, tmp_path, modern):
+    window = _make_window(tmp_path, modern)
+    spin, anchor = window.recording_overlay_opacity_input, window.recording_prompt_overlay_digit_keys_checkbox
+    window.tabs.setCurrentWidget(window.tabs.widget(next(
+        index for index in range(window.tabs.count()) if window.tabs.widget(index).isAncestorOf(anchor))))
+    window.show()
+    qapp.processEvents()
+    try:
+        # In the palette options (not floating at the window's corner), right below the digit keys.
+        assert spin.isVisible() and anchor.isVisible()
+        assert spin.mapTo(window, spin.rect().topLeft()).y() > anchor.mapTo(window, anchor.rect().topLeft()).y()
+        assert spin.value() == 100 and spin.minimum() == 30
+    finally:
+        window.close()

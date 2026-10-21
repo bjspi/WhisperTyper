@@ -244,6 +244,8 @@ class SettingsWindowBase(QWidget):
     systray_double_click_copy_checkbox: QCheckBox
     recording_prompt_overlay_system_position_checkbox: QCheckBox
     recording_prompt_overlay_digit_keys_checkbox: QCheckBox
+    recording_overlay_opacity_label: QLabel
+    recording_overlay_opacity_input: QSpinBox
     quit_without_confirmation_checkbox: QCheckBox
     modern_design_checkbox: QCheckBox
     misc_group: QGroupBox

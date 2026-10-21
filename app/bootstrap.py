@@ -8,6 +8,7 @@ importable yet.
 """
 from __future__ import annotations
 
+import faulthandler
 import logging
 import os
 import signal
@@ -21,6 +22,12 @@ from app.core import log_queue
 
 APP_INSTANCE_LOCK_KEY = "WhisperTyper.instance.lock"
 RESTART_WAIT_TIMEOUT_S = 5.0
+#: Native crash traces (faulthandler) are appended here; older sessions are dropped above this size.
+CRASH_LOG_NAME = "WhisperTyper.crash.log"
+_CRASH_LOG_MAX_BYTES = 512 * 1024
+_CRASH_SESSION_MARKER = "=== WhisperTyper session pid="
+#: Keeps the crash log open for the whole process: faulthandler writes to its descriptor.
+_crash_log_stream: Any = None
 
 # Project root = the directory above this package (…/app/bootstrap.py -> …/).
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -98,6 +105,63 @@ def redirect_std_streams_if_windowed() -> None:
     except Exception:
         # Never let logging setup prevent the app from starting.
         pass
+
+
+def enable_native_crash_log(app_data_dir: Optional[str] = None) -> Optional[str]:
+    """Write the stacks of all threads to the crash log when the process dies natively.
+
+    A segfault in PortAudio or Qt kills the process before Python can log anything, so the
+    normal log just stops. faulthandler writes the Python stacks of every thread to a file of
+    its own at that moment. A crash recorded by the previous session is reported in the
+    normal log at the next start. Returns the crash log path, or None when it cannot be used.
+    """
+    global _crash_log_stream
+    directory = app_data_dir or os.path.join(os.path.expanduser("~"), ".WhisperTyper")
+    path = os.path.join(directory, CRASH_LOG_NAME)
+    previous = ""
+    try:
+        if os.path.getsize(path) <= _CRASH_LOG_MAX_BYTES:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                previous = handle.read()
+        else:
+            os.remove(path)
+    except OSError:
+        pass
+    last_session = previous.rsplit(_CRASH_SESSION_MARKER, 1)[-1] if _CRASH_SESSION_MARKER in previous else ""
+    trace = last_session.split("\n", 1)[1].strip() if "\n" in last_session else ""
+    if trace:
+        logging.warning("The previous session crashed natively (see %s); its last lines:\n%s",
+                        path, "\n".join(trace.splitlines()[-40:]))
+    try:
+        stream = open(path, "a", encoding="utf-8", buffering=1)
+        stream.write(f"{_CRASH_SESSION_MARKER}{os.getpid()} started={time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+        faulthandler.enable(file=stream, all_threads=True)
+    except (OSError, ValueError, RuntimeError) as error:
+        logging.warning("Native crash log unavailable: %s", error)
+        return None
+    if _crash_log_stream is not None:
+        _crash_log_stream.close()
+    _crash_log_stream = stream
+    logging.info("Native crash traces go to %s", path)
+    return path
+
+
+def install_qt_message_handler() -> None:
+    """Route Qt's own warnings into the log; on a windowless launch they would vanish on stderr."""
+    from PyQt6.QtCore import QtMsgType, qInstallMessageHandler
+
+    levels = {
+        QtMsgType.QtDebugMsg: logging.DEBUG, QtMsgType.QtInfoMsg: logging.INFO,
+        QtMsgType.QtWarningMsg: logging.WARNING, QtMsgType.QtCriticalMsg: logging.ERROR,
+        QtMsgType.QtFatalMsg: logging.CRITICAL,
+    }
+    qt_log = logging.getLogger("qt")
+
+    def handle(kind: Any, context: Any, message: Optional[str]) -> None:
+        category = getattr(context, "category", None) or "default"
+        qt_log.log(levels.get(kind, logging.WARNING), "qt category=%s %s", category, message)
+
+    qInstallMessageHandler(handle)
 
 
 def find_project_venv_python() -> Optional[str]:
