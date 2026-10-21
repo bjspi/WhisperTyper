@@ -2,6 +2,11 @@
 
 Single responsibility: own the playback PyAudio instance + cached output streams and
 play preloaded sounds off the caller's thread. No app state, no Qt.
+
+Windows: once the audio output has been idle for about 20 s, the next sound blocks the
+microphone's MME read in the same (windowless) process for ~0.7 s, which delays the
+recording feedback and the stop sound. A keepalive writes a little silence to the open
+output streams every few seconds, so the output never falls idle.
 """
 
 from __future__ import annotations
@@ -13,6 +18,12 @@ import wave
 from typing import Any, Callable, Dict, List, Optional
 
 import pyaudio
+
+from app.core.env import is_WINDOWS
+
+#: Pause between two silence writes of the Windows keepalive, and the length of each.
+_KEEPALIVE_INTERVAL_S = 5.0
+_KEEPALIVE_SILENCE_S = 0.02
 
 
 class SoundPlayer:
@@ -29,14 +40,32 @@ class SoundPlayer:
         # overlapping sounds with the same format would otherwise write to one shared
         # stream concurrently (PyAudio streams are not documented as thread-safe).
         self._play_lock = threading.Lock()
+        self._names: List[str] = []
+        self._enabled = True
+        self._keepalive: Optional[threading.Thread] = None
+        self._keepalive_stop = threading.Event()
 
     def _pyaudio(self) -> pyaudio.PyAudio:
         if self._pa is None:
             self._pa = pyaudio.PyAudio()
         return self._pa
 
+    def set_enabled(self, enabled: bool) -> None:
+        """Turn the sounds on or off; off plays nothing and keeps no output stream open."""
+        if enabled == self._enabled:
+            return
+        self._enabled = enabled
+        if enabled:
+            self.preload(self._names)
+        else:
+            self.close()
+        logging.info("Start/stop sounds %s.", "enabled" if enabled else "disabled")
+
     def preload(self, names: List[str]) -> None:
         """Load small WAVs fully into memory and pre-open an output stream per format."""
+        self._names = list(names)
+        if not self._enabled:
+            return
         try:
             self._pyaudio()
         except Exception as e:
@@ -60,6 +89,33 @@ class SoundPlayer:
                 self._get_stream(sampwidth, channels, rate)
             except Exception as e:
                 logging.error(f"Failed to pre-open stream for ({sampwidth}, {channels}, {rate}): {e}")
+        if is_WINDOWS and self._streams:
+            self._start_keepalive()
+
+    def _start_keepalive(self) -> None:
+        # A keepalive that close() already stopped may still be winding down; it never writes again.
+        if self._keepalive is not None and self._keepalive.is_alive() and not self._keepalive_stop.is_set():
+            return
+        self._keepalive_stop = threading.Event()
+        self._keepalive = threading.Thread(target=self._keep_output_awake, args=(self._keepalive_stop,),
+                                           name="SoundKeepalive", daemon=True)
+        self._keepalive.start()
+
+    def _keep_output_awake(self, stop: threading.Event) -> None:
+        """Write a short silence to every open output stream until ``stop`` is set.
+
+        After ~20 s without output, the first sound of a windowless process stalls the warm
+        microphone's MME read for ~0.7 s; output that never idles avoids the stall.
+        """
+        while not stop.wait(_KEEPALIVE_INTERVAL_S):
+            with self._play_lock:
+                if stop.is_set():
+                    return
+                for (sampwidth, channels, rate), stream in list(self._streams.items()):
+                    try:
+                        stream.write(b"\x00" * (int(rate * _KEEPALIVE_SILENCE_S) * sampwidth * channels))
+                    except Exception as e:
+                        logging.debug(f"Sound keepalive write failed: {e}")
 
     def _get_stream(self, sampwidth: int, channels: int, rate: int) -> Optional[Any]:
         key = (sampwidth, channels, rate)
@@ -82,7 +138,10 @@ class SoundPlayer:
             return None
 
     def play(self, filename: str) -> None:
-        """Low-latency playback of a preloaded short WAV (falls back to on-demand load)."""
+        """Low-latency playback of a preloaded short WAV (falls back to on-demand load); nothing when off."""
+        if not self._enabled:
+            return
+
         def _play_cached() -> None:
             data_tuple = self._cache.get(filename)
             if not data_tuple:
@@ -102,6 +161,8 @@ class SoundPlayer:
                     return
             sampwidth, channels, rate, frames = data_tuple
             with self._play_lock:
+                if not self._enabled:
+                    return
                 stream = self._get_stream(sampwidth, channels, rate)
                 if not stream:
                     return
@@ -113,17 +174,19 @@ class SoundPlayer:
         threading.Thread(target=_play_cached, daemon=True).start()
 
     def close(self) -> None:
-        """Stop and close all output streams and terminate PyAudio."""
-        for s in self._streams.values():
-            try:
-                s.stop_stream()
-                s.close()
-            except Exception:
-                pass
-        self._streams.clear()
-        if self._pa is not None:
-            try:
-                self._pa.terminate()
-            except Exception:
-                pass
-            self._pa = None
+        """Stop the keepalive, close all output streams and terminate PyAudio."""
+        self._keepalive_stop.set()
+        with self._play_lock:
+            for s in self._streams.values():
+                try:
+                    s.stop_stream()
+                    s.close()
+                except Exception:
+                    pass
+            self._streams.clear()
+            if self._pa is not None:
+                try:
+                    self._pa.terminate()
+                except Exception:
+                    pass
+                self._pa = None

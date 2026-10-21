@@ -24,6 +24,8 @@ class RecordingPage(SettingsWindowBase):
         # Refines the gain in the row above, so it opens the recording card's own options.
         self.gain_normalize_checkbox = QCheckBox(self)
         layout.addWidget(self.gain_normalize_checkbox)
+        self.play_sounds_checkbox = QCheckBox(self)
+        layout.addWidget(self.play_sounds_checkbox)
         self.windows_keep_mic_hot_checkbox = QCheckBox(self)
         layout.addWidget(self.windows_keep_mic_hot_checkbox)
 

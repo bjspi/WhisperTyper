@@ -33,6 +33,8 @@
   "gain_tooltip": "Erhöht die Lautstärke Ihres Mikrofons, wenn Sie zu leise sind. 0 dB ist keine Änderung. Positive Werte verstärken.",
   "gain_normalize_checkbox": "Lautstärke automatisch normalisieren (Verstärkung oben = Obergrenze)",
   "gain_normalize_tooltip": "Hebt jede Aufnahme nach dem Stoppen so weit an, dass ihre lauteste Stelle knapp unter der Vollaussteuerung liegt – höchstens um den Gain-Wert darüber. Ein fester Faktor für die ganze Aufnahme: Stille vor dem ersten Wort ändert nichts, und laute Stellen übersteuern nie. Leise Aufnahmen werden lauter, laute bleiben unverändert.",
+  "play_sounds_checkbox": "Töne bei Start und Stopp abspielen",
+  "play_sounds_tooltip": "Ein kurzer Ton, wenn eine Aufnahme startet und wenn sie endet. Ausgeschaltet öffnet WhisperTyper gar keine Audioausgabe.",
   "transcription_prompt_label": "Transkriptions-Prompt (optional):",
   "transcription_prompt_section": "Transkriptions-Prompt",
   "second_pass_section": "Qualitäts-Fallback",

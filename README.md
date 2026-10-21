@@ -234,7 +234,7 @@ pip install -e ".[dev]"
 # The same checks CI runs on Linux/Windows/macOS:
 ruff check app tests run.py                                # lint
 mypy app run.py    # type-check
-pytest                                                     # 100+ headless tests
+pytest -n auto                                             # 500+ headless tests, in parallel
 ```
 
 Every push is verified by [GitHub Actions](https://github.com/bjspi/WhisperTyper/actions):

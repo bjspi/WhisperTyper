@@ -65,6 +65,8 @@ class WhisperTyperApp(QObject):
         self.pipeline = TranscriptionPipeline(self.ctx, self.text_output, self.warmup, self.workers)
         # Preload short sound effects & prepare reusable output streams for low latency.
         self.sound_player = SoundPlayer(resource_path)
+        # Turned off, no output stream is opened (and on Windows no keepalive runs).
+        self.sound_player.set_enabled(bool(config.get("play_sounds", True)))
         self.sound_player.preload(["sound_start.wav", "sound_end.wav"])
         self.recording = RecordingController(
             self.ctx, permissions=self.permissions, warmup=self.warmup, output=self.text_output,
@@ -137,6 +139,7 @@ class WhisperTyperApp(QObject):
     def _on_settings_saved(self) -> None:
         """Apply a saved form to the running components."""
         self.recording.apply_settings()
+        self.sound_player.set_enabled(bool(self.ctx.config.get("play_sounds", True)))
         self.pipeline.reload_replacements()
         self.ctx.notifier.show(self.ctx.tr("settings_saved_message", hotkey=self.ctx.config["hotkey"]), BALLOON_SHORT_MS)
         self.tray.set_tooltip(self.ctx.tr("tray_ready_tooltip", hotkey=self.ctx.config["hotkey"]))

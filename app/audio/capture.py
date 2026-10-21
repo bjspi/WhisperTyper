@@ -32,6 +32,9 @@ _OPEN_RETRY_MAX_S = 3.0
 _TAIL_WAIT_S = 0.25
 #: Ceiling for joining a reader thread; a driver read that never returns must not freeze the GUI.
 _JOIN_WAIT_S = 1.5
+#: A pause between two blocks of the warm microphone longer than this is logged (``hotmic_gap``);
+#: a block normally arrives every 64 ms.
+_GAP_LOG_S = 0.15
 #: Pre-roll kept while idle, so the first words before the hotkey are not clipped.
 _PREROLL_S = 0.75
 
@@ -234,6 +237,9 @@ class HotMicCapture:
         self._preroll_samplerate = mic.target_samplerate
         self._preroll: deque[bytes] = deque(maxlen=_preroll_blocks(mic.target_samplerate, mic.chunk_size))
         self._read_pending = False
+        # Monotonic times of the last block and of the start of the read in flight (diagnostics).
+        self._last_block_at: Optional[float] = None
+        self._read_started_at: Optional[float] = None
         self._pending_stop: Optional[_PendingStop] = None
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -281,6 +287,11 @@ class HotMicCapture:
             self._announce_audio = True
             self._failure_reported = False
             self._start_timing = timing
+            now = time.monotonic()
+            last_block_age = None if self._last_block_at is None else (now - self._last_block_at) * 1000
+            read_in_flight = None if self._read_started_at is None else (now - self._read_started_at) * 1000
+        logging.info("hotmic_start op=%s last_block_age_ms=%s read_in_flight_ms=%s reader_alive=%s",
+                     timing.operation_id, _ms(last_block_age), _ms(read_in_flight), self.running)
         # A reader pausing between failed open attempts retries right away for the recording.
         self._wake.set()
 
@@ -357,9 +368,21 @@ class HotMicCapture:
             self._fit_preroll()
             read_failed = False
             try:
+                available = _read_available(stream)
                 with self._lock:
                     self._read_pending = True
+                    self._read_started_at = read_started = time.monotonic()
                 data = stream.read(self._mic.chunk_size, exception_on_overflow=False)
+                read_ended = time.monotonic()
+                with self._lock:
+                    previous, self._last_block_at = self._last_block_at, read_ended
+                    self._read_started_at = None
+                    recording = self._recording
+                if previous is not None and read_ended - previous > _GAP_LOG_S:
+                    # read_ms is time inside the driver; outside_read_ms is time in Python between reads.
+                    logging.info("hotmic_gap gap_ms=%.0f read_ms=%.0f outside_read_ms=%.0f available_before=%s "
+                                 "recording=%s", (read_ended - previous) * 1000, (read_ended - read_started) * 1000,
+                                 max(0.0, read_started - previous) * 1000, available, recording)
                 self._on_block(data)
                 announce = False
                 with self._lock:
@@ -386,6 +409,7 @@ class HotMicCapture:
                 # The one place that releases a stop waiting for this read, whether it succeeded or not.
                 with self._lock:
                     self._read_pending = False
+                    self._read_started_at = None
                     pending, self._pending_stop = self._pending_stop, None
                 if pending:
                     pending.done.set()
@@ -448,6 +472,18 @@ class HotMicCapture:
                 timing.mark("recording_tail_saved")
         logging.info("recording_tail op=%s retained=%s pending_frames=%s buffered_frames=%s samplerate=%s",
                      timing.operation_id, saved, len(data) // 2, len(buffered) // 2, self._mic.samplerate)
+
+
+def _ms(value: Optional[float]) -> str:
+    return "none" if value is None else f"{value:.0f}"
+
+
+def _read_available(stream: Any) -> int:
+    """Frames the driver already holds before a read, or -1 when the stream cannot tell."""
+    try:
+        return int(stream.get_read_available())
+    except Exception:
+        return -1
 
 
 class OnDemandCapture:

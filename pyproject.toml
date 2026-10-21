@@ -44,6 +44,7 @@ dependencies = [
 aac = ["av>=14"]
 dev = [
   "pytest>=8",
+  "pytest-xdist>=3.5",
   "ruff>=0.8",
   "mypy>=1.13",
 ]

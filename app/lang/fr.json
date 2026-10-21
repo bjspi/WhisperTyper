@@ -33,6 +33,8 @@
   "gain_tooltip": "Augmente le volume de votre microphone si vous êtes trop silencieux. 0 dB correspond à aucun changement. Les valeurs positives amplifient.",
   "gain_normalize_checkbox": "Normaliser le volume automatiquement (gain ci-dessus = limite supérieure)",
   "gain_normalize_tooltip": "Après l'arrêt, rehausse chaque enregistrement jusqu'à ce que son passage le plus fort soit juste sous le niveau maximal, au plus de la valeur de gain ci-dessus. Un seul facteur pour tout l'enregistrement : le silence avant le premier mot ne change rien et les passages forts ne saturent jamais.",
+  "play_sounds_checkbox": "Jouer des sons au démarrage et à l'arrêt",
+  "play_sounds_tooltip": "Un son bref quand un enregistrement démarre et quand il s'arrête. Désactivé, WhisperTyper n'ouvre aucune sortie audio.",
   "transcription_prompt_label": "Invite de transcription (optionnel) :",
   "transcription_prompt_section": "Prompt de transcription",
   "second_pass_section": "Repli qualité",
