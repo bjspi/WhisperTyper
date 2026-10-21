@@ -217,6 +217,8 @@
   "recording_prompt_overlay_system_position_tooltip": "Wenn aktiviert, erscheint die Prompt-Auswahl während einer Aufnahme unter Windows beim Infobereich der Taskleiste und unter macOS oben rechts unter der Menüleiste. Wenn deaktiviert, erscheint sie nahe dem Mauszeiger.",
   "recording_prompt_overlay_digit_keys_checkbox": "Prompts mit den Zifferntasten wählen, solange die Maus über der Prompt-Auswahl ist",
   "recording_prompt_overlay_digit_keys_tooltip": "Solange die Maus während einer Aufnahme über der Prompt-Auswahl steht, wählen die Zifferntasten die Einträge in der angezeigten Reihenfolge: 1 ist „Ohne“, 2 der erste Prompt und so weiter. Die Tasten gehen dann nicht an das aktive Programm; außerhalb der Prompt-Auswahl tippen sie ganz normal.",
+  "recording_overlay_opacity_label": "Deckkraft der Palette:",
+  "recording_overlay_opacity_tooltip": "Wie deckend die Aufnahme-Palette und die schwebenden Umformulieren-Buttons sind. Unter 100 % scheint das Fenster dahinter durch; 100 % ist voll deckend.",
   "quit_without_confirmation_checkbox": "Beenden ohne Nachfrage",
   "quit_without_confirmation_tooltip": "Wenn aktiviert, wird die App sofort ohne den „Wirklich beenden?“-Bestätigungsdialog beendet.",
   "macos_input_monitoring_title": "Berechtigung für Eingabekontrolle erforderlich",

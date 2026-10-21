@@ -17,6 +17,7 @@ from app.context import AppContext
 from app.controllers.file_actions import FileActions
 from app.controllers.hotkeys import HotkeyController
 from app.controllers.recording import RecordingController
+from app.core.config_diff import describe_changes
 from app.core.constants import WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH
 from app.core.env import is_MACOS
 from app.core.hotkeys import is_clipboard_shortcut, normalize_hotkey_string, pretty_hotkey
@@ -302,6 +303,8 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
             msg.setInformativeText("\n".join(f"- {w}" for w in warnings))
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
+        # Live-mirrored keys already hold the edits; their saved values are in the snapshot.
+        before = {**copy.deepcopy(self.config), **self._live_snapshot}
         if not self._save_api_settings():
             return
         self.config["replacements_enabled"] = self._replacements_tab.enabled.isChecked()
@@ -312,6 +315,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         hotkeys_changed = self._apply_pending_hotkeys()
 
         self.ctx.save_config()
+        logging.info("settings_saved changes: %s", describe_changes(before, self.config))
         self._snapshot_live_config()
         self.update_brand_header()
         if hotkeys_changed:

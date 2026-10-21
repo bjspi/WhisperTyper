@@ -11,6 +11,8 @@ import sys
 from app.bootstrap import (
     acquire_single_instance_lock,
     configure_base_logging,
+    enable_native_crash_log,
+    install_qt_message_handler,
     maybe_reexec_with_project_venv,
     redirect_std_streams_if_windowed,
 )
@@ -65,6 +67,9 @@ def main() -> int:
         print(message, file=sys.stderr)
         QMessageBox.information(None, "WhisperTyper", message)
         return 0
+    # Only the instance that keeps running records crashes and Qt's own warnings.
+    install_qt_message_handler()
+    enable_native_crash_log()
 
     # The instance lock and the application stay referenced while the event loop runs.
     application = WhisperTyperApp(show_settings=args.show_settings)

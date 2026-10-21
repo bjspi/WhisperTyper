@@ -147,6 +147,8 @@ TEXTS: Tuple[Text, ...] = (
            "recording_prompt_overlay_system_position_tooltip"),
     _check("recording_prompt_overlay_digit_keys_checkbox", "recording_prompt_overlay_digit_keys_checkbox",
            "recording_prompt_overlay_digit_keys_tooltip"),
+    _field("recording_overlay_opacity_label", "recording_overlay_opacity_tooltip", "recording_overlay_opacity_label",
+           "recording_overlay_opacity_input"),
     _check("quit_without_confirmation_checkbox", "quit_without_confirmation_checkbox", "quit_without_confirmation_tooltip"),
     _check("post_rephrase_auto_select_all_checkbox", "post_rephrase_auto_select_all_checkbox",
            "post_rephrase_auto_select_all_tooltip"),

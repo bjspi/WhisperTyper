@@ -190,6 +190,7 @@ class ModernPromptsPage(SettingsWindowBase):
         rebuild_card(self.prompts_palette_group, [
             switch(self.recording_prompt_overlay_system_position_checkbox),
             switch(self.recording_prompt_overlay_digit_keys_checkbox),
+            row(self.recording_overlay_opacity_label, self.recording_overlay_opacity_input),
         ])
         page = self.pr_layout
         page.insertWidget(page.indexOf(self.splitter) + 1, self.prompts_palette_group)

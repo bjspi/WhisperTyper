@@ -217,6 +217,8 @@
   "recording_prompt_overlay_system_position_tooltip": "Si está activado, la paleta de prompts aparece durante una grabación junto a la bandeja del sistema de Windows o arriba a la derecha bajo la barra de menús de macOS. Si está desactivado, aparece cerca del puntero del ratón.",
   "recording_prompt_overlay_digit_keys_checkbox": "Elegir prompts con las teclas numéricas mientras el ratón esté sobre la paleta",
   "recording_prompt_overlay_digit_keys_tooltip": "Mientras el ratón esté sobre la paleta de prompts durante una grabación, las teclas numéricas eligen las entradas en el orden mostrado: 1 es «Ninguno», 2 el primer prompt, etc. Esas teclas no llegan entonces al programa activo; fuera de la paleta escriben con normalidad.",
+  "recording_overlay_opacity_label": "Opacidad de la paleta:",
+  "recording_overlay_opacity_tooltip": "Lo opacas que son la paleta de grabación y los botones flotantes de reformulación. Por debajo del 100 % se ve la ventana de detrás; 100 % es totalmente opaco.",
   "quit_without_confirmation_checkbox": "Salir sin confirmación",
   "quit_without_confirmation_tooltip": "Si está activado, la aplicación se cierra de inmediato sin el diálogo de confirmación «¿Seguro?».",
   "macos_input_monitoring_title": "Se requiere permiso de monitorización de entrada",

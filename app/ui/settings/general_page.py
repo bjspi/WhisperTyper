@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QSignalBlocker
-from PyQt6.QtWidgets import QCheckBox, QMessageBox
+from PyQt6.QtWidgets import QBoxLayout, QCheckBox, QHBoxLayout, QLabel, QLayout, QMessageBox, QSpinBox, QWidget
 
 from app import __version__
 from app.controllers.file_actions import GITHUB_URL
@@ -14,6 +14,25 @@ from app.ui.settings.base import SettingsWindowBase
 _COLOR_THEMES = (("system", "color_theme_system"), ("light", "color_theme_light"), ("dark", "color_theme_dark"))
 _IP_FAMILIES = (("auto", "network_ip_family_auto"), ("ipv4", "network_ip_family_ipv4"),
                 ("ipv6", "network_ip_family_ipv6"))
+
+
+def _layout_holding(widget: QWidget) -> "QBoxLayout | None":
+    """The box layout that directly contains ``widget`` (searching nested layouts of its parent)."""
+    parent = widget.parentWidget()
+
+    def search(layout: "QLayout | None") -> "QBoxLayout | None":
+        if layout is None:
+            return None
+        if isinstance(layout, QBoxLayout) and layout.indexOf(widget) >= 0:
+            return layout
+        for index in range(layout.count()):
+            item = layout.itemAt(index)
+            found = search(item.layout() if item is not None else None)
+            if found is not None:
+                return found
+        return None
+
+    return search(parent.layout() if parent is not None else None)
 
 
 class GeneralPage(SettingsWindowBase):
@@ -34,6 +53,21 @@ class GeneralPage(SettingsWindowBase):
         # The proxy field takes the row's free width; the test button keeps a fixed width.
         self.proxy_row_layout.setStretch(0, 1)
         self.network_ip_family_layout.addStretch(1)
+
+        # Below the palette options of the .ui file: how opaque the palette and the floating buttons are.
+        self.recording_overlay_opacity_label = QLabel(self)
+        self.recording_overlay_opacity_input = QSpinBox(self)
+        self.recording_overlay_opacity_input.setRange(30, 100)
+        self.recording_overlay_opacity_input.setSingleStep(5)
+        self.recording_overlay_opacity_input.setSuffix(" %")
+        anchor = self.recording_prompt_overlay_digit_keys_checkbox
+        layout = _layout_holding(anchor)
+        if layout is not None:
+            row = QHBoxLayout()
+            row.addWidget(self.recording_overlay_opacity_label)
+            row.addWidget(self.recording_overlay_opacity_input)
+            row.addStretch(1)
+            layout.insertLayout(layout.indexOf(anchor) + 1, row)
 
         self.post_rephrase_auto_select_all_checkbox = QCheckBox(self)
         self.misc_layout.addWidget(self.post_rephrase_auto_select_all_checkbox)
