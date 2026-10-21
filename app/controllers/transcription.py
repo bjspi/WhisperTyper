@@ -19,8 +19,7 @@ from app.context import AppContext
 from app.controllers.text_output import TextOutput
 from app.controllers.warmup import WarmupScheduler
 from app.controllers.workers import WorkerThreads
-from app.core.api_keys import (GroqKeyRotation, is_local_endpoint, provider_for_url, rephrasing_configured,
-                                selected_api_key)
+from app.core.api_keys import GroqKeyRotation, is_local_endpoint, provider_for_url, rephrasing_configured, selected_api_key
 from app.core.audio_formats import is_video_file, needs_audio_normalization
 from app.core.constants import LANGUAGES
 from app.core.models import transcription_form_fields, transcription_reports_confidence

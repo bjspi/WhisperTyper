@@ -8,8 +8,7 @@ from typing import Callable, Dict, Optional, Protocol, Tuple
 
 from PyQt6.QtCore import QObject, QPoint, QTimer
 from PyQt6.QtGui import QAction, QCursor, QIcon
-from PyQt6.QtWidgets import (QApplication, QDialogButtonBox, QFileDialog, QLabel, QMessageBox, QStyle,
-                             QSystemTrayIcon, QWidget)
+from PyQt6.QtWidgets import QApplication, QDialogButtonBox, QFileDialog, QLabel, QMessageBox, QStyle, QSystemTrayIcon, QWidget
 
 from app.context import AppContext
 from app.controllers.file_actions import FileActions
