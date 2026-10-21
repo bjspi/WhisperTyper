@@ -273,7 +273,9 @@ class Proxy(BaseHTTPRequestHandler):
 
 @pytest.mark.parametrize("scheme", ["http", "https"])
 @pytest.mark.parametrize("proxy_scheme", ["http", "https"])
-def test_proxy_routing_and_connect_not_counted_as_api_first_byte(server, traces, scheme, proxy_scheme):
+def test_proxy_routing_and_connect_not_counted_as_api_first_byte(server, traces, scheme, proxy_scheme, monkeypatch):
+    # The test servers listen on loopback, which real requests always reach directly.
+    monkeypatch.setattr(transport, "is_local_endpoint", lambda _url: False)
     proxy = ThreadingHTTPServer(("127.0.0.1", 0), Proxy)
     if proxy_scheme == "https":
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -379,6 +381,15 @@ def test_explicit_proxy_route_and_env_bypass(monkeypatch):
     monkeypatch.setenv("NO_PROXY", "bypassed.test")
     assert transport._select_proxy("https://api.test/x", None) == "http://env-proxy:3128"
     assert transport._select_proxy("https://bypassed.test/x", None) is None
+
+
+def test_endpoints_on_this_computer_never_use_a_proxy(monkeypatch):
+    monkeypatch.setenv("HTTPS_PROXY", "http://env-proxy:3128")
+    for url in ("http://localhost:8000/v1/audio/transcriptions", "http://127.0.0.1:9000/x", "https://[::1]/x",
+                "http://whisper.localhost/x"):
+        assert transport._select_proxy(url, {"http": "http://proxy:1", "https": "http://proxy:1"}) is None
+        assert transport._select_proxy(url, None) is None
+    assert transport._select_proxy("http://192.168.1.5/x", {"http": "http://proxy:1"}) == "http://proxy:1"
 
 
 def test_client_keeps_no_cookies_and_never_retries_connects(server, traces):

@@ -1,6 +1,7 @@
 """Provider-scoped API key profiles and migration of the former inline credentials."""
 from __future__ import annotations
 
+import ipaddress
 import logging
 import uuid
 from typing import Any, Mapping
@@ -18,6 +19,8 @@ _PROVIDER_API_BASES = {"openai": "https://api.openai.com/v1/", "groq": "https://
 _TASK_API_PATHS = {"transcription": "audio/transcriptions", "rephrasing": "chat/completions"}
 # Official key prefixes; a mismatch is only a hint (keys are never rejected).
 _KEY_PREFIXES = {"openai": "sk-", "groq": "gsk"}
+#: Key selection of a custom endpoint that needs no key: requests go out without ``Authorization``.
+NO_KEY_PROFILE_ID = "none"
 
 
 def masked_api_key(key: str) -> str:
@@ -33,6 +36,25 @@ def provider_for_url(url: str) -> str:
     except ValueError:
         return "custom"
     return {"api.openai.com": "openai", "api.groq.com": "groq"}.get(host or "", "custom")
+
+
+def is_local_endpoint(url: str) -> bool:
+    """True for an endpoint on this computer (localhost, 127.0.0.0/8, ::1)."""
+    try:
+        host = (urlsplit(url.strip()).hostname or "").rstrip(".").lower()
+    except ValueError:
+        return False
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def auth_headers(api_key: str) -> dict[str, str]:
+    """The bearer header, or none for an endpoint that needs no key."""
+    return {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
 
 def provider_endpoint(provider: str, task: str) -> str:
@@ -55,23 +77,27 @@ def usable_profile_ids(profiles: list[dict[str, str]], provider: str) -> list[st
 
 
 def transcription_configured(config: Mapping[str, Any]) -> bool:
-    """A transcription request can be sent: endpoint plus a matching selected key."""
-    return bool(str(config.get("api_endpoint", "")).strip() and selected_api_key(config, "transcription"))
+    """A transcription request can be sent: endpoint plus a matching selected key (or "no key needed")."""
+    return bool(str(config.get("api_endpoint", "")).strip() and resolve_key_profile(config, "transcription"))
 
 
 def rephrasing_configured(config: Mapping[str, Any]) -> bool:
-    """A rephrasing request can be sent: endpoint, model and a matching selected key."""
+    """A rephrasing request can be sent: endpoint, model and a matching selected key (or "no key needed")."""
     return bool(str(config.get("rephrasing_api_url", "")).strip()
                 and str(config.get("rephrasing_model", "")).strip()
-                and selected_api_key(config, "rephrasing"))
+                and resolve_key_profile(config, "rephrasing"))
 
 
 def resolve_key_profile(config: Mapping[str, Any], task: str) -> dict[str, str] | None:
     """The profile a task sends with: the explicit choice if it fits the endpoint's provider,
     otherwise the first profile of that provider with a sendable key (API Keys tab order).
+    A custom endpoint set to "no key needed" resolves to a keyless profile with the ID
+    :data:`NO_KEY_PROFILE_ID`.
     """
     endpoint_field, selection_field, _ = TASK_KEY_FIELDS[task]
     provider = provider_for_url(config.get(endpoint_field, ""))
+    if provider == "custom" and config.get(selection_field, "") == NO_KEY_PROFILE_ID:
+        return {"id": NO_KEY_PROFILE_ID, "name": "", "provider": "custom", "key": ""}
     usable = [profile for profile in config.get("api_key_profiles", [])
               if profile["provider"] == provider and _clean_key(profile["key"])]
     selected_id = config.get(selection_field, "")
@@ -79,7 +105,7 @@ def resolve_key_profile(config: Mapping[str, Any], task: str) -> dict[str, str] 
 
 
 def selected_api_key(config: Mapping[str, Any], task: str) -> str:
-    """The sendable key of the task's resolved profile, or "" when the provider has none."""
+    """The sendable key of the task's resolved profile, or "" when there is none (or none is needed)."""
     profile = resolve_key_profile(config, task)
     return _clean_key(profile["key"]) if profile else ""
 

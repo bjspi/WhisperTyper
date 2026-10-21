@@ -103,7 +103,7 @@ class ConnectionTester(QObject):
         w = self._w
         api_url = w.api_endpoint_input.text().strip()
         api_key = w._ui_api_key("transcription")
-        if not api_url or not api_key:
+        if not api_url or not w._ui_key_ready("transcription"):
             self._fail("api_test_fail_title", "recording_no_api_keys")
             return
         model = clean_model_name(w.model_dropdown.currentText())
@@ -169,7 +169,7 @@ class ConnectionTester(QObject):
         api_url = w.rephrasing_api_url_input.text().strip()
         api_key = w._ui_api_key("rephrasing")
         model = w.rephrasing_model_input.currentText().strip()
-        if not all([api_url, api_key, model]):
+        if not api_url or not model or not w._ui_key_ready("rephrasing"):
             self._fail("api_test_fail_title", "rephrase_api_settings_missing")
             return
         proxies = self._form_proxies()

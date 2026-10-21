@@ -369,6 +369,7 @@ class ModernChrome(SettingsWindowBase):
             row(self.recording_format_label, self.recording_format_selector, self.recording_bitrate_label,
                 self.recording_bitrate_selector, follow=self.recording_format_selector),
             switch(self.transcription_hedging_checkbox),
+            row(self.transcription_hedging_wait_label, self.transcription_hedging_wait_input),
         ])
 
         # General page: the selectors above the cards get a card of their own.

@@ -100,6 +100,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "hotkey": "<ctrl>+x" if is_MACOS else "<caps_lock>+<ctrl>",
     "push_to_talk": False,
     "transcription_hedging": False,
+    # Seconds without a response after the upload before the second attempt starts (plus 0.5 s per MB).
+    # Endpoints on this computer (localhost, 127.0.0.1) are never hedged.
+    "transcription_hedging_wait_s": 1.0,
     # Quality fallback: a second transcription with transcription_second_pass_prompt (empty = no prompt).
     # "off" | "doubtful" (sent after an empty result or an average log-probability below
     # transcription_second_pass_logprob) | "always" (sent in parallel). The first result is kept
@@ -111,7 +114,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "windows_keep_mic_hot_idle_minutes": 15,
     # Recordings shorter than this (seconds) are treated as a mis-tap and discarded without
     # transcribing. 0 disables the guard. Allows an instant "oops" cancel by tapping again.
-    "min_recording_seconds": 1.0,
+    "min_recording_seconds": 2.5,
     "recording_format": "wav",
     "recording_aac_bitrate_kbps": 64,
     "input_language": SYS_LANG if SYS_LANG in LANGUAGES.values() else "en",

@@ -67,6 +67,38 @@ dispatch records `text_commit_failed`, omits `text_commit_end`, and finishes wit
 `outcome=output_failed`. Delayed clipboard restoration remains outside text-commit
 timing: 500 ms after the normal routine, or 600 ms after dispatch in fast-paste mode.
 
+## Recording start: hotkey → microphone delivers audio
+
+Each start gets its own operation with `source=recording_start`, from the hotkey listener's
+detection to the moment the recording feedback (balloon or prompt palette) is shown. Its
+`latency_summary` has `outcome=ok`, or `stopped_before_audio`, `cancelled_before_audio`,
+`capture_failed`, `not_configured`; the following `Recording started (op=…, capture=hot_mic|on_demand|macos,
+stream_was_open=…)` line tells whether a warm microphone was already reading.
+
+| Field | Interval |
+| --- | --- |
+| `start_event_queue_ms` | Hotkey listener detection → start handler on the GUI thread |
+| `start_checks_ms` | Configuration and permission checks, connection warm-up scheduling |
+| `start_state_ui_ms` | Recording-state signal: tray icon and everything else that reacts to it |
+| `capture_request_ms` | Ask the capture to record (start the reader thread / flag the warm microphone) |
+| `selection_context_ms` | Copy the selected text as rephrasing context (simulated Ctrl+C and clipboard wait) |
+| `start_sound_ms` | Start sound dispatch |
+| `start_handler_ms` | Whole start handler on the GUI thread |
+| `mic_thread_wait_ms` | Capture request → the reader thread runs (only when a thread had to start) |
+| `pyaudio_init_ms` | PortAudio start-up (first recording, or after the warm microphone was released) |
+| `device_candidates_ms` | Choose the input device candidates |
+| `stream_open_ms` | Open the input stream, including failed candidates |
+| `device_name_ms` | Resolve the device's full name (may enumerate all devices once) |
+| `first_block_read_ms` | First read until the first block arrives (on demand; 64 ms per 1,024 samples at 16 kHz) |
+| `hotkey_to_first_audio_ms` | Hotkey → the first recorded block |
+| `audio_to_feedback_queue_ms` | First block (capture thread) → GUI thread handles it |
+| `feedback_ms` | Show the recording balloon or the prompt palette |
+| `hotkey_to_feedback_ms` | Hotkey → the recording feedback is shown |
+
+With the warm microphone and an open stream there are no stream phases, and the take
+already holds the pre-roll from before the hotkey. Without audio after 1.5 s the
+`no_audio_grace_elapsed` milestone is logged.
+
 ## Recording boundary on Windows
 
 With **Keep mic hot**, stopping a recording attaches the active input read to
@@ -161,10 +193,16 @@ seconds even though the network is fine again; a fresh connection has no backoff
 
 The second attempt starts when the upload is not finished after
 `max(0.5 s, upload size at 1.5 MB/s)`, or when no response byte has arrived
-`1.0 s + 0.5 s per uploaded MB` after the upload finished. "Upload finished" means the body
-was handed to the operating system's send buffer, so a small recording counts as uploaded at
-once and a stall then shows up as a missing response. The thresholds are named constants in
-`app/services/transcription.py`.
+`wait + 0.5 s per uploaded MB` after the upload finished; the wait is the setting
+**Wait for the response before the 2nd attempt** below the option (default 1.0 s). "Upload
+finished" means the body was handed to the operating system's send buffer, so a small
+recording counts as uploaded at once and a stall then shows up as a missing response. The
+other thresholds are named constants in `app/services/transcription.py`.
+
+An endpoint on this computer (`localhost`, `*.localhost`, `127.0.0.0/8`, `::1`) is never
+hedged: it has no network path to stall on, and a second request would only double the
+local server's load. Such endpoints are also always reached without a proxy, whatever the
+proxy settings say (a proxy would resolve `localhost` as itself).
 
 The second attempt always opens a new connection (DNS, TCP, TLS) and uses the next Groq key
 when rotation is on, otherwise the same key. The first successful response wins and is
@@ -207,6 +245,14 @@ result or one below the threshold; *Always, in parallel* sends both at once and 
 the second only when the first is doubtful or fails. In both modes the first result is kept
 unless it is doubtful and the second one is more confident. The second request has its own
 operation id and no hedge, so the first request's timings stay comparable.
+
+The fallback needs confidence data and is skipped without it:
+- models that offer none (any model name not listed for Whisper/GPT transcription, e.g. on a
+  custom or local server) do not even get the second request; the log says
+  `transcription_second_pass op=… skipped reason=no_confidence_data`;
+- a response without a `segments` list and without a `logprobs` list, or with an
+  `avg_logprob` of exactly 0, counts as "no data" and is used as it is, even when empty.
+A local server that cannot compute log-probabilities should simply leave these fields out.
 
 - `transcription_second_pass op=… started mode=… second_op=… prompt=…`;
 - `transcription_second_pass op=… finished avg_logprob=… words=…` or `… failed error=…`;

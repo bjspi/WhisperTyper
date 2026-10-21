@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from app.core.api_keys import auth_headers
 from app.services.http_transport import is_tls_failure, request
 from app.services.netutil import (
     PX_PROXY_URL,
@@ -124,7 +125,7 @@ def run_transcription_connection_test(api_url: str, api_key: str, model: str,
     'ok', 'bad_key', 'bad_url', 'proxy', 'proxy_auth', 'ssl', 'reachable',
     'blocked', 'no_internet', 'unknown'.
     """
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = auth_headers(api_key)
     data = {"model": model}
     files = {"file": ("whispertyper_test.wav", generate_test_wav_bytes(), "audio/wav")}
 

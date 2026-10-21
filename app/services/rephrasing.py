@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from app.core.api_keys import auth_headers
 from app.core.models import rephrasing_supports_temperature
 from app.core.redaction import redact_for_log
 from app.core.timing import NO_TIMING, OperationTiming
@@ -46,7 +47,7 @@ def rephrase_text(
         system_prompt: System-level instruction (omitted from the request when empty).
         user_prompt: The user's instruction or the text to transform.
         api_url: Chat-completions endpoint URL.
-        api_key: Bearer token for the endpoint.
+        api_key: Bearer token for the endpoint ("" for an endpoint that needs no key).
         model: Model identifier.
         temperature: Sampling temperature.
         context: Optional selected-text context, prepended to the user prompt.
@@ -58,13 +59,13 @@ def rephrase_text(
         The model's reply text (stripped). May be empty if the model returned nothing.
 
     Raises:
-        ValueError: If url/key/model are incomplete.
+        ValueError: If url/model are incomplete.
         RephrasingError: If the request fails or the endpoint answers with an error status.
     """
-    if not api_url or not api_key or not model:
+    if not api_url or not model:
         raise ValueError("Rephrasing API settings are incomplete.")
 
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    headers = {**auth_headers(api_key), "Content-Type": "application/json"}
 
     messages: List[Dict[str, str]] = []
     if system_prompt:

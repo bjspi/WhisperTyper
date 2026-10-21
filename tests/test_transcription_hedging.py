@@ -18,7 +18,6 @@ def quick_thresholds(monkeypatch):
     # Short enough for a quick suite, long enough that a busy CI runner's scheduling delays
     # (tens of milliseconds) never count as a stalled attempt.
     monkeypatch.setattr(service, "_HEDGE_UPLOAD_MIN_S", 0.25)
-    monkeypatch.setattr(service, "_HEDGE_RESPONSE_MIN_S", 0.25)
 
 
 def ok(text):
@@ -49,12 +48,13 @@ class FakeApi:
         return response
 
 
-def run(tmp_path, monkeypatch, api, hedge_key="key-two"):
+def run(tmp_path, monkeypatch, api, hedge_key="key-two", response_wait=0.25):
     source = tmp_path / "recording.wav"
     dsp.write_wav(str(source), b"\x01\x00" * 1600, 16000)
     monkeypatch.setattr(service, "request", api)
     req = TranscriptionRequest("key-one", "https://api.groq.com/openai/v1/audio/transcriptions", str(source),
-                               "", "whisper-large-v3", "de", 0.0, recording_format="wav", hedge_api_key=hedge_key)
+                               "", "whisper-large-v3", "de", 0.0, recording_format="wav", hedge_api_key=hedge_key,
+                               hedge_response_wait_s=response_wait)
     timing = OperationTiming("recording")
     text = service.transcribe(req, timing, lambda key, **_kw: key, on_compressing=Mock(), on_transcribing=Mock())
     return text, timing
@@ -111,15 +111,15 @@ def test_thresholds_grow_with_the_upload_size():
     small_upload, small_wait = service.hedge_thresholds(50_000)
     large_upload, large_wait = service.hedge_thresholds(6 * 1024 * 1024)
     assert small_upload == service._HEDGE_UPLOAD_MIN_S and large_upload > small_upload
-    assert large_wait > small_wait >= service._HEDGE_RESPONSE_MIN_S
+    assert large_wait > small_wait >= service.DEFAULT_HEDGE_RESPONSE_WAIT_S
+    assert service.hedge_thresholds(50_000, 3.0)[1] > small_wait + 1.9
 
 
 def test_upload_finishing_late_starts_the_response_deadline_instead_of_hedging(tmp_path, monkeypatch):
-    monkeypatch.setattr(service, "_HEDGE_RESPONSE_MIN_S", 1.5)
     # Upload done well within its 0.25 s budget, answer after 0.6 s: past the upload budget, but
     # within the 1.5 s response wait that starts when the upload is done.
     api = FakeApi((0.01, 0.6, ok("first")), (0.0, 0.0, ok("second")))
-    text, timing = run(tmp_path, monkeypatch, api)
+    text, timing = run(tmp_path, monkeypatch, api, response_wait=1.5)
     assert text == "first"
     assert len(api.calls) == 1
     assert "transcription_hedge_started" not in timing._events

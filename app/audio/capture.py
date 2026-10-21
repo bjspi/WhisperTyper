@@ -22,7 +22,7 @@ import pyaudio
 from app.audio.device_selector import InputDeviceSelector
 from app.core.env import is_MACOS
 from app.core.textutil import demojibake
-from app.core.timing import OperationTiming
+from app.core.timing import NO_TIMING, OperationTiming
 
 #: Pause before reopening the stream after a failed read, so a broken driver is not hammered.
 _READ_RETRY_S = 0.2
@@ -77,16 +77,29 @@ class MicrophoneInput:
             pass
         self._audio = None
 
-    def open(self) -> Any:
-        """Return the cached input stream, opening the first usable device candidate."""
+    @property
+    def stream_open(self) -> bool:
+        """Whether an input stream is open (a warm microphone reads from it already)."""
+        return self._stream is not None
+
+    def open(self, timing: OperationTiming = NO_TIMING) -> Any:
+        """Return the cached input stream, opening the first usable device candidate.
+
+        ``timing`` (a starting recording) gets the phases of a real open: PyAudio start-up,
+        device candidates, the stream itself and the display name.
+        """
         if self._stream:
             return self._stream
         # macOS: refresh the backend per recording to avoid stale CoreAudio device snapshots
         # after app replacement, permission changes or device switches.
-        audio = self.pyaudio(refresh=is_MACOS)
+        with timing.span("pyaudio_init"):
+            audio = self.pyaudio(refresh=is_MACOS)
         last_error: Optional[Exception] = None
         failed: list[str] = []
-        for candidate in self.devices.preferred_input_stream_candidates(audio):
+        with timing.span("device_candidates"):
+            candidates = self.devices.preferred_input_stream_candidates(audio)
+        timing.mark("stream_open_start")
+        for candidate in candidates:
             try:
                 self._stream = _open_input_stream(audio, candidate, self.chunk_size)
             except Exception as e:
@@ -97,17 +110,21 @@ class MicrophoneInput:
                     f"'{candidate['name']}' (index={candidate['index']}, rate={candidate['samplerate']} Hz): {e}"
                 )
                 continue
+            timing.mark("stream_open_end")
             self.samplerate = candidate["samplerate"]
             self.device_index = candidate["index"]
             self.device_name = candidate["name"]
-            if candidate["index"] is None:
-                self.device_name = _default_input_name(audio) or self.device_name
-            self.device_name = self.devices.display_name(self.device_name)
+            # The first full name may enumerate every device (MME cuts names at 31 characters).
+            with timing.span("device_name"):
+                if candidate["index"] is None:
+                    self.device_name = _default_input_name(audio) or self.device_name
+                self.device_name = self.devices.display_name(self.device_name)
             configured = str(self._config().get("input_device_name", "") or "").strip()
             logging.info(
                 f"Opened audio input stream on '{self.device_name}' "
                 f"(index={self.device_index}, rate={self.samplerate} Hz, "
-                f"configured={configured or 'system default'!r})."
+                f"configured={configured or 'system default'!r}, candidates={len(candidates)}, "
+                f"failed_attempts={len(failed)})."
             )
             self._report_fallback(candidate, failed)
             return self._stream
@@ -207,6 +224,8 @@ class HotMicCapture:
         self._on_failure = on_failure
         self._announce_audio = False
         self._failure_reported = False
+        #: Timing of the recording that is starting, until its first block arrived.
+        self._start_timing: OperationTiming = NO_TIMING
         self._lock = threading.Lock()
         self._recording = False
         self._paused = False
@@ -253,14 +272,15 @@ class HotMicCapture:
         self._mic.close()
         return True
 
-    def start_recording(self) -> None:
-        """Begin a recording that already contains the pre-roll."""
+    def start_recording(self, timing: OperationTiming = NO_TIMING) -> None:
+        """Begin a recording that already contains the pre-roll; ``timing`` gets its first-audio phases."""
         with self._lock:
             self._frames = list(self._preroll)
             self._recording = True
             self._paused = False
             self._announce_audio = True
             self._failure_reported = False
+            self._start_timing = timing
         # A reader pausing between failed open attempts retries right away for the recording.
         self._wake.set()
 
@@ -316,14 +336,19 @@ class HotMicCapture:
     def _loop(self) -> None:
         """Read continuously, feeding the pre-roll and, while recording, the recording."""
         logging.info("Background audio capture thread started.")
+        with self._lock:
+            if self._recording:
+                self._start_timing.mark("mic_thread_start")
         open_failures = 0
         while self._running:
             if not self._recording and self._idle_expired():
                 logging.info("Stopping background audio capture due to Windows prewarm idle timeout.")
                 self._running = False
                 break
+            with self._lock:
+                timing = self._start_timing if self._recording and self._announce_audio else NO_TIMING
             try:
-                stream = self._mic.open()
+                stream = self._mic.open(timing)
             except Exception as e:
                 open_failures += 1
                 self._open_failed(e, open_failures)
@@ -343,8 +368,12 @@ class HotMicCapture:
                     if pending is None and self._recording and not self._paused:
                         self._frames.append(data)
                         announce, self._announce_audio = self._announce_audio, False
-                if announce and self._on_recording_audio:
-                    self._on_recording_audio()
+                    start_timing = self._start_timing
+                if announce:
+                    start_timing.mark("first_audio")
+                    self._start_timing = NO_TIMING
+                    if self._on_recording_audio:
+                        self._on_recording_audio()
                 if pending is not None:
                     self._retain_tail(stream, data, pending)
             except Exception as e:
@@ -440,9 +469,11 @@ class OnDemandCapture:
         self._paused = False
         self._frames: list[bytes] = []
         self._thread: Optional[threading.Thread] = None
+        self._start_timing: OperationTiming = NO_TIMING
 
-    def start_recording(self) -> None:
-        """Start reading on a new thread."""
+    def start_recording(self, timing: OperationTiming = NO_TIMING) -> None:
+        """Start reading on a new thread; ``timing`` gets the phases up to the first block."""
+        self._start_timing = timing
         self._frames = []
         self._announce_audio = True
         self._paused = False
@@ -485,8 +516,10 @@ class OnDemandCapture:
     def _read(self) -> None:
         """Read blocks until the recording stops."""
         logging.info("Audio recording thread started (PyAudio).")
+        timing = self._start_timing
+        timing.mark("mic_thread_start")
         try:
-            stream = self._mic.open()
+            stream = self._mic.open(timing)
         except Exception as e:
             logging.error(f"Could not open audio input stream: {e}")
             self._recording = False
@@ -497,6 +530,7 @@ class OnDemandCapture:
                 f"Recording from input device '{self._mic.device_name}' "
                 f"(index={self._mic.device_index}, rate={self._mic.samplerate} Hz)."
             )
+        timing.mark("first_read_start")
         while self._recording:
             try:
                 data = stream.read(self._mic.chunk_size, exception_on_overflow=False)
@@ -509,6 +543,7 @@ class OnDemandCapture:
             self._frames.append(data)
             if self._announce_audio:
                 self._announce_audio = False
+                timing.mark("first_audio")
                 if self._on_recording_audio:
                     self._on_recording_audio()
         self._mic.close()

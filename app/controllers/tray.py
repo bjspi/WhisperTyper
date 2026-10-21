@@ -8,7 +8,8 @@ from typing import Callable, Dict, Optional, Protocol, Tuple
 
 from PyQt6.QtCore import QObject, QPoint, QTimer
 from PyQt6.QtGui import QAction, QCursor, QIcon
-from PyQt6.QtWidgets import QApplication, QFileDialog, QLabel, QMessageBox, QStyle, QSystemTrayIcon, QWidget
+from PyQt6.QtWidgets import (QApplication, QDialogButtonBox, QFileDialog, QLabel, QMessageBox, QStyle,
+                             QSystemTrayIcon, QWidget)
 
 from app.context import AppContext
 from app.controllers.file_actions import FileActions
@@ -28,6 +29,7 @@ from app.ui.durations import BALLOON_INFO_MS, BALLOON_SHORT_MS, BALLOON_WARNING_
 from app.ui.line_icons import line_icon
 from app.ui.tray_icons import app_icon, recording_level_icon, tray_icon
 from app.ui.tray_menu import BadgeTrayMenu
+from app.ui.update_dialog import run_update_dialog
 
 #: Refresh interval of the recording level meter in the tray icon.
 _METER_INTERVAL_MS = 80
@@ -82,6 +84,8 @@ class TrayController(QObject):
         self._files = files
         self._restart = restart
         self._quit = quit_app
+        # Whether the running update is a forced one (its result dialog reads differently).
+        self._update_forced = False
         self.tray_icon: Optional[QSystemTrayIcon] = None
         self.tray_menu: Optional[BadgeTrayMenu] = None
         self._idle_icon = QIcon()
@@ -413,23 +417,47 @@ class TrayController(QObject):
         self._ctx.notifier.hide()
         QMessageBox.warning(self._window, self._ctx.tr("update_dialog_title"), self._ctx.tr("update_git_missing_text"))
 
+    def _force_update(self) -> None:
+        """After an explicit confirmation, replace local changes with the latest upstream version."""
+        tr = self._ctx.tr
+        if self.updater.pulling:
+            return
+        reply = QMessageBox.warning(
+            self._window, tr("update_dialog_title"), tr("update_force_confirm_text", path=self.updater.root or ""),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._update_forced = True
+        self._ctx.notifier.show(tr("update_force_running_message"), 0, spinner=True)
+        self.updater.force_update()
+
     def _on_update_finished(self, succeeded: bool, changed: bool, output: str) -> None:
-        """Report the git pull result and, when new code arrived, offer to restart the app."""
+        """Report the update result; offer a forced update after a failure and a restart after new code."""
         self._ctx.notifier.hide()
+        forced, self._update_forced = self._update_forced, False
         tr = self._ctx.tr
         title = tr("update_dialog_title")
         details = output or tr("update_no_output")
+        close = (tr("update_close_button"), QDialogButtonBox.ButtonRole.RejectRole)
         if not succeeded:
-            QMessageBox.warning(self._window, title, tr("update_failed_text", output=details))
+            force = tr("update_force_button")
+            message = tr("update_failed_text") + ("" if forced else "\n\n" + tr("update_force_hint"))
+            buttons = [close] if forced else [(force, QDialogButtonBox.ButtonRole.DestructiveRole), close]
+            if run_update_dialog(self._window, title, message, details, buttons, default=len(buttons) - 1) == force:
+                self._force_update()
             return
         if not changed:
-            QMessageBox.information(self._window, title, tr("update_up_to_date_text"))
+            if forced:
+                run_update_dialog(self._window, title, tr("update_force_unchanged_text"), details, [close])
+            else:
+                QMessageBox.information(self._window, title, tr("update_up_to_date_text"))
             return
-        reply = QMessageBox.question(
-            self._window, title, tr("update_success_text", output=details),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
+        restart = tr("update_restart_button")
+        message = tr("update_force_success_text" if forced else "update_success_text")
+        if run_update_dialog(self._window, title, message, details,
+                             [(restart, QDialogButtonBox.ButtonRole.AcceptRole),
+                              (tr("update_later_button"), QDialogButtonBox.ButtonRole.RejectRole)]) == restart:
             self._restart()
 
     def _apply_update_indicator(self) -> None:
