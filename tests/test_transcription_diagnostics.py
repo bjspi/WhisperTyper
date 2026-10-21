@@ -165,6 +165,14 @@ def test_an_empty_result_gets_a_second_transcription(tmp_path, monkeypatch):
     assert len(calls) == 2
 
 
+@pytest.mark.parametrize("first", [{"text": "Hallo"}, {"text": ""}, verbose(" Hallo", 0.0), verbose("", 0.0)],
+                         ids=["no-details", "empty-no-details", "placeholder-zero", "empty-placeholder-zero"])
+def test_a_response_without_confidence_data_gets_no_second_transcription(tmp_path, monkeypatch, first):
+    text, calls, _received, _timing = run_second_pass(tmp_path, monkeypatch, "doubtful", first, verbose(" Zweiter", -0.1))
+    assert text == first["text"]
+    assert len(calls) == 1
+
+
 def test_always_sends_both_and_does_not_wait_for_the_second_when_the_first_is_confident(tmp_path, monkeypatch):
     started = time.monotonic()
     text, calls, received, timing = run_second_pass(tmp_path, monkeypatch, "always", verbose(" Erster", -0.1),

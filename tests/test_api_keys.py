@@ -6,13 +6,17 @@ from copy import deepcopy
 import pytest
 
 from app.core.api_keys import (
+    NO_KEY_PROFILE_ID,
     GroqKeyRotation,
+    auth_headers,
+    is_local_endpoint,
     key_format_warning,
     masked_api_key,
     migrate_api_keys,
     provider_for_url,
     resolve_key_profile,
     selected_api_key,
+    transcription_configured,
 )
 from app.core.constants import DEFAULT_CONFIG
 
@@ -177,3 +181,24 @@ def test_single_key_and_surrounding_whitespace_are_safe():
 ])
 def test_key_format_warning_is_a_hint_per_provider(provider, key, warning):
     assert key_format_warning(provider, key) == warning
+
+
+@pytest.mark.parametrize("url,local", [
+    ("http://localhost:8000/v1/audio/transcriptions", True), ("http://LOCALHOST./x", True),
+    ("http://127.0.0.1:9000/x", True), ("http://127.1.2.3/x", True), ("http://[::1]:8000/x", True),
+    ("http://whisper.localhost/x", True), ("http://192.168.1.5/x", False), ("https://api.groq.com/x", False),
+    ("http://localhost.example.com/x", False), ("not a url", False),
+])
+def test_local_endpoints_are_recognized(url, local):
+    assert is_local_endpoint(url) is local
+
+
+def test_a_custom_endpoint_can_go_without_a_key():
+    config = {"api_endpoint": "http://localhost:8000/v1/audio/transcriptions", "api_key_profiles": [],
+              "transcription_key_profile_id": NO_KEY_PROFILE_ID}
+    assert transcription_configured(config)
+    assert selected_api_key(config, "transcription") == ""
+    assert GroqKeyRotation().next_key(config) == ""
+    assert auth_headers("") == {} and auth_headers("k") == {"Authorization": "Bearer k"}
+    # Official providers always need a key.
+    assert not transcription_configured({**config, "api_endpoint": "https://api.openai.com/v1/audio/transcriptions"})

@@ -19,10 +19,11 @@ from app.context import AppContext
 from app.controllers.text_output import TextOutput
 from app.controllers.warmup import WarmupScheduler
 from app.controllers.workers import WorkerThreads
-from app.core.api_keys import GroqKeyRotation, provider_for_url, rephrasing_configured, selected_api_key
+from app.core.api_keys import (GroqKeyRotation, is_local_endpoint, provider_for_url, rephrasing_configured,
+                                selected_api_key)
 from app.core.audio_formats import is_video_file, needs_audio_normalization
 from app.core.constants import LANGUAGES
-from app.core.models import transcription_form_fields
+from app.core.models import transcription_form_fields, transcription_reports_confidence
 from app.core.prompts import auto_apply_prompt, transcription_prompt_for
 from app.core.rephrase_routing import RephrasePlan, plan_rephrase, usable_transcript
 from app.core.replacements import ReplacementError, Replacements
@@ -31,7 +32,7 @@ from app.core.timing import NO_TIMING, OperationTiming
 from app.services.ffmpeg import resolve_ffmpeg
 from app.services.net import proxies_for
 from app.services.rephrasing_worker import RephrasingWorker
-from app.services.transcription import TranscriptionRequest
+from app.services.transcription import DEFAULT_HEDGE_RESPONSE_WAIT_S, TranscriptionRequest
 from app.services.transcription_worker import TranscriptionWorker
 from app.ui.durations import (
     BALLOON_CONFIRM_MS,
@@ -129,7 +130,16 @@ class TranscriptionPipeline:
                      timing.operation_id, provider, self._key_rotation.last_profile_id,
                      bool(config["groq_key_rotation"] and provider == "groq"))
         # Hedging: a stalled request is raced by a second one with the next key (rotation) or the same key.
-        hedge_api_key = self._key_rotation.next_key(config) if config.get("transcription_hedging", False) else None
+        # A server on this computer has no network path to stall on; a second request would only
+        # double its load.
+        hedging = bool(config.get("transcription_hedging", False)) and not is_local_endpoint(config["api_endpoint"])
+        hedge_api_key = self._key_rotation.next_key(config) if hedging else None
+        # The quality fallback judges results by their log-probabilities; without them it only costs a request.
+        second_pass = config.get("transcription_second_pass", "off")
+        if second_pass != "off" and not transcription_reports_confidence(config["model"]):
+            logging.info("transcription_second_pass op=%s skipped reason=no_confidence_data model=%s",
+                         timing.operation_id, config["model"])
+            second_pass = "off"
         request = TranscriptionRequest(
             api_key=api_key, api_endpoint=config["api_endpoint"],
             audio_path=audio_path, prompt=self._sent_prompt(),
@@ -142,13 +152,14 @@ class TranscriptionPipeline:
             recording_format=recording_format,
             recording_bitrate_kbps=int(config.get("recording_aac_bitrate_kbps", 64)),
             ffmpeg_setting=config.get("ffmpeg_path", ""),
-            hedge_api_key=hedge_api_key or None,
+            hedge_api_key=hedge_api_key,
+            hedge_response_wait_s=float(config.get("transcription_hedging_wait_s", DEFAULT_HEDGE_RESPONSE_WAIT_S)),
             diagnostics=bool(config.get("transcription_diagnostics", True)),
-            second_pass=config.get("transcription_second_pass", "off"),
+            second_pass=second_pass,
             second_pass_threshold=float(config.get("transcription_second_pass_logprob", -0.5)),
             second_pass_prompt=config.get("transcription_second_pass_prompt", ""),
             second_pass_api_key=(self._key_rotation.next_key(config) or None
-                                 if config.get("transcription_second_pass", "off") == "always" else None),
+                                 if second_pass == "always" else None),
         )
         worker = TranscriptionWorker(request, timing=timing, tr=self._ctx.tr)
         if recording_format is not None:

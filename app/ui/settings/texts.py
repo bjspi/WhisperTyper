@@ -83,7 +83,10 @@ TEXTS: Tuple[Text, ...] = (
     Text("set_hotkey_button", "set_pr_hotkey_button"),
     # Recording
     Text("recording_group_title", "recording_group"),
-    _check("transcription_hedging_checkbox", "transcription_hedging_checkbox", "transcription_hedging_tooltip"),
+    _check("transcription_hedging_checkbox", "transcription_hedging_checkbox", "transcription_hedging_tooltip",
+           rich=True),
+    _field("transcription_hedging_wait_label", "transcription_hedging_wait_tooltip", "transcription_hedging_wait_label",
+           "transcription_hedging_wait_input"),
     _check("windows_keep_mic_hot_checkbox", "windows_keep_mic_hot_checkbox", "windows_keep_mic_hot_tooltip"),
     _field("windows_keep_mic_hot_idle_label", "windows_keep_mic_hot_idle_tooltip", "windows_keep_mic_hot_idle_label",
            "windows_keep_mic_hot_idle_input"),

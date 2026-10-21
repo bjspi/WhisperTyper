@@ -12,6 +12,7 @@ from PyQt6.QtCore import QSignalBlocker, Qt
 from PyQt6.QtWidgets import QComboBox, QLabel, QLineEdit, QMessageBox, QPushButton
 
 from app.core.api_keys import (
+    NO_KEY_PROFILE_ID,
     PROVIDER_NAMES,
     TASK_CUSTOM_URL_FIELDS,
     TASK_KEY_FIELDS,
@@ -160,7 +161,8 @@ class ApiPage(SettingsWindowBase):
         self._refresh_api_state()
 
     def _refresh_key_profile_selectors(self) -> None:
-        """List the provider's profiles behind "Automatic"; a provider change resets to automatic."""
+        """List the provider's profiles behind "Automatic" (custom: then "no key needed"); a provider
+        change resets to automatic."""
         profiles = self._api_keys_tab.profiles()
         for task in API_TASKS:
             widgets = self._task_widgets(task)
@@ -178,6 +180,8 @@ class ApiPage(SettingsWindowBase):
             with QSignalBlocker(selector):
                 selector.clear()
                 selector.addItem(self.translator.tr("api_key_automatic"), "")
+                if provider == "custom":
+                    selector.addItem(self.translator.tr("api_key_none"), NO_KEY_PROFILE_ID)
                 for profile in profiles:
                     if profile["provider"] == provider:
                         selector.addItem(f"{profile['name']} — {masked_api_key(profile['key'])}", profile["id"])
@@ -198,6 +202,10 @@ class ApiPage(SettingsWindowBase):
     def _ui_api_key(self, task: str) -> str:
         """Resolve credentials from unsaved form values for highlighting and connection tests."""
         return selected_api_key(self._form_api_config(), task)
+
+    def _ui_key_ready(self, task: str) -> bool:
+        """The unsaved form selects a key, or "no key needed"."""
+        return resolve_key_profile(self._form_api_config(), task) is not None
 
     def _refresh_api_state(self, *_args: object) -> None:
         """Show the controls each provider needs, the key in use, and mark incomplete sections."""
@@ -224,7 +232,9 @@ class ApiPage(SettingsWindowBase):
         widgets.key_label.setVisible(show_selector)
         widgets.key_profile.setVisible(show_selector)
         profile = resolve_key_profile(form, task)
-        if profile is not None:
+        if profile is not None and profile["id"] == NO_KEY_PROFILE_ID:
+            widgets.key_status.setText(self.translator.tr("api_key_status_none"))
+        elif profile is not None:
             widgets.key_status.setText(self.translator.tr(
                 "api_key_status_ok", name=profile["name"], masked=masked_api_key(profile["key"])))
         else:

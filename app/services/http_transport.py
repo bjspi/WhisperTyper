@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from app.core.api_keys import is_local_endpoint
 from app.core.timing import NO_TIMING, OperationTiming, queue_http_timing
 
 #: Idle pooled connections are discarded after this long. Routers and NATs silently drop idle
@@ -262,8 +263,14 @@ def _client(proxy: Optional[str], verify: Union[bool, str]) -> httpx.Client:
 
 
 def _select_proxy(url: str, proxies: Optional[dict[str, str]]) -> Optional[str]:
-    """Explicit mapping first; otherwise the system/env proxy unless the host is bypassed."""
+    """Explicit mapping first; otherwise the system/env proxy unless the host is bypassed.
+
+    An endpoint on this computer is always reached directly: a proxy would resolve localhost
+    as itself.
+    """
     parts = urlsplit(url)
+    if is_local_endpoint(url):
+        return None
     if proxies:
         return proxies.get(parts.scheme) or proxies.get("all")
     host = parts.hostname or ""

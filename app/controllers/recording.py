@@ -23,7 +23,7 @@ from app.core.api_keys import rephrasing_configured, transcription_configured
 from app.core.env import is_MACOS, is_WINDOWS
 from app.core.prompts import INSTRUCTION, auto_apply_prompt, instruction_entry, recording_prompt_entries
 from app.core.redaction import redact_for_log
-from app.core.timing import OperationTiming
+from app.core.timing import NO_TIMING, OperationTiming
 from app.platform.windows import is_console_foreground_window
 from app.ui import theme
 from app.ui.durations import (
@@ -88,6 +88,8 @@ class RecordingController(QObject):
         self._take = 0
         #: True until the running recording has shown its balloon or prompt palette.
         self._feedback_pending = False
+        #: Timing of the take that is starting, finished once its recording feedback shows.
+        self._start_timing: OperationTiming = NO_TIMING
         self.latest_audio_level = 0.0
         #: Recent block levels in dBFS for the palette's waveform; appended by the capture thread.
         self._wave_levels: deque[float] = deque(maxlen=256)
@@ -188,6 +190,7 @@ class RecordingController(QObject):
         if take != self._take or not self.is_recording or self.mac_recorder.active:
             return
         logging.error("Recording ended: the audio input stream could not be opened.")
+        self._end_start_timing("capture_failed")
         self.is_recording = False
         self.is_paused = False
         self.push_to_talk_active = False
@@ -288,12 +291,23 @@ class RecordingController(QObject):
     def toggle(self, *, detected_ns: Optional[int] = None) -> None:
         """Start or stop recording; ``detected_ns`` is the hotkey listener's detection time."""
         if self.is_recording:
+            self._end_start_timing("stopped_before_audio")
             self._stop(OperationTiming("recording", detected_ns))
         else:
-            self._start()
+            self._start(OperationTiming("recording_start", detected_ns))
 
-    def _start(self) -> None:
-        """Start capturing, after checking that a transcription could be sent at all."""
+    def _end_start_timing(self, outcome: str) -> None:
+        """Close the start measurement of a take that ends before its feedback showed."""
+        timing, self._start_timing = self._start_timing, NO_TIMING
+        timing.finish(outcome)
+
+    def _start(self, timing: OperationTiming) -> None:
+        """Start capturing, after checking that a transcription could be sent at all.
+
+        ``timing`` measures hotkey -> microphone delivers audio -> recording feedback shown.
+        """
+        timing.mark("start_handled")
+        self._end_start_timing("superseded")
         self.touch_activity()
         self.abandon_prompt_selection()
         # A fresh install has no API key yet, so recording is blocked and the settings window
@@ -302,54 +316,75 @@ class RecordingController(QObject):
             self.push_to_talk_active = False
             self._notifier.show(self._ctx.tr("recording_no_api_keys"), BALLOON_INFO_MS)
             self._open_settings()
+            timing.finish("not_configured")
             return
 
         self._permissions.warn('microphone')
         self._warmup.schedule(activate=True)
+        timing.mark("start_checks_end")
+        self._start_timing = timing
         self.is_recording = True
         self.is_paused = False
         self._take += 1
         self._feedback_pending = True
         self._wave_levels.clear()
         self._mac_device_name = ""
-        self.state_changed.emit(True)
+        with timing.span("start_state_ui"):
+            self.state_changed.emit(True)
 
-        if self.keep_mic_hot():
-            self.hot_mic.start_recording()
+        hot = self.keep_mic_hot()
+        # A warm microphone with an open stream delivers at once; otherwise the stream opens first.
+        stream_was_open = self.microphone.stream_open
+        timing.mark("capture_request_start")
+        if hot:
+            self.hot_mic.start_recording(timing)
             self.start_background_capture()
         elif macos_recorder.available():
             try:
                 self.mac_recorder.start(self._ctx.recordings.new_path())
             except Exception as e:
                 self.is_recording = False
+                self._end_start_timing("capture_failed")
                 self.state_changed.emit(False)
                 logging.error(f"macOS: could not start native audio recorder: {e}")
                 self._notifier.show(self._ctx.tr("no_microphone_signal_message"), BALLOON_INFO_MS)
                 return
         else:
-            self.on_demand.start_recording()
+            self.on_demand.start_recording(timing)
+        timing.mark("capture_request_end")
 
-        self._capture_selection_context()
-        self._sounds.play('sound_start.wav')
+        with timing.span("selection_context"):
+            self._capture_selection_context()
+        with timing.span("start_sound"):
+            self._sounds.play('sound_start.wav')
+        timing.mark("start_handler_end")
         if self.mac_recorder.active:
             # AVAudioRecorder.record() only returns success once the input is recording.
+            timing.mark("first_audio")
             self._on_recording_audio(self._take)
         else:
             take = self._take
             QTimer.singleShot(MIC_SIGNAL_GRACE_MS, lambda: self._on_no_recording_audio_yet(take))
-        logging.info("Recording started.")
+        logging.info("Recording started (op=%s, capture=%s, stream_was_open=%s).", timing.operation_id,
+                     "hot_mic" if hot else "macos" if self.mac_recorder.active else "on_demand",
+                     stream_was_open)
 
     def _on_recording_audio(self, take: int) -> None:
         """The microphone delivers audio for this take: show the recording feedback now."""
         if take != self._take or not self.is_recording or not self._feedback_pending:
             return
         self._feedback_pending = False
+        timing, self._start_timing = self._start_timing, NO_TIMING
+        timing.mark("feedback_start")
         self._show_feedback()
+        timing.mark("feedback_end")
+        timing.finish("ok")
 
     def _on_no_recording_audio_yet(self, take: int) -> None:
         """No audio yet after the grace period: show the plain recording balloon meanwhile."""
         if take != self._take or not self.is_recording or not self._feedback_pending:
             return
+        self._start_timing.mark("no_audio_grace_elapsed")
         self._notifier.show(self._ctx.tr("recording_running_message"), BALLOON_PERSISTENT_MS)
 
     def restart(self) -> None:
@@ -458,6 +493,7 @@ class RecordingController(QObject):
         timing.mark("stop_handled")
 
         logging.info("Recording canceled by user.")
+        self._end_start_timing("cancelled_before_audio")
         self.touch_activity()
         self.is_recording = False
         self.is_paused = False
@@ -480,7 +516,7 @@ class RecordingController(QObject):
     def _min_recording_seconds(self) -> float:
         """Configured minimum length; shorter takes are an accidental double-tap, not speech."""
         try:
-            return float(self._config.get("min_recording_seconds", 1.0))
+            return float(self._config.get("min_recording_seconds", 2.5))
         except (TypeError, ValueError):
             return 1.0
 

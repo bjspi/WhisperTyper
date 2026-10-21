@@ -19,6 +19,7 @@ import httpx
 
 from app.audio.aac_encoder import available_aac_bitrates, encode_wav_to_aac
 from app.core import audio_formats
+from app.core.api_keys import auth_headers
 from app.core.models import transcription_form_fields
 from app.core.redaction import LOG_REDACTION_STATE, redact_for_log
 from app.core.textutil import clean_model_name
@@ -47,9 +48,9 @@ _READ_TIMEOUT_S = 300.0
 #: the upload size needs at the given rate (long recordings) ...
 _HEDGE_UPLOAD_MIN_S = 0.5
 _HEDGE_UPLOAD_BYTES_PER_S = 1.5 * 1024 * 1024
-#: ... or when no response byte arrives within this long after the upload finished (plus some
-#: time per uploaded MB, because the server transcribes longer audio for longer).
-_HEDGE_RESPONSE_MIN_S = 1.0
+#: ... or when no response byte arrives within the configured wait after the upload finished (plus
+#: some time per uploaded MB, because the server transcribes longer audio for longer).
+DEFAULT_HEDGE_RESPONSE_WAIT_S = 1.0
 _HEDGE_RESPONSE_S_PER_MB = 0.5
 
 
@@ -82,8 +83,11 @@ class TranscriptionRequest:
     recording_bitrate_kbps: int = 64
     ffmpeg_setting: str = ""
     #: Key for a parallel second attempt over a fresh connection when the first one stalls
-    #: (the next Groq key when rotation is on, else the same key); None disables hedging.
+    #: (the next Groq key when rotation is on, else the same key, "" for a keyless endpoint);
+    #: None disables hedging.
     hedge_api_key: Optional[str] = None
+    #: Seconds without a response byte after the upload before the second attempt starts (plus 0.5 s per MB).
+    hedge_response_wait_s: float = DEFAULT_HEDGE_RESPONSE_WAIT_S
     #: Log the confidence details (log-probabilities) where the model offers them.
     diagnostics: bool = False
     #: Second transcription with ``second_pass_prompt`` (empty = no prompt): "off"; "doubtful" sends it
@@ -143,8 +147,6 @@ def transcribe(req: TranscriptionRequest, timing: OperationTiming, tr: Translate
     Raises:
         TranscriptionError: For conditions with a translated, user-facing explanation.
     """
-    if not req.api_key:
-        raise TranscriptionError(tr("transcription_api_key_missing"))
     temp: Optional[_TempUpload] = None
     try:
         with timing.span("upload_prepare"):
@@ -183,8 +185,14 @@ def _average_logprob(details: Optional[Dict[str, Any]]) -> Optional[float]:
 
 
 def _doubtful(req: TranscriptionRequest, text: str, details: Optional[Dict[str, Any]]) -> bool:
-    """Empty, or less confident than the configured threshold."""
+    """Empty, or less confident than the configured threshold.
+
+    A response without confidence data is never doubtful: no details at all, or an average of
+    exactly 0, which servers without log-probabilities report as a placeholder.
+    """
     average = _average_logprob(details)
+    if details is None or average == 0.0:
+        return False
     return not text.strip() or (average is not None and average < req.second_pass_threshold)
 
 
@@ -412,7 +420,7 @@ def _send(req: TranscriptionRequest, upload: _Upload, timing: OperationTiming, t
         timing.mark("transcription_request_start")
         response = request(
             "POST", req.api_endpoint, timing=timing, stage="transcription",
-            headers={"Authorization": f"Bearer {req.api_key}"}, files=files, data=data,
+            headers=auth_headers(req.api_key), files=files, data=data,
             proxies=req.proxies, timeout=(send_timeout, read_timeout),
         )
         # The transport returns only after reading the complete response body.
@@ -434,11 +442,11 @@ def _parse(response: httpx.Response, tr: Translate) -> _Parsed:
     return payload.get("text", ""), payload
 
 
-def hedge_thresholds(upload_bytes: int) -> Tuple[float, float]:
+def hedge_thresholds(upload_bytes: int, response_wait_s: float = DEFAULT_HEDGE_RESPONSE_WAIT_S) -> Tuple[float, float]:
     """(upload budget, response wait after the upload) before a second attempt starts, in seconds."""
     megabytes = upload_bytes / (1024 * 1024)
     return (max(_HEDGE_UPLOAD_MIN_S, upload_bytes / _HEDGE_UPLOAD_BYTES_PER_S),
-            _HEDGE_RESPONSE_MIN_S + megabytes * _HEDGE_RESPONSE_S_PER_MB)
+            response_wait_s + megabytes * _HEDGE_RESPONSE_S_PER_MB)
 
 
 def _send_hedged(req: TranscriptionRequest, upload: _Upload, timing: OperationTiming, tr: Translate,
@@ -471,7 +479,7 @@ def _send_hedged(req: TranscriptionRequest, upload: _Upload, timing: OperationTi
         try:
             response = request(
                 "POST", req.api_endpoint, timing=timing, stage=stage,
-                headers={"Authorization": f"Bearer {api_key}"},
+                headers=auth_headers(api_key),
                 files={"file": (filename, body, content_type)}, data=data,
                 proxies=req.proxies, timeout=timeouts, fresh_connection=fresh,
                 on_phase=watch if index == 1 else None,
@@ -490,7 +498,7 @@ def _send_hedged(req: TranscriptionRequest, upload: _Upload, timing: OperationTi
         threading.Thread(target=attempt, args=(index, api_key, stage, fresh),
                          name=f"TranscriptionAttempt{index}", daemon=True).start()
 
-    upload_budget, response_wait = hedge_thresholds(upload.size)
+    upload_budget, response_wait = hedge_thresholds(upload.size, req.hedge_response_wait_s)
     timing.mark("transcription_request_start")
     started = time.monotonic()
     launch(1, req.api_key, "transcription", False)

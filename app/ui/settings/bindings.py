@@ -63,6 +63,7 @@ BINDINGS: Tuple[Binding, ...] = (
     # Recording
     Binding("push_to_talk_checkbox", "push_to_talk", "check"),
     Binding("transcription_hedging_checkbox", "transcription_hedging", "check"),
+    Binding("transcription_hedging_wait_input", "transcription_hedging_wait_s", "float"),
     Binding("windows_keep_mic_hot_checkbox", "windows_keep_mic_hot", "check", "windows"),
     Binding("windows_keep_mic_hot_idle_input", "windows_keep_mic_hot_idle_minutes", "int", "windows",
             companions=("windows_keep_mic_hot_idle_label",)),

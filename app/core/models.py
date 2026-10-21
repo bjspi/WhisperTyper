@@ -133,6 +133,11 @@ def prompt_token_limit(model: str) -> int | None:
     return _spec(TRANSCRIPTION_MODELS, model).prompt_token_limit
 
 
+def transcription_reports_confidence(model: str) -> bool:
+    """Whether the model can return log-probabilities; the quality fallback needs them to judge a result."""
+    return bool(_spec(TRANSCRIPTION_MODELS, model).diagnostics)
+
+
 def transcription_form_fields(model: str, prompt: str, temperature: float, language: str,
                               diagnostics: bool = False) -> Dict[str, Any]:
     """Build the multipart form fields the selected transcription model accepts.

@@ -57,7 +57,7 @@ class Microphone:
         self.stream = stream
         self.closed = 0
 
-    def open(self):
+    def open(self, _timing=None):
         return self.stream
 
     def close(self):
@@ -193,12 +193,17 @@ def test_first_recorded_block_is_announced_once_and_restart_discards_the_take(ho
         capture.start()
         wait_for(lambda: stream.blocks > 0)  # The warm microphone reads before the recording starts.
         assert calls == []
-        capture.start_recording()
+        start = OperationTiming("recording_start")
+        capture.start_recording(start)
     else:
         capture = OnDemandCapture(Microphone(stream), on_block=lambda _data: None, on_failure=lambda: None,
                                   on_recording_audio=on_audio)
-        capture.start_recording()
+        start = OperationTiming("recording_start")
+        capture.start_recording(start)
     assert announced.wait(2)
+    # The start measurement ends at the first recorded block; the reader thread phases only on demand.
+    assert "first_audio" in start._events
+    assert ("first_read_start" in start._events) is not hot
     wait_for(lambda: len(capture._frames) > 3)
 
     restarted_at = stream.blocks  # Only the block being read right now may still end up in the take.
@@ -325,7 +330,7 @@ class UnopenableMicrophone(Microphone):
         self.opens = 0
         self.opens_on = opens_on
 
-    def open(self):
+    def open(self, _timing=None):
         self.opens += 1
         if self.opens != self.opens_on:
             raise OSError("no input device")

@@ -76,7 +76,7 @@ class FakeMicrophone:
     target_samplerate = samplerate = 16000
     chunk_size = 1024
 
-    def open(self):
+    def open(self, _timing=None):
         return FakeStream()
 
     def close(self):
@@ -183,9 +183,13 @@ def test_hotkey_stop_reaches_output_with_ordered_milestones(api, tmp_path, monke
     assert output.keys == ["v"] and pasted == [expected_text]
     assert pipeline.last_transcription == expected_text
     assert states == [True, False] and FakeApi.uploads
-    assert len(operations) == 1
-    events = list(operations[0]._events)
-    assert operations[0]._events["stop"] == detected_ns
+    start, stop = operations
+    assert start.source == "recording_start" and stop.source == "recording"
+    for phase in ("start_handled", "start_checks_end", "start_state_ui_end", "capture_request_end",
+                  "selection_context_end", "start_sound_end", "start_handler_end"):
+        assert phase in start._events
+    events = list(stop._events)
+    assert stop._events["stop"] == detected_ns
     milestones = [
         "stop", "stop_handled", "recording_stopped", "audio_prepare_start", "audio_prepare_end",
         "file_write_start", "file_write_end", "transcription_queued", "transcription_worker_queued",
@@ -229,7 +233,7 @@ class GatedMicrophone(FakeMicrophone):
         """Start with the gate closed."""
         self.open_gate = threading.Event()
 
-    def open(self):
+    def open(self, _timing=None):
         gate, stream = self.open_gate, FakeStream()
 
         class Gated:
@@ -332,7 +336,7 @@ class UnopenableMicrophone(FakeMicrophone):
 
     device_name = ""
 
-    def open(self):
+    def open(self, _timing=None):
         raise OSError("no input device")
 
 

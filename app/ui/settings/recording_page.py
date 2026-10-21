@@ -57,6 +57,13 @@ class RecordingPage(SettingsWindowBase):
         # Races a second request over a fresh connection when the first one stalls.
         self.transcription_hedging_checkbox = QCheckBox(self)
         layout.addWidget(self.transcription_hedging_checkbox)
+        self.transcription_hedging_wait_label = QLabel(self)
+        self.transcription_hedging_wait_input = QDoubleSpinBox(self)
+        self.transcription_hedging_wait_input.setRange(0.2, 30.0)
+        self.transcription_hedging_wait_input.setSingleStep(0.1)
+        self.transcription_hedging_wait_input.setDecimals(1)
+        self.transcription_hedging_wait_input.setSuffix(" s")
+        self._add_row(self.transcription_hedging_wait_label, self.transcription_hedging_wait_input)
 
         for name, code in LANGUAGES.items():
             self.language_input.addItem(name, code)
@@ -75,7 +82,9 @@ class RecordingPage(SettingsWindowBase):
         """Live enable/visibility updates once the saved values are loaded."""
         self.windows_keep_mic_hot_checkbox.stateChanged.connect(self._update_windows_keep_mic_hot_ui_state)
         self.recording_format_selector.currentIndexChanged.connect(self._update_recording_format_controls)
+        self.transcription_hedging_checkbox.stateChanged.connect(self._update_hedging_ui_state)
         self._update_windows_keep_mic_hot_ui_state()
+        self._update_hedging_ui_state()
         self._update_recording_format_controls()
 
     def _update_windows_keep_mic_hot_ui_state(self) -> None:
@@ -83,6 +92,12 @@ class RecordingPage(SettingsWindowBase):
         enabled = is_WINDOWS and self.windows_keep_mic_hot_checkbox.isChecked()
         self.windows_keep_mic_hot_idle_label.setEnabled(enabled)
         self.windows_keep_mic_hot_idle_input.setEnabled(enabled)
+
+    def _update_hedging_ui_state(self, *_args: object) -> None:
+        """The wait only applies while hedging is enabled."""
+        enabled = self.transcription_hedging_checkbox.isChecked()
+        self.transcription_hedging_wait_label.setEnabled(enabled)
+        self.transcription_hedging_wait_input.setEnabled(enabled)
 
     def start_aac_bitrate_probe(self) -> None:
         """Probe the optional PyAV AAC encoder in the background; importing PyAV takes noticeable time.

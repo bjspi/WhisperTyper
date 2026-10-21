@@ -1,4 +1,4 @@
-"""Self-update for source checkouts: background upstream watcher and ``git pull --ff-only``.
+"""Self-update for source checkouts: background upstream watcher, ``git pull --ff-only`` and a forced update.
 
 Git runs through QProcess so neither the periodic fetch nor the pull ever blocks the GUI.
 The UI layer decides what to show; this class only reports outcomes through signals.
@@ -6,7 +6,7 @@ The UI layer decides what to show; this class only reports outcomes through sign
 from __future__ import annotations
 
 import logging
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, pyqtSignal
 
@@ -19,6 +19,8 @@ UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000    # then every 30 minutes
 # A fetch/pull that hangs (stalled network, blocked credential helper) is killed, so the next
 # check can run and the tray spinner never stays up forever.
 GIT_TIMEOUT_MS = 120_000
+#: Message of the stash a forced update keeps the local changes in.
+FORCE_UPDATE_STASH_MESSAGE = "WhisperTyper: local changes before a forced update"
 
 
 class GitUpdater(QObject):
@@ -37,6 +39,9 @@ class GitUpdater(QObject):
         self.root: Optional[str] = find_git_root()
         self.available = False
         self._pull: Optional[QProcess] = None
+        # The git commands of the running update that are still to come, and their collected output.
+        self._pending_steps: List[List[str]] = []
+        self._pull_output: List[str] = []
         self._fetch: Optional[QProcess] = None
         self._pre_pull_head: Optional[str] = None
         self._initial_check_scheduled = False
@@ -63,19 +68,41 @@ class GitUpdater(QObject):
 
     def pull(self) -> None:
         """Run ``git pull --ff-only`` in the checkout; the result arrives via ``pull_finished``."""
-        if not self.root or self._pull is not None:
-            return
-        logging.info("Running git update in %s", self.root)
-        # HEAD before the pull tells a real update from "already up to date" without
-        # depending on git's localized wording.
-        self._pre_pull_head = current_head(self.root)
-        process = self._process(self._on_pull_finished)
-        process.errorOccurred.connect(self._on_pull_error)
-        self._pull = process
         # --ff-only keeps this safe as a one-click action: if the local branch has diverged
         # (unpushed commits, dirty tree) git refuses with a clear message instead of opening
         # a blocking merge-commit editor.
-        process.start("git", ["pull", "--ff-only"])
+        self._run_update([["pull", "--ff-only"]])
+
+    def force_update(self) -> None:
+        """Move the checkout to the upstream state even with local changes or commits.
+
+        Local changes (untracked files included, ignored ones such as the config untouched) are
+        stashed first, so ``git stash list`` still has them; replaced local commits stay in the
+        reflog, and the output names the previous HEAD. The result arrives via ``pull_finished``.
+        """
+        self._run_update([["fetch", "--quiet"],
+                          ["stash", "push", "--include-untracked", "-m", FORCE_UPDATE_STASH_MESSAGE],
+                          ["reset", "--hard", "@{u}"]])
+
+    def _run_update(self, steps: List[List[str]]) -> None:
+        """Run the git commands one after another; the first failing one ends the update."""
+        if not self.root or self._pull is not None:
+            return
+        logging.info("Running git update %s in %s", " / ".join(" ".join(step) for step in steps), self.root)
+        # HEAD before the pull tells a real update from "already up to date" without
+        # depending on git's localized wording.
+        self._pre_pull_head = current_head(self.root)
+        self._pending_steps = list(steps)
+        self._pull_output = []
+        if len(steps) > 1 and self._pre_pull_head:
+            self._pull_output.append(f"HEAD {self._pre_pull_head}")
+        self._start_next_step()
+
+    def _start_next_step(self) -> None:
+        process = self._process(self._on_pull_finished)
+        process.errorOccurred.connect(self._on_pull_error)
+        self._pull = process
+        process.start("git", self._pending_steps.pop(0))
 
     def _process(self, on_finished: Callable[[int, QProcess.ExitStatus], None]) -> QProcess:
         """A git QProcess in the checkout with stderr folded into stdout, killed after ``GIT_TIMEOUT_MS``.
@@ -108,6 +135,7 @@ class GitUpdater(QObject):
             return  # handled by finished()
         process, self._pull = self._pull, None
         process.deleteLater()
+        self._pending_steps = []
         logging.error("git update process error: %s", error)
         self.pull_failed_to_start.emit()
 
@@ -121,7 +149,14 @@ class GitUpdater(QObject):
         except Exception:
             output = ""
         process.deleteLater()
-        logging.info("git update finished (exit=%s): %s", exit_code, output)
+        logging.info("git update step finished (exit=%s): %s", exit_code, output)
+        if output:
+            self._pull_output.append(output)
+        if exit_code == 0 and self._pending_steps:
+            self._start_next_step()
+            return
+        self._pending_steps = []
+        output = "\n".join(self._pull_output)
         pre_head, self._pre_pull_head = self._pre_pull_head, None
         if exit_code != 0:
             self.pull_finished.emit(False, False, output)
