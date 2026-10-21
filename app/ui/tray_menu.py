@@ -1,15 +1,24 @@
-"""Tray context menu with letter-accelerator badges and an "update available" dot."""
+"""Tray context menu with letter-accelerator badges and an "update available" dot.
+
+In the modern design the menu gets a header with logo, name and hotkey,
+line icons, and the accelerator letters as quiet hints instead of boxed badges.
+"""
 from __future__ import annotations
 
 from typing import Callable, Dict, Optional
 
 from PyQt6.QtCore import QPointF, QRect, QRectF, Qt
-from PyQt6.QtGui import QAction, QColor, QKeyEvent, QPainter, QPaintEvent, QPen
-from PyQt6.QtWidgets import QMenu, QStyle, QWidget
+from PyQt6.QtGui import QAction, QColor, QIcon, QKeyEvent, QPainter, QPaintEvent, QPen, QShowEvent
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMenu, QStyle, QVBoxLayout, QWidget, QWidgetAction
+
+from app.ui.line_icons import round_corners
 
 _BADGE_BOX = 18   # accelerator badge square size in px
 _BADGE_MARGIN = 8  # gap between the badge and the item's right edge
 _UPDATE_DOT_COLOR = QColor(46, 204, 113)
+#: Modern design: gap between the accelerator hint and the item's right edge, and the header logo size.
+_HINT_MARGIN = 14
+_HEADER_ICON_SIZE = 30
 
 
 class BadgeTrayMenu(QMenu):
@@ -22,10 +31,14 @@ class BadgeTrayMenu(QMenu):
     keeps the full QSS look (panel, rounded corners, full-width highlight, icon indent) intact.
     """
 
-    def __init__(self, parent: Optional[QWidget], palette: Callable[[], Dict[str, str]]) -> None:
-        """``palette`` returns the live theme colors at paint time."""
+    def __init__(self, parent: Optional[QWidget], palette: Callable[[], Dict[str, str]], *,
+                 modern: bool = False) -> None:
+        """``palette`` returns the live theme colors at paint time; ``modern`` selects the modern design."""
         super().__init__(parent)
         self._palette = palette
+        self._modern = modern
+        if modern:
+            self.setObjectName("tray")
         self._badge_keys: Dict[str, QAction] = {}
         #: The menu entry that shows the green dot while ``update_available`` is set.
         self.update_action: Optional[QAction] = None
@@ -36,6 +49,38 @@ class BadgeTrayMenu(QMenu):
         key = key.lower()
         self._badge_keys[key] = action
         action.setData(key)  # read back in paintEvent to render the badge
+
+    def add_header(self, icon: QIcon, title: str, status: str) -> QLabel:
+        """Logo, name and a state line above the entries (not clickable); returns the state label."""
+        header = QWidget()
+        header.setObjectName("trayHeader")
+        layout = QHBoxLayout(header)
+        layout.setContentsMargins(12, 8, 16, 6)
+        layout.setSpacing(10)
+        logo = QLabel()
+        if not icon.isNull():
+            logo.setPixmap(icon.pixmap(_HEADER_ICON_SIZE, _HEADER_ICON_SIZE))
+        texts = QVBoxLayout()
+        texts.setSpacing(0)
+        name = QLabel(title)
+        name.setObjectName("trayTitle")
+        state = QLabel(status)
+        state.setObjectName("trayStatus")
+        texts.addWidget(name)
+        texts.addWidget(state)
+        layout.addWidget(logo)
+        layout.addLayout(texts, 1)
+        # Enabled, or Qt draws the logo greyed out; without a connected signal it triggers nothing.
+        action = QWidgetAction(self)
+        action.setDefaultWidget(header)
+        self.addAction(action)
+        return state
+
+    def showEvent(self, event: Optional[QShowEvent]) -> None:  # noqa: N802 - Qt API
+        """Modern design: Windows 11 rounded corners and shadow."""
+        super().showEvent(event)
+        if self._modern:
+            round_corners(self)
 
     def keyPressEvent(self, event: Optional[QKeyEvent]) -> None:  # noqa: N802 - Qt API
         """Trigger the action whose badge letter was pressed."""
@@ -57,6 +102,10 @@ class BadgeTrayMenu(QMenu):
         for action in self.actions():
             letter = action.data()
             if action.isSeparator() or not isinstance(letter, str) or not letter:
+                continue
+            if self._modern:
+                # The update state shows in the entry's text and accent icon instead of a dot.
+                self._paint_hint(painter, self.actionGeometry(action), letter, action.isEnabled(), colors)
                 continue
             self._paint_badge(painter, self.actionGeometry(action), letter,
                               action.isEnabled(), action is active, colors)
@@ -93,6 +142,17 @@ class BadgeTrayMenu(QMenu):
         painter.setFont(font)
         painter.setPen(fg)
         painter.drawText(box, Qt.AlignmentFlag.AlignCenter, letter.upper())
+
+    def _paint_hint(self, painter: QPainter, rect: QRect, letter: str, enabled: bool,
+                    colors: Dict[str, str]) -> None:
+        """Draw the accelerator letter right-aligned in a muted colour, like a shortcut hint."""
+        box = QRectF(rect.left(), rect.top(), rect.width() - _HINT_MARGIN, rect.height())
+        color = QColor(colors["muted"])
+        if not enabled:
+            color.setAlpha(110)
+        painter.setPen(color)
+        painter.setFont(self.font())
+        painter.drawText(box, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, letter.upper())
 
     def _paint_update_dot(self, painter: QPainter, rect: QRect, text: str) -> None:
         """Paint a small raised green dot just after the item's text (superscript-style)."""

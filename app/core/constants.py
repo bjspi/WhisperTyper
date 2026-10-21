@@ -65,6 +65,8 @@ WINDOW_MIN_HEIGHT = 600
 DEFAULT_CONFIG: Dict[str, Any] = {
     "config_schema_version": CONFIG_SCHEMA_VERSION,
     "color_theme": "system",  # "system" (auto light/dark) | "light" | "dark"
+    # Settings window with sidebar and cards, tray menu with line icons; off = the classic tabbed look.
+    "modern_design": True,
     "input_device_name": "",  # "" = system default input; else a device name from the dropdown
     "window_width": 760,
     "window_height": 880,

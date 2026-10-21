@@ -8,7 +8,7 @@ from typing import Callable, Dict, Optional, Protocol, Tuple
 
 from PyQt6.QtCore import QObject, QPoint, QTimer
 from PyQt6.QtGui import QAction, QCursor, QIcon
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox, QStyle, QSystemTrayIcon, QWidget
+from PyQt6.QtWidgets import QApplication, QFileDialog, QLabel, QMessageBox, QStyle, QSystemTrayIcon, QWidget
 
 from app.context import AppContext
 from app.controllers.file_actions import FileActions
@@ -18,17 +18,36 @@ from app.core.api_keys import transcription_configured
 from app.core.audio_formats import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, requires_ffmpeg
 from app.core.constants import APP_DATA_DIR
 from app.core.env import is_MACOS
+from app.core.hotkeys import pretty_hotkey
 from app.services import bad_recordings
 from app.services.ffmpeg import resolve_ffmpeg
 from app.services.gitutil import git_available
 from app.services.updater import GitUpdater
 from app.ui import macos_icons
 from app.ui.durations import BALLOON_INFO_MS, BALLOON_SHORT_MS, BALLOON_WARNING_MS
-from app.ui.tray_icons import app_icon, recording_level_icon
+from app.ui.line_icons import line_icon
+from app.ui.tray_icons import app_icon, recording_level_icon, tray_icon
 from app.ui.tray_menu import BadgeTrayMenu
 
 #: Refresh interval of the recording level meter in the tray icon.
 _METER_INTERVAL_MS = 80
+#: Modern design: the line icon (``resources/icons``) of each tray entry, by its label key.
+_MODERN_ICONS = {
+    "tray_settings_action": "gear",
+    "menu_file_open_config": "file",
+    "tray_edit_transformations_action": "sparkles",
+    "tray_copy_action": "copy",
+    "tray_retranscribe_action": "refresh",
+    "tray_transcribe_file_action": "folder",
+    "tray_play_action": "play",
+    "tray_mark_bad_action": "flag",
+    "tray_cancel_action": "close",
+    "tray_log_action": "log",
+    "menu_help_github": "code",
+    "tray_update_action": "download",
+    "tray_restart_action": "restart",
+    "tray_quit_action": "quit",
+}
 
 
 class SettingsWindowLike(Protocol):
@@ -42,6 +61,9 @@ class SettingsWindowLike(Protocol):
 
     def theme_palette(self) -> Dict[str, str]:
         """Colours of the active theme."""
+
+    def is_modern(self) -> bool:
+        """Whether the window shows the modern design (the tray menu matches it)."""
 
 
 class TrayController(QObject):
@@ -79,6 +101,8 @@ class TrayController(QObject):
         self.updater.pull_finished.connect(self._on_update_finished)
         self.updater.pull_failed_to_start.connect(self._on_update_failed_to_start)
         self.update_action: Optional[QAction] = None
+        self._header_status: Optional[QLabel] = None
+        self._tooltip = ""
         recording.state_changed.connect(self.set_recording)
         ctx.files_changed.connect(self.refresh_actions)
 
@@ -93,6 +117,8 @@ class TrayController(QObject):
     def set_recording(self, active: bool) -> None:
         """Animate the level meter while recording; restore the idle icon otherwise."""
         self.cancel_action.setEnabled(active)
+        if active and self._settings.is_modern() and not is_MACOS:
+            return  # the modern design keeps the app icon; the recording overlay shows the level
         if active:
             self._recording.latest_audio_level = 0.0
             self._update_recording_icon()
@@ -124,9 +150,21 @@ class TrayController(QObject):
             self.tray_icon.setIcon(icon)
 
     def set_tooltip(self, text: str) -> None:
-        """Tooltip of the tray icon."""
+        """Tooltip of the tray icon (also refreshes the modern menu header's hotkey)."""
+        self._tooltip = text
         if self.tray_icon is not None:
             self.tray_icon.setToolTip(text)
+        self._update_header()
+
+    def _menu_icon_color(self) -> str:
+        """Tint of the modern menu's line icons in the active theme."""
+        colors = self._settings.theme_palette()
+        return colors.get("menu_icon", colors["muted"])
+
+    def _update_header(self) -> None:
+        """Modern design: the menu header shows the current recording hotkey."""
+        if self._header_status is not None:
+            self._header_status.setText(pretty_hotkey(self._ctx.config.get("hotkey", "")))
 
     def hide(self) -> None:
         """Remove the icon at quit."""
@@ -158,21 +196,35 @@ class TrayController(QObject):
                 self._idle_icon = app_icon()
             if self._idle_icon.isNull():
                 self._idle_icon = standard_icon
+        elif self._settings.is_modern():
+            # The modern design always shows the microphone tile, also while recording.
+            self._idle_icon = tray_icon()
+            if self._idle_icon.isNull():
+                self._idle_icon = standard_icon
         else:
             self._idle_icon = standard_icon
         self.tray_icon.setIcon(self._idle_icon)
+        self.tray_icon.setToolTip(self._tooltip)  # a rebuild (language, theme) must keep it
 
         # QSystemTrayIcon.setContextMenu() does not take ownership: the menu needs a parent and
         # a Python reference, otherwise it is collected and its actions never fire.
-        tray_menu = BadgeTrayMenu(window, self._settings.theme_palette)
+        modern = self._settings.is_modern()
+        tray_menu = BadgeTrayMenu(window, self._settings.theme_palette, modern=modern)
         self.tray_menu = tray_menu
         tr = self._ctx.tr
         sp = QStyle.StandardPixmap
+        self._header_status = None
+        if modern:
+            self._header_status = tray_menu.add_header(app_icon(), "WhisperTyper", "")
+            self._update_header()
+            tray_menu.addSeparator()
 
         def add(pixmap: QStyle.StandardPixmap, label_key: str, key: str, handler: Callable[[], None]) -> QAction:
             # BadgeTrayMenu paints <key> as a badge and triggers the action when it is pressed.
             # Letters are fixed in code so they stay unique regardless of the UI language.
-            action = tray_menu.addAction(style.standardIcon(pixmap), tr(label_key))
+            icon = (line_icon(_MODERN_ICONS[label_key], self._menu_icon_color()) if modern
+                    else style.standardIcon(pixmap))
+            action = tray_menu.addAction(icon, tr(label_key))
             assert action is not None
             tray_menu.register_badge(key, action)
             action.triggered.connect(lambda _checked=False: handler())
@@ -386,5 +438,8 @@ class TrayController(QObject):
             return
         available = self.updater.available
         self.update_action.setText(self._ctx.tr("tray_update_available_action" if available else "tray_update_action"))
+        if self._header_status is not None:
+            colors = self._settings.theme_palette()
+            self.update_action.setIcon(line_icon("download", colors["accent"] if available else self._menu_icon_color()))
         self.tray_menu.update_available = available
         self.tray_menu.update()

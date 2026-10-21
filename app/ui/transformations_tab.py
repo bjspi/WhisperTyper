@@ -146,6 +146,10 @@ class TransformationsEditor(QObject):
         else:
             self.changed.emit()
 
+    def entry(self, entry_id: str) -> Optional[Dict[str, Any]]:
+        """The entry with this list item ID (for painting its row), or None."""
+        return self._entries.get(entry_id)
+
     def entries(self) -> List[Dict[str, Any]]:
         """Commit the visible edits and return the entries in display order."""
         self._commit_editor()

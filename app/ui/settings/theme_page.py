@@ -18,6 +18,8 @@ class ThemePage(SettingsWindowBase):
 
     _brand_sub_label: QLabel
     _brand_hotkey_badge: QLabel
+    _brand_header: QWidget
+    _brand_row: QHBoxLayout
     _theme_watch_connected: bool = False
 
     def _install_brand_header(self) -> None:
@@ -57,6 +59,7 @@ class ThemePage(SettingsWindowBase):
 
         # Below the File/Help menu bar, above the tabs.
         self.main_layout.insertWidget(1, header)
+        self._brand_header, self._brand_row = header, row
         self.update_brand_header()
 
     def update_brand_header(self) -> None:
@@ -68,10 +71,13 @@ class ThemePage(SettingsWindowBase):
     def set_playback_active(self, active: bool) -> None:
         """Show Play, or Stop while the last recording plays."""
         self._playback_active = active
+        icon = self._playback_icon(active)
         style = self.style()
-        if style is not None:
+        if icon is None and style is not None:
             pixmap = QStyle.StandardPixmap.SP_MediaStop if active else QStyle.StandardPixmap.SP_MediaPlay
-            self.brand_play_button.setIcon(style.standardIcon(pixmap))
+            icon = style.standardIcon(pixmap)
+        if icon is not None:
+            self.brand_play_button.setIcon(icon)
         self.brand_play_button.setToolTip(
             self.translator.tr("playback_stop_tooltip" if active else "playback_play_tooltip"))
 
@@ -80,24 +86,27 @@ class ThemePage(SettingsWindowBase):
         return self._theme_palette or theme.palette(False)
 
     def apply_theme(self) -> None:
-        """Apply the light/dark teal stylesheet (config 'color_theme': system/light/dark)."""
+        """Apply the light/dark stylesheet (config 'color_theme': system/light/dark) in the configured design."""
         dark = theme.resolve_dark(self.config.get("color_theme", "system"), QApplication.instance())
-        self._theme_palette = theme.palette(dark)
-        qss = theme.build_stylesheet(dark)
+        modern = self._modern
+        self._theme_palette = theme.palette(dark, modern)
+        self._apply_design(modern, self._theme_palette)
+        qss = theme.build_stylesheet(dark, modern)
         try:
-            qss += theme.write_icon_qss(dark, os.path.join(APP_DATA_DIR, "theme_icons"))
+            qss += theme.write_icon_qss(dark, os.path.join(APP_DATA_DIR, "theme_icons"), modern)
         except Exception:
             pass  # icons are cosmetic; never let a write failure break theming
         self.setStyleSheet(qss)
         self._apply_prompt_list_icons()
         app = QApplication.instance()
         if isinstance(app, QApplication):
-            app.setStyleSheet(theme.tooltip_stylesheet(dark))
+            app.setStyleSheet(theme.tooltip_stylesheet(dark, modern))
         self._replacements_tab.highlighter.set_theme(dark)
         # State colours (incomplete sections, token counter, FFmpeg status) are QSS property
         # selectors and follow the new palette by themselves; only the header is drawn by hand.
         self.update_brand_header()
         self._connect_theme_watch()
+        self.appearance_changed.emit()
 
     def _apply_prompt_list_icons(self) -> None:
         """Icon-only "+" / "-" below the prompt list, coloured for the active theme."""

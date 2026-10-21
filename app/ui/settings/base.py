@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from app.ui.api_keys import ApiKeysTab
     from app.ui.replacements import ReplacementsTab
     from app.ui.settings.collapsible import CollapsibleSection
+    from app.ui.settings.modern_rows import SettingRow
     from app.ui.transformations_tab import TransformationsEditor
 
 
@@ -53,6 +54,10 @@ class SettingsWindowBase(QWidget):
     ffmpeg_version_ready = pyqtSignal(object)
     #: A header playback ended (its generation number), emitted from the playback thread.
     playback_finished = pyqtSignal(int)
+    #: The stylesheet was (re)applied: colour theme or design changed; the tray menu redraws its icons.
+    appearance_changed = pyqtSignal()
+    #: The user asked to restart now (to apply a design change).
+    restart_requested = pyqtSignal()
 
     ctx: AppContext
     config: Dict[str, Any]
@@ -62,6 +67,8 @@ class SettingsWindowBase(QWidget):
     _replacements_tab: ReplacementsTab
     _transformations: TransformationsEditor
     _theme_palette: Optional[Dict[str, str]] = None
+    #: The modern design (sidebar, cards) is active.
+    _modern: bool = False
 
     # Window chrome
     main_layout: QVBoxLayout
@@ -76,6 +83,7 @@ class SettingsWindowBase(QWidget):
     github_action: QAction
     tabs: QTabWidget
     save_button: QPushButton
+    footer_row: QHBoxLayout
     transcription_tab: QWidget
     post_rephrasing_tab: QWidget
     general_tab: QWidget
@@ -173,6 +181,9 @@ class SettingsWindowBase(QWidget):
     rephrasing_key_add_button: QPushButton
 
     # Prompts page
+    pr_layout: QVBoxLayout
+    post_rp_editor_scroll: QScrollArea
+    post_rp_editor_container: QWidget
     transformations_tab_description_label: QLabel
     transformations_unavailable_label: QLabel
     transformations_info_label: QLabel
@@ -203,6 +214,11 @@ class SettingsWindowBase(QWidget):
 
     # General page
     general_layout: QVBoxLayout
+    general_scroll_widget: QWidget
+    general_selectors_layout: QHBoxLayout
+    basics_group: QGroupBox
+    ffmpeg_group: QGroupBox
+    microphone_group: QGroupBox
     ui_language_label: QLabel
     ui_language_selector: QComboBox
     color_theme_label: QLabel
@@ -226,6 +242,7 @@ class SettingsWindowBase(QWidget):
     recording_prompt_overlay_system_position_checkbox: QCheckBox
     recording_prompt_overlay_digit_keys_checkbox: QCheckBox
     quit_without_confirmation_checkbox: QCheckBox
+    modern_design_checkbox: QCheckBox
     misc_group: QGroupBox
     misc_layout: QVBoxLayout
     text_insertion_group: QGroupBox
@@ -245,6 +262,26 @@ class SettingsWindowBase(QWidget):
 
     def apply_theme(self) -> None:
         """Apply the configured light/dark stylesheet."""
+        raise NotImplementedError
+
+    def theme_palette(self) -> Dict[str, str]:
+        """Colours of the active theme."""
+        raise NotImplementedError
+
+    def _apply_design(self, modern: bool, colors: Dict[str, str]) -> None:
+        """Show the modern chrome or the classic one."""
+        raise NotImplementedError
+
+    def _row(self, title: Optional[QLabel], *controls: object, **options: object) -> "SettingRow":
+        """A row of the modern card layout."""
+        raise NotImplementedError
+
+    def _switch(self, checkbox: QCheckBox) -> "SettingRow":
+        """A modern row for a checkbox."""
+        raise NotImplementedError
+
+    def _playback_icon(self, active: bool) -> Optional[QIcon]:
+        """Modern design: the play/stop icon of the sidebar button (None in the classic design)."""
         raise NotImplementedError
 
     def swap_default_transcription_prompt(self, input_language: str, ui_language: str) -> None:

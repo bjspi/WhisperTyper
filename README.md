@@ -64,17 +64,17 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
   <tr>
     <td align="center" width="50%" valign="top">
       <a href="screenshots/app/settings-transcription.jpg" target="_blank">
-        <img src="screenshots/app/settings-transcription.jpg" alt="Transcription settings: API endpoint, model, hotkey, microphone options" />
+        <img src="screenshots/app/settings-transcription.jpg" alt="Transcription settings: microphone, provider, model, temperature, key, prompt and quality fallback" />
       </a>
       <br />
-      <sub><b>🎤 API Providers</b> — Transcription and rephrasing API side by side (OpenAI, Groq, or any compatible endpoint) with model &amp; temperature, both hotkeys with optional push-to-talk, recording options such as volume gain and a pre-warmed mic, and a collapsible FFmpeg section (auto-detected) for video files.</sub>
+      <sub><b>🎤 Transcription</b> — Microphone, provider (OpenAI, Groq, or any compatible endpoint), model &amp; temperature, the API key in use with a one-click connection test, the transcription prompt and an optional second pass for doubtful results.</sub>
     </td>
     <td align="center" width="50%" valign="top">
       <a href="screenshots/app/settings-rephrase-liveprompt.jpg" target="_blank">
-        <img src="screenshots/app/settings-rephrase-liveprompt.jpg" alt="Rephrase and LivePrompt settings: chat API, trigger words, system prompt" />
+        <img src="screenshots/app/settings-rephrase-liveprompt.jpg" alt="Prompts page with the LivePrompt instruction selected: system prompt and trigger words" />
       </a>
       <br />
-      <sub><b>🚀 Rephrasing &amp; LivePrompt</b> — The rephrasing API on the API Providers tab drives prompts and the ✨ instruction (LivePrompt), whose trigger words turn your speech into a live AI command: start a recording with <i>“prompt, …”</i> and the AI's answer is typed right where your cursor is.</sub>
+      <sub><b>🚀 LivePrompt</b> — The ✨ instruction turns your speech into a live AI command: start a recording with <i>“prompt, …”</i> and the AI's answer is typed right where your cursor is. Trigger words, scan depth and the system prompt are yours to change.</sub>
     </td>
   </tr>
   <tr>
@@ -86,11 +86,27 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
       <sub><b>✍️ Prompts</b> — Up to 10 custom one-click prompts (translate, summarize, polish an e-mail, …). Select text in any application, press the rephrase hotkey, and pick the prompt from a popup menu. One prompt can be applied automatically to every transcription.</sub>
     </td>
     <td align="center" width="50%" valign="top">
-      <a href="screenshots/app/settings-general.jpg" target="_blank">
-        <img src="screenshots/app/settings-general.jpg" alt="General settings: UI language, theme, proxy, clipboard and logging options" />
+      <a href="screenshots/app/settings-recording.jpg" target="_blank">
+        <img src="screenshots/app/settings-recording.jpg" alt="Hotkeys and recording settings: hotkeys, push-to-talk, input language, gain, pre-warmed microphone" />
       </a>
       <br />
-      <sub><b>🔧 General</b> — UI language (EN/DE/ES/FR), light/dark/system theme, input device, proxy support, IPv4/IPv6 connection choice, log retention, and the clipboard-safe mode that restores your clipboard after every paste.</sub>
+      <sub><b>⌨️ Hotkeys &amp; recording</b> — Both hotkeys with optional push-to-talk, input language, volume gain with automatic normalization, a pre-warmed microphone for an instant start, and a guard against accidental taps.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%" valign="top">
+      <a href="screenshots/app/settings-general.jpg" target="_blank">
+        <img src="screenshots/app/settings-general.jpg" alt="General settings: UI language, theme, design, proxy and clipboard options" />
+      </a>
+      <br />
+      <sub><b>🔧 General</b> — UI language (EN/DE/ES/FR), light/dark/system theme, modern or classic design, proxy support, IPv4/IPv6 connection choice, and the clipboard-safe mode that restores your clipboard after every paste.</sub>
+    </td>
+    <td align="center" width="50%" valign="top">
+      <a href="screenshots/app/settings-advanced.jpg" target="_blank">
+        <img src="screenshots/app/settings-advanced.jpg" alt="Advanced settings: text insertion, logging and FFmpeg" />
+      </a>
+      <br />
+      <sub><b>🧰 Advanced</b> — How text is inserted (direct input or copy/paste), what is logged and for how long, and FFmpeg (auto-detected) for video files and long recordings.</sub>
     </td>
   </tr>
   <tr>
@@ -99,7 +115,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
         <img src="screenshots/app/tray-menu.jpg" alt="System tray menu with all quick actions" width="70%" />
       </a>
       <br />
-      <sub><b>🤫 System Tray</b> — The whole app lives in a tray icon: copy or re-transcribe the last recording, transcribe audio/video files, jump to the log, and self-update via <i>git pull</i> — all one click away.</sub>
+      <sub><b>🤫 System Tray</b> — The whole app lives in a tray icon: copy or re-transcribe the last recording, transcribe audio/video files, jump to the log, and self-update via <i>git pull</i> — every entry also has a one-letter shortcut.</sub>
     </td>
     <td align="center" width="50%" valign="top">
       <a href="screenshots/app/liveprompt-help.jpg" target="_blank">
