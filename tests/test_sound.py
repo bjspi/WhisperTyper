@@ -7,8 +7,10 @@ import wave
 
 import pytest
 
-from app.audio import sound as sound_module
-from app.audio.sound import SoundPlayer
+pytest.importorskip("pyaudio")  # Exercised by the Windows audio/clipboard job, without native devices.
+
+from app.audio import sound as sound_module  # noqa: E402
+from app.audio.sound import SoundPlayer  # noqa: E402
 
 
 class FakeStream:
