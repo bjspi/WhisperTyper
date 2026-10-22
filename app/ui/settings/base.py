@@ -37,8 +37,10 @@ from app.core.i18n import TranslationManager
 if TYPE_CHECKING:
     from PyQt6.QtCore import QTimer
 
+    from app.controllers.local_engine import LocalEngineController
     from app.controllers.recording import RecordingController
     from app.ui.api_keys import ApiKeysTab
+    from app.ui.local_engine_tab import LocalEngineTab
     from app.ui.replacements import ReplacementsTab
     from app.ui.settings.collapsible import CollapsibleSection
     from app.ui.settings.modern_rows import SettingRow
@@ -64,6 +66,8 @@ class SettingsWindowBase(QWidget):
     translator: TranslationManager
     _recording: RecordingController
     _api_keys_tab: ApiKeysTab
+    _local_engine_tab: LocalEngineTab
+    local_engine: LocalEngineController
     _replacements_tab: ReplacementsTab
     _transformations: TransformationsEditor
     _theme_palette: Optional[Dict[str, str]] = None
@@ -113,6 +117,8 @@ class SettingsWindowBase(QWidget):
     transcription_key_status_label: QLabel
     transcription_key_choose_button: QPushButton
     transcription_key_add_button: QPushButton
+    transcription_key_status_row: QHBoxLayout
+    transcription_local_setup_button: QPushButton
     model_label: QLabel
     model_dropdown: QComboBox
     transcription_temp_label_title: QLabel

@@ -114,6 +114,22 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "transcription_second_pass": "doubtful",
     "transcription_second_pass_logprob": -0.5,
     "transcription_second_pass_prompt": "",
+    # Local transcription (app/local_engine): off by default; enabling it offers to install its packages.
+    # It runs only while needed: the "Local" provider is selected or the server is on.
+    "local_engine_enabled": False,
+    "local_device": "auto",  # "auto" | "cuda" | "intel_gpu" | "intel_npu" | "openvino_cpu" | "cpu"
+    "local_model_openvino": "OpenVINO/whisper-large-v3-turbo-int4-ov",
+    "local_model_ctranslate2": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    "local_models_dir": "",  # "" = <app data>/local_models
+    # "preload" loads the model at startup, "on_demand" when a recording starts.
+    "local_load_strategy": "preload",
+    # Minutes without use after which the model is unloaded (frees GPU memory). 0 = never; not while the server is on.
+    "local_idle_unload_minutes": 0,
+    "local_vad": True,  # remove silence before transcribing (fewer invented sentences)
+    # OpenAI-compatible endpoint for other programs (http://<host>:<port>/v1/audio/transcriptions).
+    "local_server_enabled": False,
+    "local_server_host": "127.0.0.1",
+    "local_server_port": 9017,
     "windows_keep_mic_hot": is_WINDOWS,
     "windows_keep_mic_hot_idle_minutes": 15,
     # Recordings shorter than this (seconds) are treated as a mis-tap and discarded without

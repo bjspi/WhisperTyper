@@ -14,8 +14,11 @@ from typing import Any, Callable, Dict, Optional
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton
 
+from app.core.api_keys import LOCAL_PROVIDER, provider_for_url
+from app.core.models import LOCAL_TRANSCRIPTION_MODEL
 from app.core.redaction import redact_for_log
 from app.core.textutil import clean_model_name
+from app.local_engine.supervisor import READY
 from app.services import net
 from app.services.http_transport import request
 from app.services.netutil import PX_PROXY_PORT, is_px_running
@@ -103,10 +106,16 @@ class ConnectionTester(QObject):
         w = self._w
         api_url = w.api_endpoint_input.text().strip()
         api_key = w._ui_api_key("transcription")
-        if not api_url or not w._ui_key_ready("transcription"):
+        model = clean_model_name(w.model_dropdown.currentText())
+        if provider_for_url(api_url) == LOCAL_PROVIDER:
+            # The running engine is tested; it uses the saved settings of its page.
+            if w.local_engine.status.state != READY:
+                self._fail("api_test_fail_title", "local_test_not_ready")
+                return
+            api_url, api_key, model = w.local_engine.endpoint(), "", LOCAL_TRANSCRIPTION_MODEL
+        elif not api_url or not w._ui_key_ready("transcription"):
             self._fail("api_test_fail_title", "recording_no_api_keys")
             return
-        model = clean_model_name(w.model_dropdown.currentText())
         proxies = self._form_proxies()
 
         def probe() -> Callable[[], None]:

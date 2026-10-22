@@ -13,6 +13,7 @@ from PyQt6.QtTest import QTest  # noqa: E402
 
 from app.audio.store import RecordingStore  # noqa: E402
 from app.context import AppContext  # noqa: E402
+from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED  # noqa: E402
 from app.core.config_store import ConfigStore  # noqa: E402
 from app.core.hotkeys import normalize_hotkey_string  # noqa: E402
 from app.ui.settings.collapsible import CollapsibleSection  # noqa: E402
@@ -78,10 +79,11 @@ def test_model_without_temperature_disables_the_slider_and_says_why(window):
     assert window.rephrasing_temp_slider.isEnabled() and window.rephrasing_temp_label.toolTip() == ""
 
 
-def test_tab_order_puts_api_keys_right_after_the_api_providers(window):
+def test_tab_order_puts_api_keys_and_local_transcription_right_after_the_api_providers(window):
     pages = [window.tabs.widget(index) for index in range(window.tabs.count())]
-    assert pages == [window.transcription_tab, window._api_keys_tab, window.post_rephrasing_tab,
-                     window._replacements_tab, window.general_tab]
+    local = [window._local_engine_tab] if LOCAL_ENGINE_SUPPORTED else []
+    assert pages == [window.transcription_tab, window._api_keys_tab, *local,
+                     window.post_rephrasing_tab, window._replacements_tab, window.general_tab]
     assert window.tabs.tabText(0) == "API Providers"
 
 
@@ -114,18 +116,23 @@ def test_modern_design_splits_pages_and_mirrors_them_in_the_sidebar(modern_windo
     assert window.is_modern() and window.design_extra_width() > 0
     assert window.tabs.tabBar().isHidden() and window.menu_bar.isHidden() and not window._sidebar.isHidden()
     pages = [window.tabs.widget(index) for index in range(window.tabs.count())]
-    assert window.tabs.count() == window._nav.count() == 8
+    # The local transcription page (after API keys) is not offered on macOS.
+    shift = 1 if LOCAL_ENGINE_SUPPORTED else 0
+    assert window.tabs.count() == window._nav.count() == 8 + shift
     assert [pages.index(page) for page in (window.transcription_tab, window._api_keys_tab, window.post_rephrasing_tab,
-                                           window._replacements_tab, window.general_tab)] == [0, 2, 4, 5, 6]
+                                           window._replacements_tab, window.general_tab)] == [
+        0, 2, 4 + shift, 5 + shift, 6 + shift]
+    assert not LOCAL_ENGINE_SUPPORTED or pages.index(window._local_engine_tab) == 3
     assert pages[1].isAncestorOf(window.shared_api_group)
-    assert pages[3].isAncestorOf(window.hotkeys_group) and pages[3].isAncestorOf(window.recording_group)
-    assert pages[7].isAncestorOf(window.text_insertion_group) and pages[7].isAncestorOf(window.ffmpeg_group)
+    recording, advanced = pages[3 + shift], pages[7 + shift]
+    assert recording.isAncestorOf(window.hotkeys_group) and recording.isAncestorOf(window.recording_group)
+    assert advanced.isAncestorOf(window.text_insertion_group) and advanced.isAncestorOf(window.ffmpeg_group)
     assert window.transcription_prompt_section.is_expanded() and window.second_pass_section.is_expanded()
     assert all(window.tabs.tabText(index) for index in range(window.tabs.count()))
-    window._nav.setCurrentRow(3)
-    assert window.tabs.currentIndex() == 3 and window._page_title.text() == "Hotkeys & recording"
+    window._nav.setCurrentRow(3 + shift)
+    assert window.tabs.currentIndex() == 3 + shift and window._page_title.text() == "Hotkeys & recording"
     window.tabs.setCurrentWidget(window.general_tab)
-    assert window._nav.currentRow() == 6
+    assert window._nav.currentRow() == 6 + shift
 
 
 def test_modern_rows_follow_their_control_and_toggle_on_click(modern_window):

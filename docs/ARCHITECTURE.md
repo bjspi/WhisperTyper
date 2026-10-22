@@ -32,7 +32,7 @@ flowchart TB
     end
 
     subgraph controllers ["Controllers (app/controllers/) — one runtime responsibility each"]
-        CTRL["recording · transcription · text_output · hotkeys · tray<br/>post_rephrase · permissions · warmup · workers · file_actions"]
+        CTRL["recording · transcription · text_output · hotkeys · tray · local_engine<br/>post_rephrase · permissions · warmup · workers · file_actions"]
     end
 
     subgraph ui ["UI (app/ui/)"]
@@ -205,6 +205,13 @@ sequenceDiagram
 - **Self-update via git.** When run from a source checkout, the tray offers a
   `git pull --ff-only` update; a background `git fetch` watcher shows a green dot when
   upstream is ahead. Frozen (PyInstaller) builds never see this menu entry.
+- **Local transcription in a child process.** `app/local_engine/` runs Whisper as
+  `python -m app.local_engine.server` (FastAPI, OpenAI-compatible) supervised by a watchdog
+  thread (`supervisor.py`). The app never imports OpenVINO, CTranslate2 or CUDA: a crashed
+  or hung GPU cannot take the tray down, unloading frees the GPU memory for real, and the
+  "Local" provider reuses the normal HTTP transcription path. The packages are optional and
+  installed on first use; on macOS the feature is switched off. See
+  [LOCAL_TRANSCRIPTION.md](LOCAL_TRANSCRIPTION.md).
 - **Privacy in logs.** Transcripts and prompts are redacted in log output by default
   (`app/core/redaction.py`); only the first few characters survive.
 

@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app import __version__
+from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED
 from app.core.constants import WINDOW_MIN_WIDTH
 from app.ui.line_icons import RoundedMenu, line_icon
 from app.ui.settings.base import SettingsWindowBase
@@ -225,6 +226,8 @@ class ModernChrome(SettingsWindowBase):
             (self.transcription_tab, "mic", "page_transcription_title", "page_transcription_subtitle"),
             (rephrasing, "pen", "page_rephrasing_title", "page_rephrasing_subtitle"),
             (self._api_keys_tab, "key", "tab_api_keys", "tooltip_tab_api_keys"),
+            *([(self._local_engine_tab, "chip", "tab_local_engine", "tooltip_tab_local_engine")]
+              if LOCAL_ENGINE_SUPPORTED else []),
             (recording, "keyboard", "page_recording_title", "page_recording_subtitle"),
             (self.post_rephrasing_tab, "sparkles", "tab_transformations", "tooltip_tab_transformations"),
             (self._replacements_tab, "replace", "tab_replacements", "tooltip_tab_replacements"),
@@ -263,7 +266,9 @@ class ModernChrome(SettingsWindowBase):
         if not self._modern:
             return
         self.ensurePolished()
-        content = max((self._unscrolled_height(self.tabs.widget(index)) for index in range(self.tabs.count())),
+        # The local transcription page is long and rarely visited: it scrolls instead of growing the window.
+        pages = [self.tabs.widget(index) for index in range(self.tabs.count())]
+        content = max((self._unscrolled_height(page) for page in pages if page is not self._local_engine_tab),
                       default=0)
         margins = self._page_area.contentsMargins()
         chrome = (self._page_header.sizeHint().height() + self.footer.sizeHint().height()
@@ -306,7 +311,7 @@ class ModernChrome(SettingsWindowBase):
         """Rebuild the cards of the API providers and General pages as rows (modern design, at startup)."""
         self._rows = []
         row, switch = self._row, self._switch
-        for group, prefix_widgets, sections in (
+        for group, prefix_widgets, sections, extra in (
             (self.transcription_api_group,
              (self.transcription_provider_label, self.transcription_provider_selector, self.model_label,
               self.model_dropdown, self.transcription_temp_label_title, self.transcription_temp_slider,
@@ -314,14 +319,14 @@ class ModernChrome(SettingsWindowBase):
               self.transcription_key_profile_selector, self.transcription_key_status_label,
               self.transcription_key_choose_button, self.transcription_key_add_button,
               self.test_transcription_api_button),
-             (self.transcription_prompt_section, self.second_pass_section)),
+             (self.transcription_prompt_section, self.second_pass_section), (self.transcription_local_setup_button,)),
             (self.shared_api_group,
              (self.rephrasing_provider_label, self.rephrasing_provider_selector, self.rephrasing_model_label,
               self.rephrasing_model_input, self.rephrasing_temp_label_title, self.rephrasing_temp_slider,
               self.rephrasing_temp_label, self.rephrasing_api_url_label, self.rephrasing_api_url_input,
               self.rephrasing_api_key_label, self.rephrasing_key_profile_selector, self.rephrasing_key_status_label,
               self.rephrasing_key_choose_button, self.rephrasing_key_add_button, self.test_rephrasing_api_button),
-             ()),
+             (), ()),
         ):
             (provider_label, provider, model_label, model, temp_label, temp_slider, temp_value, url_label, url,
              key_label, key, status, choose, add, test) = prefix_widgets
@@ -331,7 +336,7 @@ class ModernChrome(SettingsWindowBase):
                 row(provider_label, provider), row(model_label, model),
                 row(temp_label, temp_slider, temp_value, follow=temp_slider),
                 row(url_label, url), row(key_label, key),
-                row(status, choose, add, test, follow=status, plain_title=True),
+                row(status, choose, add, *extra, test, follow=status, plain_title=True),
                 *sections,
             ])
         self._rebuild(self.second_pass_section.content, [

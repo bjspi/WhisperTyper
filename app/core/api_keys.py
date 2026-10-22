@@ -21,6 +21,13 @@ _TASK_API_PATHS = {"transcription": "audio/transcriptions", "rephrasing": "chat/
 _KEY_PREFIXES = {"openai": "sk-", "groq": "gsk"}
 #: Key selection of a custom endpoint that needs no key: requests go out without ``Authorization``.
 NO_KEY_PROFILE_ID = "none"
+#: Transcription on this computer (``app.local_engine``): no URL, model or key to configure.
+LOCAL_PROVIDER = "local"
+#: Stored as the transcription endpoint while the local engine is selected; requests go to the
+#: engine's real address (see ``LocalEngineController.endpoint``).
+LOCAL_ENDPOINT = "local://engine/v1/audio/transcriptions"
+#: Providers of the transcription selector (the local engine only transcribes).
+TRANSCRIPTION_PROVIDERS = (*PROVIDER_NAMES, LOCAL_PROVIDER)
 
 
 def masked_api_key(key: str) -> str:
@@ -32,18 +39,24 @@ def masked_api_key(key: str) -> str:
 def provider_for_url(url: str) -> str:
     """Recognize official provider hosts, without accepting lookalike domains."""
     try:
-        host = urlsplit(url.strip()).hostname
+        parts = urlsplit(url.strip())
+        host = parts.hostname
     except ValueError:
         return "custom"
+    if parts.scheme == "local":
+        return LOCAL_PROVIDER
     return {"api.openai.com": "openai", "api.groq.com": "groq"}.get(host or "", "custom")
 
 
 def is_local_endpoint(url: str) -> bool:
-    """True for an endpoint on this computer (localhost, 127.0.0.0/8, ::1)."""
+    """True for an endpoint on this computer (localhost, 127.0.0.0/8, ::1, the local engine)."""
     try:
-        host = (urlsplit(url.strip()).hostname or "").rstrip(".").lower()
+        parts = urlsplit(url.strip())
+        host = (parts.hostname or "").rstrip(".").lower()
     except ValueError:
         return False
+    if parts.scheme == "local":
+        return True
     if host == "localhost" or host.endswith(".localhost"):
         return True
     try:
@@ -59,6 +72,8 @@ def auth_headers(api_key: str) -> dict[str, str]:
 
 def provider_endpoint(provider: str, task: str) -> str:
     """Official endpoint of ``provider`` for ``task``; empty for a custom provider."""
+    if provider == LOCAL_PROVIDER:
+        return LOCAL_ENDPOINT if task == "transcription" else ""
     base = _PROVIDER_API_BASES.get(provider)
     return base + _TASK_API_PATHS[task] if base else ""
 
@@ -99,8 +114,8 @@ def resolve_key_profile(config: Mapping[str, Any], task: str) -> dict[str, str] 
     endpoint_field, selection_field, _ = TASK_KEY_FIELDS[task]
     provider = provider_for_url(config.get(endpoint_field, ""))
     selected_id = config.get(selection_field, "")
-    if provider == "custom" and selected_id == NO_KEY_PROFILE_ID:
-        return {"id": NO_KEY_PROFILE_ID, "name": "", "provider": "custom", "key": ""}
+    if provider == LOCAL_PROVIDER or (provider == "custom" and selected_id == NO_KEY_PROFILE_ID):
+        return {"id": NO_KEY_PROFILE_ID, "name": "", "provider": provider, "key": ""}
     usable = [profile for profile in config.get("api_key_profiles", [])
               if profile["provider"] == provider and _clean_key(profile["key"])]
     chosen = next((profile for profile in usable if profile["id"] == selected_id), None)
@@ -183,6 +198,7 @@ def migrate_api_keys(config: dict[str, Any]) -> bool:
         key = legacy_key.strip() if isinstance(legacy_key, str) else ""
         if key:
             provider = provider_for_url(config[endpoint_field])
+            provider = provider if provider in PROVIDER_NAMES else "custom"
             profile = next((p for p in profiles if p["key"] == key and p["provider"] == provider), None)
             if profile is None:
                 profile = {"id": uuid.uuid4().hex, "name": f"{PROVIDER_NAMES[provider]} ({task})", "provider": provider, "key": key}

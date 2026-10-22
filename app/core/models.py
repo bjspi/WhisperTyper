@@ -47,6 +47,11 @@ TRANSCRIPTION_MODELS: Dict[str, ModelSpec] = {
     "whisper-large-v3-turbo": ModelSpec("groq", prompt_token_limit=WHISPER_PROMPT_TOKEN_LIMIT, diagnostics="verbose"),
     "whisper-large-v3": ModelSpec("groq", prompt_token_limit=WHISPER_PROMPT_TOKEN_LIMIT, diagnostics="verbose"),
 }
+#: Model name sent to the local engine, which runs the model chosen on its own settings page. It
+#: reports no confidence data, so the quality fallback never runs for it.
+LOCAL_TRANSCRIPTION_MODEL = "local-whisper"
+TRANSCRIPTION_MODELS[LOCAL_TRANSCRIPTION_MODEL] = ModelSpec("local", temperature=False,
+                                                            prompt_token_limit=WHISPER_PROMPT_TOKEN_LIMIT)
 
 # Reasoning effort scales as documented per model family.
 _GPT5_EFFORTS = ("minimal", "low", "medium", "high")
@@ -96,9 +101,11 @@ _SNAPSHOT_DATE = re.compile(r"-\d{4}-\d{2}-\d{2}$")
 
 
 def _options_by_provider(catalog: Dict[str, ModelSpec]) -> Dict[str, List[str]]:
-    """Dropdown entries per provider, in catalog order."""
+    """Dropdown entries per provider, in catalog order (the local engine has no model choice here)."""
     options: Dict[str, List[str]] = {}
     for model_id, spec in catalog.items():
+        if spec.provider == "local":
+            continue
         options.setdefault(spec.provider, []).append(model_id)
     return options
 

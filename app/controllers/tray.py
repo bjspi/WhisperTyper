@@ -10,9 +10,11 @@ from PyQt6.QtCore import QObject, QPoint, QTimer
 from PyQt6.QtGui import QAction, QCursor, QIcon
 from PyQt6.QtWidgets import QApplication, QDialogButtonBox, QFileDialog, QLabel, QMessageBox, QStyle, QSystemTrayIcon, QWidget
 
+from app import __version__
 from app.bootstrap import requirements_install_command
 from app.context import AppContext
 from app.controllers.file_actions import FileActions
+from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED, UNAVAILABLE, LocalEngineController
 from app.controllers.recording import RecordingController
 from app.controllers.transcription import TranscriptionPipeline
 from app.core.api_keys import transcription_configured
@@ -20,6 +22,7 @@ from app.core.audio_formats import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, requires_
 from app.core.constants import APP_DATA_DIR
 from app.core.env import is_MACOS
 from app.core.hotkeys import pretty_hotkey
+from app.local_engine.supervisor import OFF, READY, EngineStatus
 from app.services import bad_recordings
 from app.services.ffmpeg import resolve_ffmpeg
 from app.services.gitutil import git_available
@@ -27,6 +30,7 @@ from app.services.updater import GitUpdater
 from app.ui import macos_icons
 from app.ui.durations import BALLOON_INFO_MS, BALLOON_SHORT_MS, BALLOON_WARNING_MS
 from app.ui.line_icons import line_icon
+from app.ui.local_engine_tab import status_text
 from app.ui.tray_icons import app_icon, recording_level_icon, tray_icon
 from app.ui.tray_menu import BadgeTrayMenu
 from app.ui.update_dialog import run_update_dialog
@@ -67,13 +71,17 @@ class SettingsWindowLike(Protocol):
     def is_modern(self) -> bool:
         """Whether the window shows the modern design (the tray menu matches it)."""
 
+    def show_local_engine(self) -> None:
+        """Open the settings window on the local transcription page."""
+
 
 class TrayController(QObject):
     """Own the tray icon, its context menu and the recording-state icon."""
 
     def __init__(self, ctx: AppContext, window: QWidget, settings: SettingsWindowLike, *,
                  recording: RecordingController, pipeline: TranscriptionPipeline, files: FileActions,
-                 restart: Callable[[], None], quit_app: Callable[[], None]) -> None:
+                 restart: Callable[[], None], quit_app: Callable[[], None],
+                 local_engine: Optional[LocalEngineController] = None) -> None:
         """Icon, menu and dialogs belong to ``window`` (the settings window) so they share its theme."""
         super().__init__()
         self._ctx = ctx
@@ -107,6 +115,11 @@ class TrayController(QObject):
         self.update_action: Optional[QAction] = None
         self._header_status: Optional[QLabel] = None
         self._tooltip = ""
+        self._local_engine = local_engine
+        self._local_menu: Optional[BadgeTrayMenu] = None
+        self._local_actions: Dict[str, QAction] = {}
+        if local_engine is not None:
+            local_engine.status_changed.connect(lambda _status: self._refresh_local_menu())
         recording.state_changed.connect(self.set_recording)
         ctx.files_changed.connect(self.refresh_actions)
 
@@ -219,7 +232,7 @@ class TrayController(QObject):
         sp = QStyle.StandardPixmap
         self._header_status = None
         if modern:
-            self._header_status = tray_menu.add_header(app_icon(), "WhisperTyper", "")
+            self._header_status = tray_menu.add_header(app_icon(), "WhisperTyper", "", __version__)
             self._update_header()
             tray_menu.addSeparator()
 
@@ -248,6 +261,7 @@ class TrayController(QObject):
         # "last recording" stays). Enabled only while recording.
         self.cancel_action = add(sp.SP_DialogCancelButton, "tray_cancel_action", "x", self._recording.cancel)
         self.cancel_action.setEnabled(self._recording.is_recording)
+        self._build_local_menu(tray_menu, modern)
         tray_menu.addSeparator()
         self.open_log_action = add(sp.SP_FileDialogInfoView, "tray_log_action", "l", self._files.open_log_file)
         add(sp.SP_DriveNetIcon, "menu_help_github", "g", self._files.open_github_link)
@@ -281,6 +295,73 @@ class TrayController(QObject):
         self.retranscribe_action.setEnabled(exists)
         self.mark_bad_action.setEnabled(exists)
         self.open_log_action.setEnabled(self._files.log_file_exists())
+        self._refresh_local_menu()
+
+    # --- Local transcription submenu ---------------------------------------------------
+    def _build_local_menu(self, tray_menu: BadgeTrayMenu, modern: bool) -> None:
+        """Status and actions of the local engine; shown only while it is enabled."""
+        self._local_menu, self._local_actions = None, {}
+        engine = self._local_engine
+        if engine is None or not LOCAL_ENGINE_SUPPORTED:
+            return
+        tr = self._ctx.tr
+        menu = BadgeTrayMenu(self._window, self._settings.theme_palette, modern=modern)
+        menu.setTitle(tr("tray_local_menu"))
+        if modern:
+            menu.setIcon(line_icon("chip", self._menu_icon_color()))
+        status = menu.addAction("")
+        assert status is not None
+        status.setEnabled(False)
+        menu.addSeparator()
+        actions = {"status": status}
+        for key, label_key, icon, handler in (
+            ("load", "local_load_button", "download", self._toggle_local_engine),
+            ("self_test", "local_self_test_button", "check", engine.self_test),
+            ("restart", "local_restart_button", "restart", engine.restart),
+            ("copy", "local_server_copy_button", "copy", self._copy_local_endpoint),
+            ("log", "local_log_button", "log", self._files.open_engine_log_file),
+            ("settings", "tray_local_settings", "gear", self._settings.show_local_engine),
+        ):
+            action = menu.addAction(line_icon(icon, self._menu_icon_color()) if modern else QIcon(), tr(label_key))
+            assert action is not None
+            action.triggered.connect(lambda _checked=False, handler=handler: handler())
+            actions[key] = action
+        self._local_actions = actions
+        self._local_menu = menu
+        tray_menu.addSeparator()
+        menu_action = tray_menu.addMenu(menu)
+        assert menu_action is not None
+        self._local_menu_action = menu_action
+
+    def _refresh_local_menu(self) -> None:
+        """Follow the engine's status and the saved settings."""
+        engine, menu = self._local_engine, self._local_menu
+        if engine is None or menu is None or not self._local_actions:
+            return
+        tr = self._ctx.tr
+        status: EngineStatus = engine.status
+        self._local_menu_action.setVisible(engine.enabled())
+        self._local_actions["status"].setText(status_text(self._ctx.translator, status, engine.devices or []))
+        running = status.state not in (OFF, UNAVAILABLE)
+        self._local_actions["load"].setText(tr("local_unload_button" if running else "local_load_button"))
+        self._local_actions["self_test"].setEnabled(status.state == READY)
+        self._local_actions["copy"].setVisible(engine.server_enabled())
+
+    def _toggle_local_engine(self) -> None:
+        engine = self._local_engine
+        if engine is None:
+            return
+        if engine.status.state not in (OFF, UNAVAILABLE):
+            engine.stop()
+        else:
+            engine.restart()
+
+    def _copy_local_endpoint(self) -> None:
+        if self._local_engine is not None:
+            clipboard = QApplication.clipboard()
+            if clipboard is not None:
+                clipboard.setText(self._local_engine.endpoint())
+                self._ctx.notifier.show(self._ctx.tr("local_server_endpoint_copied"), BALLOON_SHORT_MS)
 
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         """Left-click opens the menu; double-click copies the last transcription (if enabled)."""

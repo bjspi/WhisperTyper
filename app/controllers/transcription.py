@@ -16,13 +16,21 @@ import copykitten
 from PyQt6.QtWidgets import QMessageBox
 
 from app.context import AppContext
+from app.controllers.local_engine import READY_WAIT_S, LocalEngineController
 from app.controllers.text_output import TextOutput
 from app.controllers.warmup import WarmupScheduler
 from app.controllers.workers import WorkerThreads
-from app.core.api_keys import GroqKeyRotation, is_local_endpoint, provider_for_url, rephrasing_configured, selected_api_key
+from app.core.api_keys import (
+    LOCAL_PROVIDER,
+    GroqKeyRotation,
+    is_local_endpoint,
+    provider_for_url,
+    rephrasing_configured,
+    selected_api_key,
+)
 from app.core.audio_formats import is_video_file, needs_audio_normalization
 from app.core.constants import LANGUAGES
-from app.core.models import transcription_form_fields, transcription_reports_confidence
+from app.core.models import LOCAL_TRANSCRIPTION_MODEL, transcription_form_fields, transcription_reports_confidence
 from app.core.prompts import auto_apply_prompt, transcription_prompt_for
 from app.core.rephrase_routing import RephrasePlan, plan_rephrase, usable_transcript
 from app.core.replacements import ReplacementError, Replacements
@@ -48,9 +56,14 @@ _WARN_SHARE = 0.7
 class TranscriptionPipeline:
     """Transcribe audio, route the transcript through rephrasing and deliver the final text."""
 
-    def __init__(self, ctx: AppContext, output: TextOutput, warmup: WarmupScheduler, workers: WorkerThreads) -> None:
-        """Requests share the warm HTTP pool (``warmup``) and the thread registry (``workers``)."""
+    def __init__(self, ctx: AppContext, output: TextOutput, warmup: WarmupScheduler, workers: WorkerThreads,
+                 local_engine: Optional[LocalEngineController] = None) -> None:
+        """Requests share the warm HTTP pool (``warmup``) and the thread registry (``workers``).
+
+        ``local_engine`` serves the "Local" provider; without it that provider reports an error.
+        """
         self._ctx = ctx
+        self._local_engine = local_engine
         self._config = ctx.config
         self._notifier = ctx.notifier
         self._output = output
@@ -124,25 +137,38 @@ class TranscriptionPipeline:
             self._notifier.show(prefix + self._transcription_progress_message(lang_code), 0, spinner=True)
 
         api_key = self._key_rotation.next_key(config)
-        provider = provider_for_url(config["api_endpoint"])
+        endpoint, model = config["api_endpoint"], config["model"]
+        provider = provider_for_url(endpoint)
+        local_wait_s, local_error = 0.0, ""
+        if provider == LOCAL_PROVIDER:
+            # The engine runs the model of its own settings page, at its own address.
+            model = LOCAL_TRANSCRIPTION_MODEL
+            engine = self._local_engine
+            problem = engine.problem() if engine is not None else "local_engine_disabled"
+            if problem:
+                local_error = self._ctx.tr("local_engine_unusable_error", reason=self._ctx.tr(problem))
+            else:
+                assert engine is not None
+                engine.ensure_running()
+                endpoint, local_wait_s = engine.endpoint(), READY_WAIT_S
         logging.info("transcription_credential op=%s provider=%s profile_id=%s rotation=%s",
                      timing.operation_id, provider, self._key_rotation.last_profile_id,
                      bool(config["groq_key_rotation"] and provider == "groq"))
         # Hedging: a stalled request is raced by a second one with the next key (rotation) or the same key.
         # A server on this computer has no network path to stall on; a second request would only
         # double its load.
-        hedging = bool(config.get("transcription_hedging", False)) and not is_local_endpoint(config["api_endpoint"])
+        hedging = bool(config.get("transcription_hedging", False)) and not is_local_endpoint(endpoint)
         hedge_api_key = self._key_rotation.next_key(config) if hedging else None
         # The quality fallback judges results by their log-probabilities; without them it only costs a request.
         second_pass = config.get("transcription_second_pass", "off")
-        if second_pass != "off" and not transcription_reports_confidence(config["model"]):
+        if second_pass != "off" and not transcription_reports_confidence(model):
             logging.info("transcription_second_pass op=%s skipped reason=no_confidence_data model=%s",
-                         timing.operation_id, config["model"])
+                         timing.operation_id, model)
             second_pass = "off"
         request = TranscriptionRequest(
-            api_key=api_key, api_endpoint=config["api_endpoint"],
+            api_key=api_key, api_endpoint=endpoint,
             audio_path=audio_path, prompt=self._sent_prompt(),
-            model=config["model"], language=lang_code,
+            model=model, language=lang_code,
             temperature=config["transcription_temperature"],
             proxies=proxies_for(config),
             ffmpeg_path=ffmpeg_path,
@@ -159,6 +185,8 @@ class TranscriptionPipeline:
             second_pass_prompt=config.get("transcription_second_pass_prompt", ""),
             second_pass_api_key=(self._key_rotation.next_key(config) or None
                                  if second_pass == "always" else None),
+            local_engine_wait_s=local_wait_s,
+            local_engine_error=local_error,
         )
         worker = TranscriptionWorker(request, timing=timing, tr=self._ctx.tr)
         if recording_format is not None:
