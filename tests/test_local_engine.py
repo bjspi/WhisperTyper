@@ -28,10 +28,13 @@ from app.core.models import (
 from app.local_engine import availability, supervisor
 from app.local_engine.catalog import (
     AUTO_DEVICE,
+    COMPLETE_MARKER,
     CTRANSLATE2,
     OPENVINO,
     EngineSettings,
+    mark_model_complete,
     model_downloaded,
+    model_files_present,
     resolve_device,
     settings_from_config,
 )
@@ -94,11 +97,42 @@ def test_settings_from_config_use_the_backend_model_and_localhost_without_server
     assert EngineSettings.from_json(server.to_json()) == server
 
 
-def test_model_downloaded_checks_the_backend_files(tmp_path):
+def test_model_counts_as_downloaded_only_after_a_finished_download(tmp_path):
     assert not model_downloaded(CTRANSLATE2, tmp_path)
     (tmp_path / "model.bin").write_bytes(b"x")
     (tmp_path / "config.json").write_text("{}")
+    assert model_files_present(CTRANSLATE2, tmp_path)
+    assert not model_downloaded(CTRANSLATE2, tmp_path)  # interrupted download: no marker yet
+    mark_model_complete(tmp_path)
     assert model_downloaded(CTRANSLATE2, tmp_path) and not model_downloaded(OPENVINO, tmp_path)
+    (tmp_path / "model.bin").write_bytes(b"")  # empty weights never count
+    assert not model_downloaded(CTRANSLATE2, tmp_path)
+    mark_model_complete(tmp_path, complete=False)
+    assert not (tmp_path / COMPLETE_MARKER).exists()
+
+
+def test_failed_download_with_complete_files_loads_them_offline(tmp_path, monkeypatch):
+    from app.local_engine import server
+
+    settings = EngineSettings(device="cpu", model="org/model", models_dir=str(tmp_path), log_dir=str(tmp_path))
+    folder = settings.model_path
+    folder.mkdir()
+    (folder / "model.bin").write_bytes(b"x")
+    (folder / "config.json").write_text("{}")
+    partial = folder / ".cache" / "huggingface" / "download" / "x.incomplete"
+    partial.parent.mkdir(parents=True)
+    partial.write_bytes(b"12345")
+
+    def offline(*_args, **_kwargs):
+        raise OSError("network unreachable")
+
+    monkeypatch.setattr(server, "download_model", offline)
+    engine = server.Engine(settings)
+    engine._download(folder)  # no exception: the files are there
+    assert not partial.exists()  # the interrupted leftover is cleaned up
+    (folder / "model.bin").unlink()
+    with pytest.raises(server.DownloadError, match="network unreachable"):
+        engine._download(folder)
 
 
 def test_hallucinations_are_dropped_per_language():

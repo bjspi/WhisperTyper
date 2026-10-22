@@ -21,7 +21,13 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.local_engine.backends import Backend, create_backend
-from app.local_engine.catalog import SETTINGS_ENV, EngineSettings, model_downloaded
+from app.local_engine.catalog import (
+    SETTINGS_ENV,
+    EngineSettings,
+    mark_model_complete,
+    model_downloaded,
+    model_files_present,
+)
 from app.local_engine.speech import MIN_SPEECH_SAMPLES, SAMPLE_RATE, decode_audio, is_hallucination, strip_silence
 
 try:  # module level: FastAPI resolves the (string) annotations of the endpoints in this namespace
@@ -42,6 +48,19 @@ def _folder_size(path: Path) -> int:
             except OSError:
                 pass
     return total
+
+
+def remove_partial_downloads(path: Path) -> int:
+    """Delete ``*.incomplete`` leftovers of interrupted downloads (they are not resumed); returns the bytes freed."""
+    freed = 0
+    for leftover in (path / ".cache" / "huggingface" / "download").glob("**/*.incomplete"):
+        try:
+            size = leftover.stat().st_size
+            leftover.unlink()
+            freed += size
+        except OSError:
+            pass
+    return freed
 
 
 def ensure_models_dir(models_dir: Path) -> None:
@@ -73,6 +92,14 @@ def download_model(settings: EngineSettings, on_total: Any = None) -> None:
     snapshot_download(settings.model, local_dir=str(path))
 
 
+class DownloadError(RuntimeError):
+    """The model could not be downloaded (shown as is; the supervisor retries with backoff)."""
+
+
+def _megabytes_text(size: int) -> str:
+    return f"{size / (1024 * 1024):.0f} MB"
+
+
 class Engine:
     """Owns the backend; loads it in the background so /health answers right away."""
 
@@ -88,14 +115,11 @@ class Engine:
 
     def load(self) -> None:
         """Download the model if needed, then load it; a failure sets ``status`` to error."""
+        backend_name = self.settings.backend
+        path = self.settings.model_path
         try:
-            path = self.settings.model_path
-            if not model_downloaded(self.settings.backend, path):
-                self.status = "downloading"
-                log.info("Model not found in %s, downloading %s", path, self.settings.model)
-                download_model(self.settings, on_total=lambda total: setattr(self, "download_total", total))
-                if not model_downloaded(self.settings.backend, path):
-                    raise RuntimeError(f"{self.settings.model} is not a {self.settings.backend} Whisper model")
+            if not model_downloaded(backend_name, path):
+                self._download(path)
             self.status = "loading"
             t0 = time.perf_counter()
             backend = create_backend(self.settings)
@@ -105,9 +129,39 @@ class Engine:
             self.backend = backend
             self.status = "ready"
             log.info("Model %s on %s ready in %.1f s", path.name, self.settings.device, time.perf_counter() - t0)
+        except DownloadError as exc:
+            self.status, self.error = "error", str(exc)
+            log.exception("Downloading the model failed")
         except Exception as exc:  # noqa: BLE001 - reported via /health; the supervisor restarts us
             self.status, self.error = "error", f"{type(exc).__name__}: {exc}"
             log.exception("Loading the model failed")
+            if self.settings.model_path.is_dir() and not Path(self.settings.model).is_absolute():
+                # Damaged files: the next start verifies the download again and fetches what is missing.
+                mark_model_complete(path, complete=False)
+                log.info("Completion marker removed from %s; the next start checks the download again", path)
+
+    def _download(self, path: Path) -> None:
+        """Download (or resume, or verify) the model; a usable set of files survives being offline."""
+        self.status = "downloading"
+        partial = path.is_dir() and any(path.iterdir())
+        log.info("%s %s into %s", "Completing/verifying" if partial else "Downloading", self.settings.model, path)
+        freed = remove_partial_downloads(path)
+        if freed:
+            log.info("Removed %s of an interrupted download", _megabytes_text(freed))
+        t0 = time.perf_counter()
+        try:
+            download_model(self.settings, on_total=lambda total: setattr(self, "download_total", total))
+        except Exception as exc:  # noqa: BLE001 - offline, proxy, rate limit, disk full …
+            if model_files_present(self.settings.backend, path):
+                log.warning("Download check failed (%s); the model files are there, loading them", exc)
+                return
+            raise DownloadError(f"Download failed: {type(exc).__name__}: {exc}") from exc
+        if not model_files_present(self.settings.backend, path):
+            raise DownloadError(f"{self.settings.model} is not a {self.settings.backend} Whisper model")
+        mark_model_complete(path)
+        remove_partial_downloads(path)
+        log.info("Download of %s complete in %.0f s (%s)", self.settings.model, time.perf_counter() - t0,
+                 _megabytes_text(_folder_size(path)))
 
     def health(self) -> Dict[str, Any]:
         """The /health answer: status, model, device, uptime, requests, download progress."""
@@ -119,7 +173,8 @@ class Engine:
         if self.error:
             body["error"] = self.error
         if self.status == "downloading":
-            body["downloaded_bytes"] = _folder_size(self.settings.model_path)
+            done = _folder_size(self.settings.model_path)
+            body["downloaded_bytes"] = min(done, self.download_total) if self.download_total else done
             body["download_total_bytes"] = self.download_total
         return body
 

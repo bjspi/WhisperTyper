@@ -67,6 +67,8 @@ class LocalEngineController(QObject):
         self.devices: Optional[List[Dict[str, str]]] = None
         self.device_errors: Dict[str, str] = {}
         self._detector: Optional[QProcess] = None
+        #: The device detection is running.
+        self.detecting = False
         #: Start the engine once the device detection is done ("auto" needs its result).
         self._start_after_detection = False
 
@@ -241,12 +243,16 @@ class LocalEngineController(QObject):
         process.finished.connect(lambda _code, _status: self._on_detected(process))
         process.errorOccurred.connect(lambda _error: self._on_detected(process))
         self._detector = process
+        self.detecting = True
+        logging.info("local_engine_devices detecting")
         process.start()
+        self.devices_changed.emit()  # pages show "detecting…"
 
     def _on_detected(self, process: QProcess) -> None:
         if self._detector is not process:
             return
         self._detector = None
+        self.detecting = False
         output = bytes(process.readAllStandardOutput().data()).decode("utf-8", "replace").strip()
         try:
             result = json.loads(output.splitlines()[-1]) if output else {}

@@ -97,6 +97,9 @@ def _child_environment(settings: EngineSettings) -> Dict[str, str]:
     # The engine only talks to localhost; Hugging Face downloads still use the system proxy.
     env.setdefault("NO_PROXY", "127.0.0.1,localhost")
     env["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+    # Plain HTTP downloads grow the file as they go (progress display, resumable); Xet assembles each
+    # file in a separate cache and writes it only at the end.
+    env["HF_HUB_DISABLE_XET"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     return env
 
