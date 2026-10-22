@@ -79,11 +79,43 @@ def model_path(models_dir: Path, repo: str) -> Path:
     return candidate if candidate.is_absolute() else models_dir / model_dir_name(repo)
 
 
+#: Written into a model folder once its download finished; a folder without it is (or may be) partial.
+COMPLETE_MARKER = ".whispertyper-complete"
+#: Files a usable model folder must contain, per backend (the weights must not be empty).
+_MODEL_FILES = {
+    OPENVINO: ("openvino_encoder_model.xml", "openvino_encoder_model.bin", "openvino_decoder_model.xml",
+               "openvino_decoder_model.bin"),
+    CTRANSLATE2: ("config.json", "model.bin"),
+}
+
+
+def model_files_present(backend: str, path: Path) -> bool:
+    """The model's files exist and the weights are not empty (says nothing about truncated downloads)."""
+    try:
+        return all((path / name).is_file() and (path / name).stat().st_size > 0 for name in _MODEL_FILES[backend])
+    except OSError:
+        return False
+
+
 def model_downloaded(backend: str, path: Path) -> bool:
-    """Whether ``path`` holds a complete model for ``backend``."""
-    if backend == OPENVINO:
-        return (path / "openvino_encoder_model.xml").is_file() and (path / "openvino_decoder_model.xml").is_file()
-    return (path / "model.bin").is_file() and (path / "config.json").is_file()
+    """Whether ``path`` holds a completely downloaded model for ``backend``.
+
+    The marker is written only after the download finished, so an interrupted download (app quit,
+    settings change, lost connection) is resumed instead of loaded half-written.
+    """
+    return (path / COMPLETE_MARKER).is_file() and model_files_present(backend, path)
+
+
+def mark_model_complete(path: Path, complete: bool = True) -> None:
+    """Set (after a finished download) or clear (after the files failed to load) the completion marker."""
+    marker = path / COMPLETE_MARKER
+    try:
+        if complete:
+            marker.write_text("Download finished; written by WhisperTyper.\n", encoding="utf-8")
+        else:
+            marker.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def resolve_device(choice: str, available: List[str]) -> Optional[str]:

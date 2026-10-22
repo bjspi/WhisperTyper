@@ -12,7 +12,7 @@ import shutil
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import QProcess, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
@@ -275,7 +275,7 @@ class LocalEngineTab(QWidget):
             self._loading_form = False
         self._update_enabled_state()
         self._render_status(self._engine.status)
-        if self.enabled_checkbox.isChecked() and self._engine.devices is None:
+        if self.enabled_checkbox.isChecked() and not self._engine.devices:
             self._engine.detect_devices()
 
     def save(self, config: Dict[str, Any]) -> None:
@@ -310,8 +310,8 @@ class LocalEngineTab(QWidget):
         if on and not self._ensure_packages():
             self.enabled_checkbox.setChecked(False)
             return
-        if on and self._engine.devices is None:
-            self._engine.detect_devices()
+        if on and not self._engine.devices:
+            self._engine.detect_devices()  # none yet, or an empty list from before the packages were installed
         self._update_enabled_state()
         self.enabled_changed.emit(on)
 
@@ -356,7 +356,12 @@ class LocalEngineTab(QWidget):
                        self.strategy_selector, self.idle_input, self.vad_checkbox, self.server_checkbox,
                        self.test_button, self.bench_button, self.bench_file_button):
             widget.setEnabled(on)
+        self.detect_button.setEnabled(on and not self._engine.detecting)
         server = on and self.server_checkbox.isChecked()
+        # Address, port, endpoint and health check only matter (and show) while the server is on.
+        server_rows: Tuple[QWidget, ...] = (self.host_input, self.port_input, self.endpoint_label, self.health_label)
+        for row_control in server_rows:
+            row_control.setVisible(self.server_checkbox.isChecked())
         for widget in (self.host_input, self.port_input, self.copy_endpoint_button):
             widget.setEnabled(server)
         # The server keeps the engine loaded: no idle unload then.
@@ -379,7 +384,10 @@ class LocalEngineTab(QWidget):
         auto_name = next((self._device_text(d["id"], d["name"]) for d in detected if d["id"] == auto), "")
         self.device_selector.blockSignals(True)
         self.device_selector.clear()
-        if self._engine.devices is None:
+        detecting = self._engine.detecting
+        self.detect_button.setText(tr("local_detect_running" if detecting else "local_detect_button"))
+        self.detect_button.setEnabled(self.enabled_checkbox.isChecked() and not detecting)
+        if self._engine.devices is None or detecting:
             self.device_selector.addItem(tr("local_device_auto_pending"), AUTO_DEVICE)
         else:
             self.device_selector.addItem(tr("local_device_auto", device=auto_name or tr("local_device_none")),
@@ -422,8 +430,11 @@ class LocalEngineTab(QWidget):
             parts = [f"{model.name} (~{_megabytes(model.size_mb * 1024 * 1024)})"]
             if model.recommended:
                 parts.append(tr("local_model_recommended"))
-            if model_downloaded(backend, model_path(models_dir, model.repo)):
+            folder = model_path(models_dir, model.repo)
+            if model_downloaded(backend, folder):
                 parts.append(tr("local_model_downloaded"))
+            elif folder.is_dir():
+                parts.append(tr("local_model_partial"))
             self.model_selector.addItem(" · ".join(parts), model.repo)
         if selected not in repos:
             self.model_selector.addItem(selected, selected)
@@ -438,12 +449,15 @@ class LocalEngineTab(QWidget):
         self._update_delete_button()
 
     def _selected_model_folder(self) -> Optional[Path]:
-        """Folder of the selected model when it is downloaded."""
+        """Folder of the selected model when there is one (complete or a partial download)."""
         repo = self.model_selector.currentData()
-        if not repo:
-            return None
+        if not repo or Path(repo).is_absolute():
+            return None  # a model folder of the user's own is never deleted from here
         folder = model_path(Path(self._models_dir()), repo)
-        return folder if model_downloaded(self._form_backend(), folder) else None
+        try:
+            return folder if folder.is_dir() and any(folder.iterdir()) else None
+        except OSError:
+            return None
 
     def _update_delete_button(self) -> None:
         self.delete_model_button.setEnabled(self.enabled_checkbox.isChecked()
@@ -728,8 +742,9 @@ class LocalEngineTab(QWidget):
         self.bench_table.setHorizontalHeaderLabels([tr("local_bench_model"), tr("local_bench_load"),
                                                     tr("local_bench_first"), tr("local_bench_best"), "RTF"])
         self.log_label.setText(tr("local_log_label"))
-        self.log_label.setToolTip(tr("local_log_tooltip", path=ENGINE_LOG_PATH))
+        self.log_label.setToolTip(tr("local_log_tooltip"))
         self.log_button.setText(tr("local_log_button"))
+        self.log_button.setToolTip(ENGINE_LOG_PATH)
         for row in self._rows:
             row.sync_texts()
         self._refresh_devices()
@@ -746,8 +761,9 @@ def status_text(translator: TranslationManager, status: EngineStatus, devices: L
         return tr("local_status_ready", device=device, model=model)
     if status.state == LOADING and status.downloading:
         total = status.download_total_bytes
-        progress = (f"{_megabytes(status.downloaded_bytes)} / {_megabytes(total)}" if total
-                    else _megabytes(status.downloaded_bytes))
+        done = status.downloaded_bytes
+        progress = (f"{_megabytes(done)} / {_megabytes(total)} ({min(100, 100 * done // total)} %)" if total
+                    else _megabytes(done))
         return tr("local_status_downloading", model=model, progress=progress)
     if status.state == LOADING:
         return tr("local_status_loading", device=device, model=model)
