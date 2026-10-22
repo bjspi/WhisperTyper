@@ -119,7 +119,7 @@ def console_python() -> str:
 
 def pip_command(requirements: List[str]) -> List[str]:
     """Arguments of a pip run that installs ``requirements`` into this interpreter's environment."""
-    return ["-m", "pip", "install", "--disable-pip-version-check", *requirements]
+    return ["-m", "pip", "install", "--disable-pip-version-check", "--no-warn-script-location", *requirements]
 
 
 def backend_ready(backend: str) -> bool:

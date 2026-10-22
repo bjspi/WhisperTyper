@@ -485,5 +485,6 @@
   "local_delete_model_done": "Modelo «{model}» eliminado.",
   "local_delete_model_failed": "No se pudo eliminar: {error}",
   "local_detect_running": "Detectando…",
-  "local_model_partial": "incompleto: se reanuda al cargar"
+  "local_model_partial": "incompleto: se reanuda al cargar",
+  "conn_test_local_down": "🖥️ Ningún servidor responde en esta dirección de este PC. ¿Está en marcha el programa y son correctos la dirección y el puerto?\n\nDetalles: {detail}"
 }

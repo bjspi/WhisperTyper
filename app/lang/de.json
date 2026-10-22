@@ -485,5 +485,6 @@
   "local_delete_model_done": "Modell „{model}“ gelöscht.",
   "local_delete_model_failed": "Löschen fehlgeschlagen: {error}",
   "local_detect_running": "Erkenne…",
-  "local_model_partial": "unvollständig – wird beim Laden fortgesetzt"
+  "local_model_partial": "unvollständig – wird beim Laden fortgesetzt",
+  "conn_test_local_down": "🖥️ Auf diesem PC antwortet unter dieser Adresse kein Server. Läuft das Programm, und stimmen Adresse und Port?\n\nDetails: {detail}"
 }
