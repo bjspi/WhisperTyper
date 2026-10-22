@@ -6,16 +6,19 @@ provider shows the URL field and the key selector.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, NamedTuple, Optional
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 from PyQt6.QtCore import QSignalBlocker, Qt
-from PyQt6.QtWidgets import QComboBox, QLabel, QLineEdit, QMessageBox, QPushButton
+from PyQt6.QtWidgets import QComboBox, QLabel, QLineEdit, QMessageBox, QPushButton, QWidget
 
+from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED
 from app.core.api_keys import (
+    LOCAL_PROVIDER,
     NO_KEY_PROFILE_ID,
     PROVIDER_NAMES,
     TASK_CUSTOM_URL_FIELDS,
     TASK_KEY_FIELDS,
+    TRANSCRIPTION_PROVIDERS,
     key_format_warning,
     masked_api_key,
     provider_endpoint,
@@ -33,6 +36,7 @@ from app.core.models import (
     rephrasing_supports_temperature,
 )
 from app.core.textutil import clean_model_name, estimate_tokens
+from app.ui.local_engine_tab import status_text
 from app.ui.settings.base import SettingsWindowBase
 from app.ui.settings.widgets import show_temperature_support
 from app.ui.theme import set_style_state
@@ -65,17 +69,25 @@ class ApiPage(SettingsWindowBase):
         self._custom_urls: Dict[str, str] = {}
         # Whether the key selector is shown for an official provider ("choose another key").
         self._key_choice_open: Dict[str, bool] = {}
+        # "Local" (transcription only): the engine's status takes the key's place, with a link to its page.
+        self.transcription_local_setup_button = QPushButton(self)
+        self.transcription_local_setup_button.clicked.connect(
+            lambda _checked=False: self.tabs.setCurrentWidget(self._local_engine_tab))
+        status_row = self.transcription_key_status_row
+        status_row.insertWidget(status_row.indexOf(self.test_transcription_api_button),
+                                self.transcription_local_setup_button)
         for task in API_TASKS:
             widgets = self._task_widgets(task)
             provider = provider_for_url(widgets.endpoint.text())
-            for provider_id in PROVIDER_NAMES:
+            providers = TRANSCRIPTION_PROVIDERS if task == "transcription" and LOCAL_ENGINE_SUPPORTED else PROVIDER_NAMES
+            for provider_id in providers:
                 widgets.provider.addItem(self._provider_label(provider_id), provider_id)
             widgets.provider.setCurrentIndex(widgets.provider.findData(provider))
             self._custom_urls[task] = (self.config.get(TASK_CUSTOM_URL_FIELDS[task], "")
                                        or (widgets.endpoint.text() if provider == "custom" else ""))
             # The selector opens on demand; the status line names the key in use either way.
             self._key_choice_open[task] = False
-            for button in (widgets.key_choose, widgets.key_add):
+            for button in (widgets.key_choose, widgets.key_add, self.transcription_local_setup_button):
                 set_style_state(button, "link", True)
                 button.setCursor(Qt.CursorShape.PointingHandCursor)
             widgets.provider.currentIndexChanged.connect(lambda _index, task=task: self._on_provider_changed(task))
@@ -88,6 +100,8 @@ class ApiPage(SettingsWindowBase):
         self._api_keys_tab.profiles_changed.connect(self._refresh_key_profile_selectors)
         self.model_dropdown.currentTextChanged.connect(lambda _text: self._update_prompt_token_counter())
         self.rephrasing_model_input.currentTextChanged.connect(self._refresh_api_state)
+        self.local_engine.status_changed.connect(self._refresh_api_state)
+        self._local_engine_tab.enabled_changed.connect(self._refresh_api_state)
 
     def _task_widgets(self, task: str) -> _TaskWidgets:
         """The controls of one API task (transcription or rephrasing)."""
@@ -104,14 +118,19 @@ class ApiPage(SettingsWindowBase):
                             REPHRASING_MODEL_OPTIONS, "rephrasing_model")
 
     def _provider_label(self, provider: str) -> str:
-        """Display name of a provider; only the generic 'Custom' entry is translated."""
+        """Display name of a provider; only the generic 'Custom' and the 'Local' entries are translated."""
+        if provider == LOCAL_PROVIDER:
+            return self.translator.tr("provider_local")
         return self.translator.tr("api_key_custom_provider") if provider == "custom" else PROVIDER_NAMES[provider]
 
     def _retranslate_api_settings(self) -> None:
         """Re-label the translated provider entry, the key selectors and the key status."""
         for task in API_TASKS:
             selector = self._task_widgets(task).provider
-            selector.setItemText(selector.findData("custom"), self._provider_label("custom"))
+            for provider in ("custom", LOCAL_PROVIDER):
+                if selector.findData(provider) >= 0:
+                    selector.setItemText(selector.findData(provider), self._provider_label(provider))
+        self.transcription_local_setup_button.setText(self.translator.tr("local_setup_button"))
         self._refresh_key_profile_selectors()
 
     def _on_provider_changed(self, task: str) -> None:
@@ -119,6 +138,11 @@ class ApiPage(SettingsWindowBase):
         widgets = self._task_widgets(task)
         self._key_choice_open[task] = False
         provider = widgets.provider.currentData()
+        if provider == LOCAL_PROVIDER and not self._local_engine_tab.request_enable():
+            # The packages were not installed: stay with the previous provider.
+            with QSignalBlocker(widgets.provider):
+                widgets.provider.setCurrentIndex(widgets.provider.findData(provider_for_url(widgets.endpoint.text())))
+            return
         url = self._custom_urls[task] if provider == "custom" else provider_endpoint(provider, task)
         if widgets.endpoint.text() == url:
             self._on_endpoint_edited(task)  # same text emits no signal, but the controls must follow
@@ -219,7 +243,9 @@ class ApiPage(SettingsWindowBase):
         form = self._form_api_config()
         for task in API_TASKS:
             self._refresh_key_controls(task, form)
-        set_style_state(self.transcription_api_group, "incomplete", not transcription_configured(form))
+        local_off = (provider_for_url(form["api_endpoint"]) == LOCAL_PROVIDER
+                     and not self._local_engine_tab.is_enabled())
+        set_style_state(self.transcription_api_group, "incomplete", not transcription_configured(form) or local_off)
         rephrasing_incomplete = not rephrasing_configured(form)
         set_style_state(self.shared_api_group, "incomplete", rephrasing_incomplete)
         # Prompts use the same fields, so their unavailable state shows on that tab live.
@@ -230,8 +256,26 @@ class ApiPage(SettingsWindowBase):
         widgets = self._task_widgets(task)
         provider = provider_for_url(widgets.endpoint.text())
         custom = provider == "custom"
+        local = provider == LOCAL_PROVIDER
         widgets.endpoint_label.setVisible(custom)
         widgets.endpoint.setVisible(custom)
+        if task == "transcription":
+            # The engine runs the model of its own page: no model, temperature or quality fallback here.
+            hidden: Tuple[QWidget, ...] = (self.model_label, self.model_dropdown, self.transcription_temp_label_title,
+                                           self.transcription_temp_slider, self.transcription_temp_label,
+                                           self.second_pass_section)
+            for widget in hidden:
+                widget.setVisible(not local)
+            self.transcription_local_setup_button.setVisible(local)
+        if local:
+            for widget in (widgets.key_label, widgets.key_profile, widgets.key_choose, widgets.key_add):
+                widget.setVisible(False)
+            enabled = self._local_engine_tab.is_enabled()
+            widgets.key_status.setText(
+                status_text(self.translator, self.local_engine.status, self.local_engine.devices or []) if enabled
+                else self.translator.tr("local_engine_disabled"))
+            set_style_state(widgets.key_status, "key_status", "ok" if enabled else "missing")
+            return
         show_selector = custom or self._key_choice_open.get(task, False)
         widgets.key_label.setVisible(show_selector)
         widgets.key_profile.setVisible(show_selector)

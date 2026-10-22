@@ -16,6 +16,7 @@ from app.audio.playback import WavPlayer
 from app.context import AppContext
 from app.controllers.file_actions import FileActions
 from app.controllers.hotkeys import HotkeyController
+from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED, LocalEngineController
 from app.controllers.recording import RecordingController
 from app.core.config_diff import describe_changes
 from app.core.constants import WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH
@@ -25,6 +26,7 @@ from app.core.paths import resource_path
 from app.core.replacements import ReplacementError, Replacements
 from app.ui.api_keys import ApiKeysTab
 from app.ui.connection_tester import ConnectionTester
+from app.ui.local_engine_tab import LocalEngineTab
 from app.ui.replacements import ReplacementsTab
 from app.ui.settings.api_page import ApiPage
 from app.ui.settings.bindings import PLATFORMS, load_bindings, save_bindings
@@ -57,7 +59,8 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
     language_changed = pyqtSignal()
 
     def __init__(self, ctx: AppContext, *, recording: RecordingController, hotkeys: HotkeyController,
-                 files: FileActions, quit_app: Callable[[], None]) -> None:
+                 files: FileActions, quit_app: Callable[[], None],
+                 local_engine: Optional[LocalEngineController] = None) -> None:
         """Build the window from main_window.ui and load the saved configuration into it."""
         super().__init__()
         self.ctx = ctx
@@ -67,6 +70,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self._hotkeys = hotkeys
         self._files = files
         self._quit_app = quit_app
+        self.local_engine = local_engine or LocalEngineController(ctx)
 
         uic.loadUi(resource_path("resources", "main_window.ui"), self)
         # The design is fixed for the window's lifetime; switching it takes a restart.
@@ -76,8 +80,13 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         # Pages and controls the .ui file does not contain.
         self._api_keys_tab = ApiKeysTab(self.config["api_key_profiles"], self.translator, self)
         self._api_keys_tab.groq_rotation.setChecked(self.config["groq_key_rotation"])
-        # Tab order: API providers, API keys, Prompts, Replacements, General.
+        # Tab order: API providers, API keys, Local transcription, Prompts, Replacements, General.
         self.tabs.insertTab(self.tabs.indexOf(self.transcription_tab) + 1, self._api_keys_tab, "")
+        self._local_engine_tab = LocalEngineTab(ctx, self.local_engine, self.translator, self)
+        if LOCAL_ENGINE_SUPPORTED:
+            self.tabs.insertTab(self.tabs.indexOf(self._api_keys_tab) + 1, self._local_engine_tab, "")
+        else:
+            self._local_engine_tab.hide()  # macOS: no local engine; the page stays only for the form logic
         self._replacements_tab = ReplacementsTab(self.config["replacements_rules"], self.config["replacements_enabled"],
                                                  self.translator, self)
         self.tabs.insertTab(self.tabs.indexOf(self.general_tab), self._replacements_tab, "")
@@ -316,6 +325,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self.config["replacements_enabled"] = self._replacements_tab.enabled.isChecked()
         self.config["replacements_rules"] = raw_rules
         save_bindings(self, self.config)
+        self._local_engine_tab.save(self.config)
         self._save_recording_controls()
         self._sync_transformations_to_config()
         hotkeys_changed = self._apply_pending_hotkeys()
@@ -376,6 +386,8 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
             (self.transcription_tab, "tab_transcription", "tooltip_tab_transcription"),
             (self.post_rephrasing_tab, "tab_transformations", "tooltip_tab_transformations"),
             (self._api_keys_tab, "tab_api_keys", "tooltip_tab_api_keys"),
+            *([(self._local_engine_tab, "tab_local_engine", "tooltip_tab_local_engine")]
+              if LOCAL_ENGINE_SUPPORTED else []),
             (self._replacements_tab, "tab_replacements", "tooltip_tab_replacements"),
             (self.general_tab, "tab_general", "tooltip_tab_general"),
         ):
@@ -385,6 +397,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self.transformations_info_label.setText(tr("transformations_info", max_entries=self._transformations.max_entries))
         self._transformations.retranslate()
         self._api_keys_tab.retranslate_ui()
+        self._local_engine_tab.retranslate_ui()
         self._replacements_tab.retranslate_ui()
         self._retranslate_api_settings()
         self._retranslate_general_page()
@@ -442,6 +455,11 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         # Refresh the mic list AFTER the window is visible, on the next event-loop tick, so a slow
         # PyAudio enumeration never blocks the window from appearing.
         QTimer.singleShot(0, self.populate_input_devices)
+
+    def show_local_engine(self) -> None:
+        """Open the window on the local transcription page."""
+        self.tabs.setCurrentWidget(self._local_engine_tab)
+        self.show_window()
 
     def show_transformations(self) -> None:
         """Open the window directly on the transformations templates tab."""

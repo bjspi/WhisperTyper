@@ -266,6 +266,11 @@ QLabel#prompt_token_label[level="near"] { color: %(accent)s; }
 QLabel#prompt_token_label[level="over"] { color: %(warn)s; }
 QLabel#ffmpeg_status_label[found="true"] { color: %(accent)s; }
 QLabel#ffmpeg_status_label[found="false"] { color: %(warn)s; }
+QLabel#local_engine_status[level="good"] { color: %(accent)s; font-weight: 600; }
+QLabel#local_engine_status[level="busy"] { color: %(warn)s; }
+QLabel#local_engine_status[level="bad"] { color: %(danger)s; font-weight: 600; }
+QLabel#local_engine_status[level="off"] { color: %(muted)s; }
+QLineEdit[warning="true"] { border-color: %(warn)s; }
 QSplitter::handle { background: %(border)s; }
 
 QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }
@@ -332,6 +337,7 @@ QLabel[rowTitle="true"]:disabled { color: %(muted)s; }
 QLabel#rowDescription { color: %(muted)s; font-size: 9pt; }
 QLabel#trayTitle { font-size: 10pt; }
 QLabel#trayStatus { font-size: 8pt; }
+QLabel#trayVersion { font-size: 8pt; }
 QLabel#collapsible_title { color: %(text)s; }
 QFrame#collapsible_line { background: %(border)s; }
 
@@ -362,6 +368,7 @@ QMenu#tray::item { padding: 7px 40px 7px 18px; border-radius: 6px; }
 QWidget#trayHeader { background: transparent; }
 QLabel#trayTitle { font-weight: 600; color: %(heading)s; }
 QLabel#trayStatus { color: %(muted)s; }
+QLabel#trayVersion { color: %(muted)s; }
 
 QScrollBar:vertical { width: 8px; margin: 2px; }
 QScrollBar:horizontal { height: 8px; margin: 2px; }

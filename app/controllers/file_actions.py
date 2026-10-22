@@ -8,11 +8,13 @@ from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDesktopServices
 
 from app.context import AppContext
-from app.core.constants import CONFIG_FILE, LOG_FILE_PATH
+from app.core.constants import APP_DATA_DIR, CONFIG_FILE, LOG_FILE_PATH
 from app.platform.system import open_with_default_app
 from app.ui.durations import BALLOON_ERROR_MS, BALLOON_SHORT_MS
 
 GITHUB_URL = "https://github.com/bjspi/WhisperTyper"
+#: Log of the local transcription engine process (see ``app.local_engine.server``).
+ENGINE_LOG_PATH = os.path.join(APP_DATA_DIR, "local_engine.log")
 
 
 class FileActions:
@@ -36,12 +38,19 @@ class FileActions:
 
     def open_log_file(self) -> None:
         """Open the log file with the system's default application."""
-        if not self.log_file_exists():
+        self._open_log(LOG_FILE_PATH)
+
+    def open_engine_log_file(self) -> None:
+        """Open the local engine's log file."""
+        self._open_log(ENGINE_LOG_PATH)
+
+    def _open_log(self, path: str) -> None:
+        if not os.path.isfile(path):
             self._ctx.notifier.show(self._ctx.tr("log_file_not_exist_message"), BALLOON_SHORT_MS)
             self._ctx.files_changed.emit()
             return
         try:
-            open_with_default_app(LOG_FILE_PATH)
+            open_with_default_app(path)
         except Exception as e:
             logging.error(f"Failed to open log file: {e}")
             self._ctx.notifier.show(self._ctx.tr("log_file_open_fail_message", error=e), BALLOON_ERROR_MS)

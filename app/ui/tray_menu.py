@@ -50,8 +50,11 @@ class BadgeTrayMenu(QMenu):
         self._badge_keys[key] = action
         action.setData(key)  # read back in paintEvent to render the badge
 
-    def add_header(self, icon: QIcon, title: str, status: str) -> QLabel:
-        """Logo, name and a state line above the entries (not clickable); returns the state label."""
+    def add_header(self, icon: QIcon, title: str, status: str, version: str = "") -> QLabel:
+        """Logo, name with its version and a state line above the entries (not clickable).
+
+        Returns the state label.
+        """
         header = QWidget()
         header.setObjectName("trayHeader")
         layout = QHBoxLayout(header)
@@ -66,7 +69,15 @@ class BadgeTrayMenu(QMenu):
         name.setObjectName("trayTitle")
         state = QLabel(status)
         state.setObjectName("trayStatus")
-        texts.addWidget(name)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(6)
+        title_row.addWidget(name)
+        if version:
+            version_label = QLabel(version)
+            version_label.setObjectName("trayVersion")
+            title_row.addWidget(version_label, 0, Qt.AlignmentFlag.AlignBaseline)
+        title_row.addStretch(1)
+        texts.addLayout(title_row)
         texts.addWidget(state)
         layout.addWidget(logo)
         layout.addLayout(texts, 1)

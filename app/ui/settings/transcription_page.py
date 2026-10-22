@@ -8,7 +8,13 @@ from typing import Optional
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy
 
-from app.core.models import prompt_token_limit, transcription_supports_prompt, transcription_supports_temperature
+from app.core.api_keys import LOCAL_PROVIDER, provider_for_url
+from app.core.models import (
+    LOCAL_TRANSCRIPTION_MODEL,
+    prompt_token_limit,
+    transcription_supports_prompt,
+    transcription_supports_temperature,
+)
 from app.core.prompts import default_transcription_prompt, is_default_transcription_prompt
 from app.core.textutil import estimate_tokens
 from app.services.ffmpeg import probe_version, resolve_ffmpeg
@@ -225,7 +231,8 @@ class TranscriptionPage(SettingsWindowBase):
 
     def _update_prompt_token_counter(self) -> None:
         """Show the prompt's token estimate against the model's budget; disable unsupported fields."""
-        model = self.model_dropdown.currentText()
+        local = provider_for_url(self.api_endpoint_input.text()) == LOCAL_PROVIDER
+        model = LOCAL_TRANSCRIPTION_MODEL if local else self.model_dropdown.currentText()
         show_temperature_support(self.transcription_temp_slider, self.transcription_temp_label,
                                  transcription_supports_temperature(model), self.translator)
         self.prompt_input.setEnabled(transcription_supports_prompt(model))

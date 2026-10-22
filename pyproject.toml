@@ -42,6 +42,22 @@ dependencies = [
 [project.optional-dependencies]
 # AAC/M4A recording format (PyAV with bundled FFmpeg libraries, ~70 MB). Without it: WAV only.
 aac = ["av>=14"]
+# Local transcription (Settings -> Local transcription offers to install these on first use).
+# Kept in sync with app/local_engine/availability.py. CPU via CTranslate2; add one of the GPU extras.
+local = [
+  "faster-whisper>=1.1",
+  "onnxruntime>=1.19",
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+  "python-multipart>=0.0.9",
+  "huggingface_hub>=0.23",
+  "psutil>=5.9",
+  "numpy",
+  "av>=12",
+  "truststore>=0.9",
+]
+local-intel = ["openvino-genai>=2025.3"]  # Intel Arc / Iris Xe / Core Ultra GPU and NPU
+local-nvidia = ["nvidia-cublas-cu12", "nvidia-cudnn-cu12>=9,<10"]  # CUDA libraries, ~1.5 GB
 dev = [
   "pytest>=8",
   "pytest-xdist>=3.5",

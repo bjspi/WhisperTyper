@@ -98,6 +98,11 @@ class TranscriptionRequest:
     second_pass_prompt: str = ""
     #: Key for the second transcription (the next Groq key when rotation is on); None = ``api_key``.
     second_pass_api_key: Optional[str] = None
+    #: The endpoint is the local engine, which may still be starting: wait up to this long for it
+    #: to be ready before sending (0 = send at once).
+    local_engine_wait_s: float = 0.0
+    #: Translated reason why the local engine cannot transcribe; the request fails with it at once.
+    local_engine_error: str = ""
 
     @property
     def wants_details(self) -> bool:
@@ -147,11 +152,16 @@ def transcribe(req: TranscriptionRequest, timing: OperationTiming, tr: Translate
     Raises:
         TranscriptionError: For conditions with a translated, user-facing explanation.
     """
+    if req.local_engine_error:
+        raise TranscriptionError(req.local_engine_error)
     temp: Optional[_TempUpload] = None
     try:
         with timing.span("upload_prepare"):
             upload = (_prepare_recording(req, timing, tr, on_compressing) if req.recording_format is not None
                       else _prepare_file(req, on_compressing))
+        if req.local_engine_wait_s > 0:
+            with timing.span("local_engine_wait"):
+                _wait_for_local_engine(req, tr)
         # The parallel second transcription may still be sending the file after a confident first
         # result returns, so the temporary upload is removed by whichever request finishes last.
         temp = _TempUpload(upload.temp, readers=2 if req.second_pass == "always" else 1)
@@ -177,6 +187,31 @@ def transcribe(req: TranscriptionRequest, timing: OperationTiming, tr: Translate
     if details is not None and on_diagnostics is not None:
         on_diagnostics(details)
     return text
+
+
+def _wait_for_local_engine(req: TranscriptionRequest, tr: Translate) -> None:
+    """Block until the local engine reports "ready"; a download or a timeout is a user-facing error.
+
+    The engine may have been started for this very recording (on demand, after an idle unload),
+    so connection errors count as "still starting".
+    """
+    health_url = req.api_endpoint.split("/v1/", 1)[0] + "/health"
+    deadline = time.monotonic() + req.local_engine_wait_s
+    status = "starting"
+    while True:
+        try:
+            response = request("GET", health_url, stage="local_engine_health", timeout=(2.0, 5.0))
+            body = response.json() if response.status_code == 200 else {}
+            status = str(body.get("status", "starting")) if isinstance(body, dict) else "starting"
+        except (httpx.HTTPError, ValueError):
+            status = "starting"
+        if status == "ready":
+            return
+        if status == "downloading":
+            raise TranscriptionError(tr("local_engine_downloading_error"))
+        if time.monotonic() >= deadline:
+            raise TranscriptionError(tr("local_engine_not_ready_error", status=status))
+        time.sleep(0.25)
 
 
 def _average_logprob(details: Optional[Dict[str, Any]]) -> Optional[float]:

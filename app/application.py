@@ -22,6 +22,7 @@ from app.audio.store import RecordingStore
 from app.context import AppContext
 from app.controllers.file_actions import FileActions
 from app.controllers.hotkeys import HotkeyController
+from app.controllers.local_engine import LocalEngineController
 from app.controllers.permissions import MacPermissions
 from app.controllers.post_rephrase import PostRephraseController
 from app.controllers.recording import RecordingController
@@ -62,7 +63,10 @@ class WhisperTyperApp(QObject):
                                       rephrasing_first=lambda: self.recording.rephrasing_expected())
         self.permissions = MacPermissions(self.ctx, dialog_parent=lambda: self.settings)
         self.text_output = TextOutput(config, self.ctx.tr, self.ctx.notifier.show, self.permissions.warn)
-        self.pipeline = TranscriptionPipeline(self.ctx, self.text_output, self.warmup, self.workers)
+        # Local transcription; runs only while enabled and needed (see LocalEngineController).
+        self.local_engine = LocalEngineController(self.ctx)
+        self.pipeline = TranscriptionPipeline(self.ctx, self.text_output, self.warmup, self.workers,
+                                              local_engine=self.local_engine)
         # Preload short sound effects & prepare reusable output streams for low latency.
         self.sound_player = SoundPlayer(resource_path)
         # Turned off, no output stream is opened (and on Windows no keepalive runs).
@@ -77,9 +81,9 @@ class WhisperTyperApp(QObject):
         self.post_rephrase = PostRephraseController(self.ctx, self.text_output, self.pipeline)
         self.files = FileActions(self.ctx)
         self.settings = SettingsWindow(self.ctx, recording=self.recording, hotkeys=self.hotkeys,
-                                       files=self.files, quit_app=self.quit_app)
+                                       files=self.files, quit_app=self.quit_app, local_engine=self.local_engine)
         self.tray = TrayController(self.ctx, self.settings, self.settings, recording=self.recording,
-                                   pipeline=self.pipeline, files=self.files,
+                                   pipeline=self.pipeline, files=self.files, local_engine=self.local_engine,
                                    restart=self.restart_app, quit_app=self.quit_app)
         self.tray.build()
         self.hotkeys.restart()
@@ -92,6 +96,8 @@ class WhisperTyperApp(QObject):
         # The modern tray menu draws its icons in the theme's colours.
         self.settings.appearance_changed.connect(self.tray.build)
         self.settings.restart_requested.connect(self.restart_app)
+        # A local transcription loads the engine while the user still speaks (on demand, after an idle unload).
+        self.recording.state_changed.connect(self._on_recording_state_changed)
 
         self.tray.set_tooltip(self.ctx.tr("tray_ready_tooltip", hotkey=config["hotkey"]))
         logging.info(f"Application started. Press '{config['hotkey']}' to start/stop recording.")
@@ -101,6 +107,8 @@ class WhisperTyperApp(QObject):
             self.recording.start_background_capture()
 
         QTimer.singleShot(0, self.settings.start_aac_bitrate_probe)
+        if self.local_engine.enabled():
+            QTimer.singleShot(0, self.local_engine.apply_config)
 
         if self.permissions.startup_prompts_wanted():
             QTimer.singleShot(900, lambda: self.permissions.request_at_startup(self.recording.probe_microphone))
@@ -118,6 +126,11 @@ class WhisperTyperApp(QObject):
         """Open the settings window on ``tab`` (Qt ignores an index that does not exist)."""
         self.settings.tabs.setCurrentIndex(tab)
         self.settings.show_window()
+
+    def _on_recording_state_changed(self, active: bool) -> None:
+        """A started recording loads the local engine meanwhile, if it is used and not loaded."""
+        if active:
+            self.local_engine.ensure_running()
 
     def _on_hotkey_action(self, action: str, detected_ns: Optional[int] = None) -> None:
         """Dispatch a hotkey action (GUI thread)."""
@@ -148,6 +161,7 @@ class WhisperTyperApp(QObject):
         self.apply_logging_configuration()
         set_ip_family(self.ctx.config.get("network_ip_family", "auto"))
         self.warmup.schedule(activate=True)
+        self.local_engine.apply_config()
         self.ctx.files_changed.emit()
 
     def _on_language_changed(self) -> None:
@@ -206,6 +220,7 @@ class WhisperTyperApp(QObject):
         self.hotkeys.stop()
         self.recording.shutdown()
         self.workers.drain()
+        self.local_engine.shutdown()
         close_transport()
         self.text_output.restore_clipboard_now()
         try:
