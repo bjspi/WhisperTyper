@@ -331,7 +331,7 @@ def test_page_loads_an_enabled_engine_that_cannot_run(tmp_path, monkeypatch, sup
     from app.core.hotkeys import normalize_hotkey_string
     from app.ui.settings.window import SettingsWindow
 
-    QApplication.instance() or QApplication([])
+    qapp = QApplication.instance() or QApplication([])  # keep a reference: widgets need a live app
     monkeypatch.setattr(module, "LOCAL_ENGINE_SUPPORTED", supported)
     monkeypatch.setattr(module.availability, "engine_installed", lambda: False)
     path = tmp_path / "config.json"
@@ -346,3 +346,14 @@ def test_page_loads_an_enabled_engine_that_cannot_run(tmp_path, monkeypatch, sup
     assert window.local_engine.status.state in ("off", module.UNAVAILABLE)
     window.local_engine.shutdown()
     window.deleteLater()
+    qapp.processEvents()
+
+
+def test_first_deep_check_runs_right_after_boot(fake_process, monkeypatch):
+    """``time.monotonic`` starts near zero after boot; the first deep check must still run."""
+    sup, _state = fake_process
+    monkeypatch.setattr(supervisor.time, "monotonic", lambda: 5.0)
+    sup.set_target(_settings())
+    sup._handle_requests()
+    sup.tick()
+    assert sup.status.latency_s == 0.3

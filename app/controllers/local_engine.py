@@ -213,8 +213,11 @@ class LocalEngineController(QObject):
 
     def shutdown(self) -> None:
         """Stop the engine process (app quit)."""
-        if self._detector is not None:
-            self._detector.kill()
+        detector, self._detector = self._detector, None
+        if detector is not None:
+            # A QProcess destroyed while its child still runs aborts the app at exit.
+            detector.kill()
+            detector.waitForFinished(3000)
         self._supervisor.shutdown()
 
     def _on_status(self, status: EngineStatus) -> None:
