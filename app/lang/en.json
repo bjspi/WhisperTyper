@@ -485,5 +485,6 @@
   "local_delete_model_done": "Model \"{model}\" deleted.",
   "local_delete_model_failed": "Deleting failed: {error}",
   "local_detect_running": "Detecting…",
-  "local_model_partial": "incomplete – resumes when loading"
+  "local_model_partial": "incomplete – resumes when loading",
+  "conn_test_local_down": "🖥️ No server answers at this address on this PC. Is the program running, and are address and port right?\n\nDetails: {detail}"
 }

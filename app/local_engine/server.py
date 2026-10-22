@@ -313,8 +313,11 @@ def setup_logging(settings: EngineSettings) -> None:
     root = logging.getLogger()
     root.addHandler(handler)
     root.setLevel(logging.DEBUG if settings.debug else logging.INFO)
-    for noisy in ("httpx", "httpcore", "urllib3", "filelock", "multipart", "python_multipart"):
+    for noisy in ("httpx", "httpcore", "httpx2", "httpcore2", "urllib3", "filelock", "multipart",
+                   "python_multipart", "huggingface_hub"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    # Downloads without a Hugging Face token are the normal case here, not worth a warning per file.
+    logging.getLogger("huggingface_hub.utils._http").setLevel(logging.ERROR)
 
 
 def main() -> int:

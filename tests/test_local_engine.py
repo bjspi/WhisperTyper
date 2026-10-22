@@ -391,3 +391,18 @@ def test_first_deep_check_runs_right_after_boot(fake_process, monkeypatch):
     sup._handle_requests()
     sup.tick()
     assert sup.status.latency_s == 0.3
+
+
+def test_connection_test_blames_no_proxy_for_a_server_on_this_pc():
+    """Nothing listens on a local port: that is not a proxy problem (local requests never use the proxy)."""
+    httpx = pytest.importorskip("httpx")
+    from app.services.net import classify_transport_error
+
+    px = {"http": "http://127.0.0.1:3128", "https": "http://127.0.0.1:3128"}
+    error = httpx.ConnectError("refused")
+    assert classify_transport_error(error, "http://127.0.0.1:9017/v1/audio/transcriptions", px) == "local_down"
+    assert classify_transport_error(error, "https://api.groq.com/openai/v1/audio/transcriptions", px) == "proxy"
+
+
+def test_pip_skips_the_path_warnings():
+    assert "--no-warn-script-location" in availability.pip_command(["x"])

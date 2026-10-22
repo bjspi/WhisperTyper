@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app.core.api_keys import auth_headers
+from app.core.api_keys import auth_headers, is_local_endpoint
 from app.services.http_transport import is_tls_failure, request
 from app.services.netutil import (
     PX_PROXY_URL,
@@ -104,7 +104,10 @@ def format_api_error(response: httpx.Response) -> str:
 
 
 def classify_transport_error(error: Exception, api_url: str, proxies: Optional[Dict[str, str]]) -> str:
-    """Map a failed request to 'proxy', 'ssl', 'blocked', 'no_internet' or 'unknown'."""
+    """Map a failed request to 'proxy', 'ssl', 'blocked', 'no_internet', 'local_down' or 'unknown'."""
+    if is_local_endpoint(api_url) and isinstance(error, (httpx.ConnectError, httpx.TimeoutException)):
+        # This computer is reached directly, never through a proxy: nothing listens at that address.
+        return "local_down"
     if isinstance(error, httpx.ProxyError):
         return "proxy"
     if is_tls_failure(error):

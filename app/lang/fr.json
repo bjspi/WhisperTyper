@@ -485,5 +485,6 @@
   "local_delete_model_done": "Modèle « {model} » supprimé.",
   "local_delete_model_failed": "Échec de la suppression : {error}",
   "local_detect_running": "Détection…",
-  "local_model_partial": "incomplet – reprend au chargement"
+  "local_model_partial": "incomplet – reprend au chargement",
+  "conn_test_local_down": "🖥️ Aucun serveur ne répond à cette adresse sur ce PC. Le programme tourne-t-il, et l'adresse et le port sont-ils corrects ?\n\nDétails : {detail}"
 }
