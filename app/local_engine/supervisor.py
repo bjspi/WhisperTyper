@@ -180,7 +180,9 @@ class Supervisor:
         self._attempts = 0
         self._last_auto_start: Optional[float] = None
         self._fail_streak = 0
-        self._last_deep = 0.0
+        #: Monotonic time of the last deep check; -inf runs the first one as soon as the engine is ready
+        #: (``time.monotonic`` may be smaller than the interval shortly after boot).
+        self._last_deep = float("-inf")
         self._deep_due = False
         self._last_used = time.monotonic()
         self._wake = threading.Event()
@@ -315,7 +317,7 @@ class Supervisor:
         if restart and self.settings is not None:
             self._attempts, self._last_auto_start = 0, None
             self._stop()
-            self._last_deep, self._deep_due = 0.0, False
+            self._last_deep, self._deep_due = float("-inf"), False
             self._start("requested")
             self._set(STARTING)
 
