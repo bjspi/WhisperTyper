@@ -10,7 +10,6 @@ from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QLabel,
-    QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -20,6 +19,7 @@ from PyQt6.QtWidgets import (
 
 from app.core.i18n import TranslationManager
 from app.local_engine.availability import console_python, pip_command
+from app.ui import message_dialog
 
 
 def environment_description() -> str:
@@ -35,10 +35,8 @@ def confirm_install(parent: QWidget, translator: TranslationManager, requirement
     text = tr("local_install_confirm_text", packages="\n".join(f"• {req}" for req in requirements),
               size=tr("local_install_size_cuda" if nvidia else "local_install_size"),
               environment=environment_description())
-    reply = QMessageBox.question(parent, tr("local_install_title"), text,
-                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                 QMessageBox.StandardButton.Yes)
-    return reply == QMessageBox.StandardButton.Yes
+    return message_dialog.ask(parent, tr("local_install_title"), text, tr("install_button"),
+                              tr("dialog_cancel_button"), message_dialog.UPDATE)
 
 
 class InstallDialog(QDialog):

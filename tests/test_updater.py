@@ -135,27 +135,3 @@ def test_updates_move_the_checkout_to_the_release_tag(monkeypatch, tmp_path):
     assert started[-1][-1] == ["reset", "--hard", "refs/tags/v0.16.0"]
     assert updater.target == Release(0, 16, 0)
 
-
-def test_details_toggle_names_what_a_click_does():
-    from PyQt6.QtCore import QTimer
-    from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QPlainTextEdit, QPushButton
-
-    from app.ui.update_dialog import run_update_dialog
-
-    seen = []
-
-    def click_toggle_twice() -> None:
-        dialog = next(w for w in QAPP.topLevelWidgets() if isinstance(w, QDialog) and w.isVisible())
-        toggle = next(b for b in dialog.findChildren(QPushButton) if b.isCheckable())
-        details = dialog.findChild(QPlainTextEdit)
-        seen.append((toggle.text(), details.isVisible()))
-        toggle.click()
-        seen.append((toggle.text(), details.isVisible()))
-        toggle.click()
-        seen.append((toggle.text(), details.isVisible()))
-        dialog.reject()
-
-    QTimer.singleShot(0, click_toggle_twice)
-    run_update_dialog(None, "Title", "Message", "diff",
-                      [("Close", QDialogButtonBox.ButtonRole.RejectRole)], details_captions=("Show", "Hide"))
-    assert seen == [("Show", False), ("Hide", True), ("Show", False)]

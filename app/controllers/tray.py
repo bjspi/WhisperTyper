@@ -8,7 +8,7 @@ from typing import Callable, Dict, Optional, Protocol, Tuple
 
 from PyQt6.QtCore import QObject, QPoint, QTimer
 from PyQt6.QtGui import QAction, QCursor, QIcon
-from PyQt6.QtWidgets import QApplication, QDialogButtonBox, QFileDialog, QLabel, QMessageBox, QStyle, QSystemTrayIcon, QWidget
+from PyQt6.QtWidgets import QApplication, QFileDialog, QLabel, QStyle, QSystemTrayIcon, QWidget
 
 from app import __version__
 from app.bootstrap import requirements_install_command
@@ -28,13 +28,12 @@ from app.services.ffmpeg import resolve_ffmpeg
 from app.services.gitutil import git_available, release_changes
 from app.services.releases import Release
 from app.services.updater import GitUpdater
-from app.ui import macos_icons
+from app.ui import macos_icons, message_dialog
 from app.ui.durations import BALLOON_INFO_MS, BALLOON_SHORT_MS, BALLOON_WARNING_MS
 from app.ui.line_icons import line_icon
 from app.ui.local_engine_tab import status_text
 from app.ui.tray_icons import app_icon, recording_level_icon, tray_icon
 from app.ui.tray_menu import BadgeTrayMenu
-from app.ui.update_dialog import run_update_dialog
 
 #: Refresh interval of the recording level meter in the tray icon.
 _METER_INTERVAL_MS = 80
@@ -485,7 +484,7 @@ class TrayController(QObject):
             self._ctx.notifier.show(tr("update_running_message"), BALLOON_SHORT_MS)
             return
         if not git_available():
-            QMessageBox.warning(self._window, tr("update_dialog_title"), tr("update_git_missing_text"))
+            self._update_message("update_git_missing_title", tr("update_git_missing_text"), message_dialog.WARNING)
             return
         if self.updater.latest is not None:
             self._offer_update(self.updater.latest)
@@ -493,6 +492,11 @@ class TrayController(QObject):
         self._update_check_requested = True
         self._ctx.notifier.show(tr("update_checking_message"), 0, spinner=True)
         self.updater.check_now()
+
+    def _update_message(self, title_key: str, text: str, kind: Tuple[str, str], **kwargs: str) -> None:
+        """A self-update message with a single close button."""
+        tr = self._ctx.tr
+        message_dialog.inform(self._window, tr(title_key, **kwargs), text, tr("update_close_button"), kind)
 
     def _on_update_checked(self, reachable: bool) -> None:
         """Answer a check the user asked for; background checks only update the menu entry."""
@@ -502,12 +506,12 @@ class TrayController(QObject):
         self._ctx.notifier.hide()
         tr = self._ctx.tr
         if not reachable:
-            QMessageBox.warning(self._window, tr("update_dialog_title"), tr("update_check_failed_text"))
+            self._update_message("update_check_failed_title", tr("update_check_failed_text"), message_dialog.WARNING)
         elif self.updater.latest is None:
             # After an update (before the restart) ``current`` is the installed release.
             current = self.updater.current.version if self.updater.current else __version__
-            QMessageBox.information(self._window, tr("update_dialog_title"),
-                                    tr("update_up_to_date_text", version=current))
+            self._update_message("update_up_to_date_title", tr("update_up_to_date_text", version=current),
+                                 message_dialog.SUCCESS)
         else:
             self._offer_update(self.updater.latest)
 
@@ -515,13 +519,13 @@ class TrayController(QObject):
         """Ask whether to update to ``release``; its changes can be unfolded below the question."""
         tr = self._ctx.tr
         update = tr("update_install_button")
-        changes = release_changes(self.updater.root or "", release.tag) or ""
-        choice = run_update_dialog(
-            self._window, tr("update_dialog_title"),
-            tr("update_confirm_text", version=release.version, current=__version__), changes,
-            [(update, QDialogButtonBox.ButtonRole.AcceptRole),
-             (tr("update_cancel_button"), QDialogButtonBox.ButtonRole.RejectRole)],
-            details_captions=(tr("update_changes_button"), tr("update_changes_hide_button")))
+        choice = message_dialog.show_dialog(
+            self._window, tr("update_available_title", version=release.version),
+            tr("update_confirm_text", version=release.version, current=__version__),
+            [(tr("update_cancel_button"), message_dialog.SECONDARY), (update, message_dialog.PRIMARY)],
+            message_dialog.UPDATE, details=release_changes(self.updater.root or "", release.tag) or "",
+            details_captions=(tr("update_changes_button"), tr("update_changes_hide_button")),
+            window_title=tr("update_dialog_title"))
         if choice != update or self.updater.pulling:
             return
         self._ctx.notifier.show(tr("update_running_message"), 0, spinner=True)
@@ -530,19 +534,19 @@ class TrayController(QObject):
     def _on_update_failed_to_start(self) -> None:
         """Git vanished between the availability check and the update."""
         self._ctx.notifier.hide()
-        QMessageBox.warning(self._window, self._ctx.tr("update_dialog_title"), self._ctx.tr("update_git_missing_text"))
+        self._update_message("update_git_missing_title", self._ctx.tr("update_git_missing_text"),
+                             message_dialog.WARNING)
 
     def _force_update(self) -> None:
         """After an explicit confirmation, replace local changes with the newest release."""
         tr = self._ctx.tr
         if self.updater.pulling or self.updater.latest is None:
             return
-        reply = QMessageBox.warning(
-            self._window, tr("update_dialog_title"),
-            tr("update_force_confirm_text", version=self.updater.latest.version, path=self.updater.root or ""),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        version = self.updater.latest.version
+        if not message_dialog.ask(self._window, tr("update_force_title", version=version),
+                                  tr("update_force_confirm_text", version=version, path=self.updater.root or ""),
+                                  tr("update_force_confirm_button"), tr("update_cancel_button"),
+                                  message_dialog.WARNING, window_title=tr("update_dialog_title")):
             return
         self._update_forced = True
         self._ctx.notifier.show(tr("update_running_message"), 0, spinner=True)
@@ -553,33 +557,36 @@ class TrayController(QObject):
         self._ctx.notifier.hide()
         forced, self._update_forced = self._update_forced, False
         tr = self._ctx.tr
-        title = tr("update_dialog_title")
+        window_title = tr("update_dialog_title")
         details = output or tr("update_no_output")
         details_captions = (tr("update_details_button"), tr("update_details_hide_button"))
         version = self.updater.target.version if self.updater.target else ""
-        close = (tr("update_close_button"), QDialogButtonBox.ButtonRole.RejectRole)
+        close = (tr("update_close_button"), message_dialog.SECONDARY if not forced else message_dialog.PRIMARY)
         if not succeeded:
             force = tr("update_force_button")
-            message = tr("update_failed_text", version=version) + ("" if forced else "\n\n" + tr("update_force_hint", version=version))
-            buttons = [close] if forced else [(force, QDialogButtonBox.ButtonRole.DestructiveRole), close]
-            if run_update_dialog(self._window, title, message, details, buttons, default=len(buttons) - 1,
-                                 details_captions=details_captions) == force:
+            message = tr("update_failed_text", version=version)
+            if not forced:
+                message += "\n\n" + tr("update_force_hint", version=version)
+            buttons = [close] if forced else [close, (force, message_dialog.DANGER)]
+            if message_dialog.show_dialog(self._window, tr("update_failed_title"), message, buttons,
+                                          message_dialog.ERROR, details, details_captions, window_title) == force:
                 self._force_update()
             return
         if not changed:
-            QMessageBox.information(self._window, title, tr("update_unchanged_text", version=version))
+            self._update_message("update_up_to_date_title", tr("update_unchanged_text", version=version),
+                                 message_dialog.SUCCESS)
             return
         restart = tr("update_restart_button")
-        message = tr("update_success_text", version=version)
+        message = tr("update_success_text")
         if forced:
             message += "\n\n" + tr("update_force_success_hint")
         if self.updater.requirements_changed:
             # The new code may need packages the running interpreter lacks; it could not start.
             message += "\n\n" + tr("update_requirements_hint", command=requirements_install_command())
-        if run_update_dialog(self._window, title, message, details,
-                             [(restart, QDialogButtonBox.ButtonRole.AcceptRole),
-                              (tr("update_later_button"), QDialogButtonBox.ButtonRole.RejectRole)],
-                             details_captions=details_captions) == restart:
+        if message_dialog.show_dialog(self._window, tr("update_success_title", version=version), message,
+                                      [(tr("update_later_button"), message_dialog.SECONDARY),
+                                       (restart, message_dialog.PRIMARY)],
+                                      message_dialog.SUCCESS, details, details_captions, window_title) == restart:
             self._restart()
 
     def _apply_update_indicator(self) -> None:

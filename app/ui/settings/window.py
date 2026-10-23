@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, Optional
 from PyQt6 import uic
 from PyQt6.QtCore import QSignalBlocker, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QCloseEvent
-from PyQt6.QtWidgets import QApplication, QMenuBar, QMessageBox, QSizePolicy, QStyle
+from PyQt6.QtWidgets import QApplication, QMenuBar, QSizePolicy, QStyle
 
 from app.audio.playback import WavPlayer
 from app.context import AppContext
@@ -24,6 +24,7 @@ from app.core.env import is_MACOS
 from app.core.hotkeys import is_clipboard_shortcut, normalize_hotkey_string, pretty_hotkey
 from app.core.paths import resource_path
 from app.core.replacements import ReplacementError, Replacements
+from app.ui import message_dialog
 from app.ui.api_keys import ApiKeysTab
 from app.ui.connection_tester import ConnectionTester
 from app.ui.local_engine_tab import LocalEngineTab
@@ -302,8 +303,9 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         try:
             Replacements(raw_rules)
         except ReplacementError as error:
-            QMessageBox.warning(self, self.translator.tr("tab_replacements"),
-                                self.translator.tr("replacements_invalid", line=error.line))
+            message_dialog.inform(self, self.translator.tr("tab_replacements"),
+                                  self.translator.tr("replacements_invalid", line=error.line),
+                                  self.translator.tr("ok_button"), message_dialog.WARNING)
             self.tabs.setCurrentWidget(self._replacements_tab)
             self._replacements_tab.editor.setFocus()
             return
@@ -311,13 +313,10 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
             return
         warnings = self._collect_validation_warnings(self.model_dropdown.currentText().strip())
         if warnings:
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setWindowTitle(self.translator.tr("validation_warning_title"))
-            msg.setText(self.translator.tr("validation_warning_text"))
-            msg.setInformativeText("\n".join(f"- {w}" for w in warnings))
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+            message_dialog.inform(self, self.translator.tr("validation_warning_title"),
+                                  self.translator.tr("validation_warning_text") + "\n\n"
+                                  + "\n".join(f"• {w}" for w in warnings),
+                                  self.translator.tr("ok_button"), message_dialog.WARNING)
         # Live-mirrored keys already hold the edits; their saved values are in the snapshot.
         before = {**copy.deepcopy(self.config), **self._live_snapshot}
         if not self._save_api_settings():
@@ -334,8 +333,9 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         hotkeys_changed |= bool(before.get("push_to_talk")) != bool(self.config.get("push_to_talk"))
 
         if not self.ctx.save_config(with_unsaved_edits=True, notify=False):
-            QMessageBox.warning(self, self.translator.tr("settings_save_failed_title"),
-                                self.translator.tr("settings_save_failed_text", error=self.ctx.save_error()))
+            message_dialog.inform(self, self.translator.tr("settings_save_failed_title"),
+                                  self.translator.tr("settings_save_failed_text", error=self.ctx.save_error()),
+                                  self.translator.tr("ok_button"), message_dialog.ERROR)
         logging.info("settings_saved changes: %s", describe_changes(before, self.config))
         self._snapshot_live_config()
         self.update_brand_header()
@@ -348,9 +348,10 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         for field in (self.hotkey_display, self.pr_hotkey_display):
             if not is_clipboard_shortcut(field.text()):
                 continue
-            QMessageBox.warning(self, self.translator.tr("hotkey_clipboard_conflict_title"),
-                                self.translator.tr("hotkey_clipboard_conflict_text",
-                                                   hotkey=pretty_hotkey(normalize_hotkey_string(field.text()))))
+            message_dialog.inform(self, self.translator.tr("hotkey_clipboard_conflict_title"),
+                                  self.translator.tr("hotkey_clipboard_conflict_text",
+                                                     hotkey=pretty_hotkey(normalize_hotkey_string(field.text()))),
+                                  self.translator.tr("ok_button"), message_dialog.WARNING)
             for index in range(self.tabs.count()):
                 tab = self.tabs.widget(index)
                 if tab is not None and tab.isAncestorOf(field):
@@ -371,8 +372,8 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self.config["post_rephrase_hotkey"] = pending_pr
         if is_MACOS:
             # Restarting the listener at runtime conflicts with the macOS accessibility permissions.
-            QMessageBox.information(self, self.translator.tr("macos_hotkey_restart_title"),
-                                    self.translator.tr("macos_hotkey_restart_text"))
+            message_dialog.inform(self, self.translator.tr("macos_hotkey_restart_title"),
+                                  self.translator.tr("macos_hotkey_restart_text"), self.translator.tr("ok_button"))
             return False
         return True
 

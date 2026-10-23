@@ -679,7 +679,7 @@ def main() -> int:
               and tab.profiles()[1]["key"] == "gsk-smoke-a-edited")
         check("keys: unsaved edit does not affect runtime credentials", selected_api_key(wt.ctx.config, "transcription") == "sk-test-dummy")
         with (patch("app.ui.connection_tester.net.run_transcription_connection_test", return_value=("ok", "")) as connection,
-              patch("app.ui.connection_tester.QMessageBox.information")):
+              patch("app.ui.connection_tester.message_dialog.inform")):
             sw._connection_tester.test_transcription()
             sw._connection_tester.wait()
         check("keys: connection test uses the unsaved automatic key", connection.call_args.args[1] == "gsk-smoke-a-edited")
@@ -799,7 +799,7 @@ def main() -> int:
         QTest.keyClicks(selector.lineEdit(), "my-custom-transcriber")
         check("models: typing a transcription model edits the dropdown directly", selector.currentText() == "my-custom-transcriber")
         with (patch("app.ui.connection_tester.net.run_transcription_connection_test", return_value=("ok", "")) as connection,
-              patch("app.ui.connection_tester.QMessageBox")):
+              patch("app.ui.connection_tester.message_dialog")):
             sw._connection_tester.test_transcription()
             sw._connection_tester.wait()
         check("models: transcription connection test uses the typed model",
@@ -934,7 +934,7 @@ def main() -> int:
             wt.pipeline.on_transcription_finished("Krog", "clipboard")
             check("replacements: disabled corrections leave text untouched", output.call_args.args[0] == "Krog")
         tab.editor.setPlainText("valid ; rule\nbroken")
-        with patch("app.ui.settings.window.QMessageBox.warning") as warning:
+        with patch("app.ui.settings.window.message_dialog.inform") as warning:
             sw.save_settings()
         check("replacements: invalid edits show their line and preserve saved rules", warning.call_count == 1
               and "2" in warning.call_args.args[2] and wt.ctx.config["replacements_rules"] == raw

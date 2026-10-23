@@ -27,7 +27,6 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -61,6 +60,7 @@ from app.local_engine.catalog import (
 )
 from app.local_engine.supervisor import CONFLICT, DOWN, LOADING, OFF, READY, STARTING, EngineStatus
 from app.services.http_transport import request
+from app.ui import message_dialog
 from app.ui.local_engine_install import install
 from app.ui.settings.modern_rows import SettingRow, rebuild_card
 from app.ui.theme import set_style_state
@@ -470,12 +470,11 @@ class LocalEngineTab(QWidget):
         if folder is None:
             return
         size = sum(file.stat().st_size for file in folder.rglob("*") if file.is_file())
-        reply = QMessageBox.question(self, tr("local_delete_model_title"),
-                                     tr("local_delete_model_text", model=folder.name, size=_megabytes(size),
-                                        path=str(folder)),
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                     QMessageBox.StandardButton.No)
-        if reply != QMessageBox.StandardButton.Yes:
+        confirmed = message_dialog.ask(self, tr("local_delete_model_title"),
+                                       tr("local_delete_model_text", model=folder.name, size=_megabytes(size),
+                                          path=str(folder)),
+                                       tr("delete_button"), tr("dialog_cancel_button"), message_dialog.WARNING)
+        if not confirmed:
             return
         status = self._engine.status
         in_use = status.state not in (OFF, UNAVAILABLE) and model_dir_name(status.model) == folder.name
@@ -496,7 +495,8 @@ class LocalEngineTab(QWidget):
             self._ctx.notifier.show(tr("local_delete_model_done", model=folder.name))
         except OSError as error:
             logging.error("local_model_delete failed %s: %s", folder, error)
-            QMessageBox.warning(self, tr("local_delete_model_title"), tr("local_delete_model_failed", error=error))
+            message_dialog.inform(self, tr("local_delete_model_title"), tr("local_delete_model_failed", error=error),
+                                  tr("ok_button"), message_dialog.ERROR)
         self._refresh_models()
 
     def _browse_models_dir(self) -> None:

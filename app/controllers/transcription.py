@@ -13,7 +13,6 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
 import copykitten
-from PyQt6.QtWidgets import QMessageBox
 
 from app.context import AppContext
 from app.controllers.local_engine import READY_WAIT_S, LocalEngineController
@@ -41,6 +40,7 @@ from app.services.net import proxies_for
 from app.services.rephrasing_worker import RephrasingWorker
 from app.services.transcription import DEFAULT_HEDGE_RESPONSE_WAIT_S, TranscriptionRequest
 from app.services.transcription_worker import TranscriptionWorker
+from app.ui import message_dialog
 from app.ui.durations import (
     BALLOON_CONFIRM_MS,
     BALLOON_ERROR_MS,
@@ -348,14 +348,13 @@ class TranscriptionPipeline:
             return
         self._notifier.show(self._ctx.tr("transcription_failed_message"), BALLOON_WARNING_MS)
 
-        msg_box = QMessageBox()
-        msg_box.setIcon(QMessageBox.Icon.Warning)
-        msg_box.setText(self._ctx.tr("transcription_error_title"))
-        msg_box.setInformativeText(self._ctx.tr("transcription_error_text", error_message=error_message,
-                                                audio_file_path=audio_file_path))
-        msg_box.setWindowTitle(self._ctx.tr("transcription_error_title"))
-        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Retry)
-        if msg_box.exec() == QMessageBox.StandardButton.Retry:
+        tr = self._ctx.tr
+        retry = tr("retry_button")
+        if message_dialog.show_dialog(
+                None, tr("transcription_error_title"),
+                tr("transcription_error_text", error_message=error_message, audio_file_path=audio_file_path),
+                [(tr("dialog_close_button"), message_dialog.SECONDARY), (retry, message_dialog.PRIMARY)],
+                message_dialog.ERROR) == retry:
             self.start(audio_file_path, output_mode=output_mode, transformation_prompt=transformation_prompt,
                        timing=OperationTiming("retry"), use_auto_prompt=use_auto_prompt,
                        instruction_selected=instruction_selected)

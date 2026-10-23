@@ -148,7 +148,7 @@ def test_connection_test_runs_off_the_gui_thread_and_ignores_clicks_meanwhile(ma
 
     with (patch("app.ui.connection_tester.net.run_transcription_connection_test", side_effect=slow_probe),
           patch("app.ui.connection_tester.request") as internet,
-          patch("app.ui.connection_tester.QMessageBox") as message_box):
+          patch("app.ui.connection_tester.message_dialog") as message_box):
         tester.test_transcription()
         assert tester.busy and not button.isEnabled()
         assert button.text() == window.translator.tr("api_test_testing_button")
@@ -158,5 +158,5 @@ def test_connection_test_runs_off_the_gui_thread_and_ignores_clicks_meanwhile(ma
         tester.wait()
     assert probe_thread and probe_thread[0] is not threading.main_thread()
     assert not tester.busy and button.isEnabled() and button.text() == caption
-    assert message_box.information.call_count == 1
-    assert message_box.information.call_args.args[1] == window.translator.tr("conn_test_title")
+    assert message_box.inform.call_count == 1
+    assert message_box.inform.call_args.args[1] == window.translator.tr("conn_test_title")
