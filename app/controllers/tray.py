@@ -1,4 +1,4 @@
-"""System-tray icon and menu: actions, live recording meter and the git self-update entry."""
+"""System-tray icon and menu: actions, live recording meter and the self-update entry."""
 from __future__ import annotations
 
 import logging
@@ -25,7 +25,8 @@ from app.core.hotkeys import pretty_hotkey
 from app.local_engine.supervisor import OFF, READY, EngineStatus
 from app.services import bad_recordings
 from app.services.ffmpeg import resolve_ffmpeg
-from app.services.gitutil import git_available
+from app.services.gitutil import git_available, release_changes
+from app.services.releases import Release
 from app.services.updater import GitUpdater
 from app.ui import macos_icons
 from app.ui.durations import BALLOON_INFO_MS, BALLOON_SHORT_MS, BALLOON_WARNING_MS
@@ -94,6 +95,8 @@ class TrayController(QObject):
         self._quit = quit_app
         # Whether the running update is a forced one (its result dialog reads differently).
         self._update_forced = False
+        # The user asked for an update check; its answer is reported in a dialog.
+        self._update_check_requested = False
         self.tray_icon: Optional[QSystemTrayIcon] = None
         self.tray_menu: Optional[BadgeTrayMenu] = None
         self._idle_icon = QIcon()
@@ -112,6 +115,7 @@ class TrayController(QObject):
         self.updater.availability_changed.connect(lambda _available: self._apply_update_indicator())
         self.updater.pull_finished.connect(self._on_update_finished)
         self.updater.pull_failed_to_start.connect(self._on_update_failed_to_start)
+        self.updater.checked.connect(self._on_update_checked)
         self.update_action: Optional[QAction] = None
         self._header_status: Optional[QLabel] = None
         self._tooltip = ""
@@ -471,11 +475,10 @@ class TrayController(QObject):
             logging.info("Transcribing %d selected files as a batch.", len(paths))
             self._pipeline.start_batch(paths)
 
-    # --- Self-update (git pull) ----------------------------------------------------------
+    # --- Self-update (release tags) -------------------------------------------------------
     def check_for_updates(self) -> None:
-        """Ask for confirmation, then pull the latest code from git for this source checkout."""
-        root = self.updater.root
-        if not root:
+        """Offer a known newer release, or look for one and report the answer."""
+        if not self.updater.root:
             return
         tr = self._ctx.tr
         if self.updater.pulling:
@@ -484,33 +487,65 @@ class TrayController(QObject):
         if not git_available():
             QMessageBox.warning(self._window, tr("update_dialog_title"), tr("update_git_missing_text"))
             return
-        reply = QMessageBox.question(
-            self._window, tr("update_dialog_title"), tr("update_confirm_text", path=root),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        if self.updater.latest is not None:
+            self._offer_update(self.updater.latest)
+            return
+        self._update_check_requested = True
+        self._ctx.notifier.show(tr("update_checking_message"), 0, spinner=True)
+        self.updater.check_now()
+
+    def _on_update_checked(self, reachable: bool) -> None:
+        """Answer a check the user asked for; background checks only update the menu entry."""
+        if not self._update_check_requested:
+            return
+        self._update_check_requested = False
+        self._ctx.notifier.hide()
+        tr = self._ctx.tr
+        if not reachable:
+            QMessageBox.warning(self._window, tr("update_dialog_title"), tr("update_check_failed_text"))
+        elif self.updater.latest is None:
+            # After an update (before the restart) ``current`` is the installed release.
+            current = self.updater.current.version if self.updater.current else __version__
+            QMessageBox.information(self._window, tr("update_dialog_title"),
+                                    tr("update_up_to_date_text", version=current))
+        else:
+            self._offer_update(self.updater.latest)
+
+    def _offer_update(self, release: Release) -> None:
+        """Ask whether to update to ``release``; its changes can be unfolded below the question."""
+        tr = self._ctx.tr
+        update = tr("update_install_button")
+        changes = release_changes(self.updater.root or "", release.tag) or ""
+        choice = run_update_dialog(
+            self._window, tr("update_dialog_title"),
+            tr("update_confirm_text", version=release.version, current=__version__), changes,
+            [(update, QDialogButtonBox.ButtonRole.AcceptRole),
+             (tr("update_cancel_button"), QDialogButtonBox.ButtonRole.RejectRole)],
+            details_caption=tr("update_changes_button"))
+        if choice != update or self.updater.pulling:
             return
         self._ctx.notifier.show(tr("update_running_message"), 0, spinner=True)
         self.updater.pull()
 
     def _on_update_failed_to_start(self) -> None:
-        """Git vanished between the availability check and the pull."""
+        """Git vanished between the availability check and the update."""
         self._ctx.notifier.hide()
         QMessageBox.warning(self._window, self._ctx.tr("update_dialog_title"), self._ctx.tr("update_git_missing_text"))
 
     def _force_update(self) -> None:
-        """After an explicit confirmation, replace local changes with the latest upstream version."""
+        """After an explicit confirmation, replace local changes with the newest release."""
         tr = self._ctx.tr
-        if self.updater.pulling:
+        if self.updater.pulling or self.updater.latest is None:
             return
         reply = QMessageBox.warning(
-            self._window, tr("update_dialog_title"), tr("update_force_confirm_text", path=self.updater.root or ""),
+            self._window, tr("update_dialog_title"),
+            tr("update_force_confirm_text", version=self.updater.latest.version, path=self.updater.root or ""),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
         self._update_forced = True
-        self._ctx.notifier.show(tr("update_force_running_message"), 0, spinner=True)
+        self._ctx.notifier.show(tr("update_running_message"), 0, spinner=True)
         self.updater.force_update()
 
     def _on_update_finished(self, succeeded: bool, changed: bool, output: str) -> None:
@@ -520,36 +555,41 @@ class TrayController(QObject):
         tr = self._ctx.tr
         title = tr("update_dialog_title")
         details = output or tr("update_no_output")
+        details_caption = tr("update_details_button")
+        version = self.updater.target.version if self.updater.target else ""
         close = (tr("update_close_button"), QDialogButtonBox.ButtonRole.RejectRole)
         if not succeeded:
             force = tr("update_force_button")
-            message = tr("update_failed_text") + ("" if forced else "\n\n" + tr("update_force_hint"))
+            message = tr("update_failed_text", version=version) + ("" if forced else "\n\n" + tr("update_force_hint", version=version))
             buttons = [close] if forced else [(force, QDialogButtonBox.ButtonRole.DestructiveRole), close]
-            if run_update_dialog(self._window, title, message, details, buttons, default=len(buttons) - 1) == force:
+            if run_update_dialog(self._window, title, message, details, buttons, default=len(buttons) - 1,
+                                 details_caption=details_caption) == force:
                 self._force_update()
             return
         if not changed:
-            if forced:
-                run_update_dialog(self._window, title, tr("update_force_unchanged_text"), details, [close])
-            else:
-                QMessageBox.information(self._window, title, tr("update_up_to_date_text"))
+            QMessageBox.information(self._window, title, tr("update_unchanged_text", version=version))
             return
         restart = tr("update_restart_button")
-        message = tr("update_force_success_text" if forced else "update_success_text")
+        message = tr("update_success_text", version=version)
+        if forced:
+            message += "\n\n" + tr("update_force_success_hint")
         if self.updater.requirements_changed:
             # The new code may need packages the running interpreter lacks; it could not start.
             message += "\n\n" + tr("update_requirements_hint", command=requirements_install_command())
         if run_update_dialog(self._window, title, message, details,
                              [(restart, QDialogButtonBox.ButtonRole.AcceptRole),
-                              (tr("update_later_button"), QDialogButtonBox.ButtonRole.RejectRole)]) == restart:
+                              (tr("update_later_button"), QDialogButtonBox.ButtonRole.RejectRole)],
+                             details_caption=details_caption) == restart:
             self._restart()
 
     def _apply_update_indicator(self) -> None:
         """Reflect the updater's availability on the tray entry label and its green dot."""
         if self.update_action is None or self.tray_menu is None:
             return
-        available = self.updater.available
-        self.update_action.setText(self._ctx.tr("tray_update_available_action" if available else "tray_update_action"))
+        latest = self.updater.latest
+        available = latest is not None
+        self.update_action.setText(self._ctx.tr("tray_update_available_action", version=latest.version)
+                                   if latest is not None else self._ctx.tr("tray_update_action"))
         if self._header_status is not None:
             colors = self._settings.theme_palette()
             self.update_action.setIcon(line_icon("download", colors["accent"] if available else self._menu_icon_color()))

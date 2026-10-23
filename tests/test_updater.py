@@ -14,6 +14,7 @@ from PyQt6.QtCore import QProcess  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 from app.services import updater as updater_module  # noqa: E402
+from app.services.releases import Release  # noqa: E402
 from app.services.updater import GitUpdater  # noqa: E402
 
 QAPP = QApplication.instance() or QApplication([])
@@ -57,14 +58,79 @@ def test_only_a_missing_git_counts_as_failed_to_start(monkeypatch, tmp_path):
     assert failed_to_start == [True]
 
 
-def test_fetch_ref_survives_a_crash_so_finished_can_clean_up(monkeypatch, tmp_path):
+def test_check_ref_survives_a_crash_so_finished_can_clean_up(monkeypatch, tmp_path):
     updater = make_updater(monkeypatch, tmp_path)
-    updater._fetch = updater._process(updater._on_fetch_finished)
-    updater._on_fetch_error(QProcess.ProcessError.Crashed)
-    assert updater._fetch is not None
-    updater._on_fetch_finished(1, QProcess.ExitStatus.CrashExit)
-    assert updater._fetch is None and not updater.available
+    updater._check = updater._process(updater._on_check_finished)
+    updater._on_check_error(QProcess.ProcessError.Crashed)
+    assert updater._check is not None
+    updater._on_check_finished(1, QProcess.ExitStatus.CrashExit)
+    assert updater._check is None and not updater.available
 
-    updater._fetch = updater._process(updater._on_fetch_finished)
-    updater._on_fetch_error(QProcess.ProcessError.FailedToStart)
-    assert updater._fetch is None
+    updater._check = updater._process(updater._on_check_finished)
+    updater._on_check_error(QProcess.ProcessError.FailedToStart)
+    assert updater._check is None and not updater.checking
+
+
+class _FakeProcess:
+    """Stands in for a finished ``git ls-remote`` QProcess."""
+
+    def __init__(self, output: str) -> None:
+        self._output = output.encode()
+
+    def readAll(self):
+        return type("Bytes", (), {"data": lambda _self: self._output})()
+
+    def deleteLater(self) -> None:
+        pass
+
+
+def _ls_remote(*tags: str) -> str:
+    return "".join(f"{index:040x}\trefs/tags/{tag}\n" for index, tag in enumerate(tags))
+
+
+def test_only_a_newer_published_release_is_offered(monkeypatch, tmp_path):
+    updater = make_updater(monkeypatch, tmp_path)
+    updater.current = Release(0, 15, 1)
+    asked = []
+    updater.ask_published = lambda release, answer: asked.append((release, answer))
+    started = []
+    monkeypatch.setattr(QProcess, "start", lambda self, program, arguments: started.append(arguments))
+    answers = []
+    updater.checked.connect(answers.append)
+
+    # Commits on main or an older tag are no update.
+    updater._check = _FakeProcess(_ls_remote("v0.15.0", "v0.15.1", "v0.16.0-beta"))
+    updater._on_check_finished(0, QProcess.ExitStatus.NormalExit)
+    assert answers == [True] and asked == [] and not updater.available
+
+    # A tag whose release is not published yet waits for the retry.
+    updater._check = _FakeProcess(_ls_remote("v0.15.1", "v0.15.2"))
+    updater._on_check_finished(0, QProcess.ExitStatus.NormalExit)
+    release, answer = asked.pop()
+    assert release == Release(0, 15, 2) and updater.checking
+    answer(False)
+    assert not updater.checking and not updater.available and updater._unpublished_retry.isActive()
+
+    # A published release is offered once its tag was fetched for the change list.
+    updater._check = _FakeProcess(_ls_remote("v0.15.2"))
+    updater._on_check_finished(0, QProcess.ExitStatus.NormalExit)
+    asked.pop()[1](True)
+    assert started[-1][-1] == "+refs/tags/v0.15.2:refs/tags/v0.15.2"
+    updater._check = _FakeProcess("")
+    updater._on_tag_fetched(Release(0, 15, 2), 0)
+    assert updater.latest == Release(0, 15, 2) and not updater.checking
+    updater._unpublished_retry.stop()
+
+
+def test_updates_move_the_checkout_to_the_release_tag(monkeypatch, tmp_path):
+    updater = make_updater(monkeypatch, tmp_path)
+    started = []
+    monkeypatch.setattr(updater, "_start_next_step", lambda: started.append(list(updater._pending_steps)))
+    updater.latest = Release(0, 16, 0)
+
+    updater.pull()
+    assert started[-1][-1] == ["merge", "--ff-only", "refs/tags/v0.16.0"]
+    updater.force_update()
+    assert started[-1][-2][:2] == ["stash", "push"]
+    assert started[-1][-1] == ["reset", "--hard", "refs/tags/v0.16.0"]
+    assert updater.target == Release(0, 16, 0)

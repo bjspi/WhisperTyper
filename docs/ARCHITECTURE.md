@@ -202,9 +202,11 @@ sequenceDiagram
 - **Config self-healing.** `ConfigStore` migrates legacy keys, repairs mojibake from
   historic encoding bugs (via `ftfy`), resets hotkeys polluted by captured control
   characters, and normalizes hotkey strings — all covered by tests.
-- **Self-update via git.** When run from a source checkout, the tray offers a
-  `git pull --ff-only` update; a background `git fetch` watcher shows a green dot when
-  upstream is ahead. Frozen (PyInstaller) builds never see this menu entry.
+- **Self-update to release tags.** When run from a source checkout, a background
+  `git ls-remote --tags` watcher looks for a `vX.Y.Z` tag newer than `app.__version__`
+  whose GitHub release (source ZIP) is published, fetches that tag and names the version
+  in the tray entry. Updating fast-forwards to the tag (`git merge --ff-only`); after a
+  failure a forced update stashes local changes and resets to the tag. Frozen (PyInstaller) builds never see this menu entry.
 - **Local transcription in a child process.** `app/local_engine/` runs Whisper as
   `python -m app.local_engine.server` (FastAPI, OpenAI-compatible) supervised by a watchdog
   thread (`supervisor.py`). The app never imports OpenVINO, CTranslate2 or CUDA: a crashed

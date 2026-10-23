@@ -1,14 +1,15 @@
-"""Result dialog of the self-update: a message above git's output, which scrolls instead of growing.
+"""Dialogs of the self-update: a message above optional details (changes, git's output) that scroll.
 
-A failed pull can list hundreds of files; in a message box they would push the buttons below
-the screen edge, so the dialog never gets taller than the screen allows.
+The details stay folded behind a toggle button, as most users only care about the version. A
+release diff or a failed update can run to hundreds of lines; in a message box they would push the
+buttons below the screen edge, so the dialog never gets taller than the screen allows.
 """
 from __future__ import annotations
 
 from typing import Optional, Sequence, Tuple
 
 from PyQt6.QtGui import QFontDatabase, QGuiApplication
-from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QPlainTextEdit, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
 #: Share of the available screen height the dialog may use at most.
 _MAX_SCREEN_SHARE = 0.85
@@ -20,14 +21,19 @@ Button = Tuple[str, QDialogButtonBox.ButtonRole]
 
 
 def run_update_dialog(parent: Optional[QWidget], title: str, message: str, output: str,
-                      buttons: Sequence[Button], default: int = 0) -> Optional[str]:
-    """Show ``message`` and the scrollable ``output``; the clicked button's caption, or None when closed."""
+                      buttons: Sequence[Button], default: int = 0,
+                      details_caption: Optional[str] = None) -> Optional[str]:
+    """Show ``message`` and the scrollable ``output``; the clicked button's caption, or None when closed.
+
+    With ``details_caption`` the output starts hidden behind a toggle button of that caption.
+    """
     dialog = QDialog(parent)
     dialog.setWindowTitle(title)
     layout = QVBoxLayout(dialog)
     label = QLabel(message, dialog)
     label.setWordWrap(True)
     layout.addWidget(label)
+    text: Optional[QPlainTextEdit] = None
     if output:
         text = QPlainTextEdit(output, dialog)
         text.setReadOnly(True)
@@ -37,6 +43,19 @@ def run_update_dialog(parent: Optional[QWidget], title: str, message: str, outpu
         text.setMinimumHeight(text.fontMetrics().lineSpacing() * (lines + 1) + 12)
         layout.addWidget(text, 1)
     box = QDialogButtonBox(dialog)
+    if text is not None and details_caption:
+        details = text
+        details.setVisible(False)
+        toggle = QPushButton(details_caption, dialog)
+        toggle.setCheckable(True)
+        toggle.setAutoDefault(False)
+
+        def show_details(shown: bool) -> None:
+            details.setVisible(shown)
+            dialog.adjustSize()
+
+        toggle.toggled.connect(show_details)
+        box.addButton(toggle, QDialogButtonBox.ButtonRole.HelpRole)
     clicked: list[str] = []
 
     def choose(caption: str) -> None:
