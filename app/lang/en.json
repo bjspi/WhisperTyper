@@ -118,7 +118,7 @@
   "playback_play_tooltip": "Play last recording",
   "playback_stop_tooltip": "Stop playback",
   "tray_mark_bad_action": "Mark Last Recording as Bad",
-  "tray_retranscribe_action": "Re-transcribe Last Recording (→ Clipboard)",
+  "tray_retranscribe_action": "Re-transcribe Last Recording",
   "tray_log_action": "Open Log File",
   "tray_cancel_action": "Cancel recording (no transcription)",
   "tray_update_action": "Check for updates",

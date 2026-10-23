@@ -118,7 +118,7 @@
   "playback_play_tooltip": "Lire le dernier enregistrement",
   "playback_stop_tooltip": "Arrêter la lecture",
   "tray_mark_bad_action": "Marquer le dernier enregistrement comme mauvais",
-  "tray_retranscribe_action": "Retranscrire le dernier enregistrement (→ Presse-papiers)",
+  "tray_retranscribe_action": "Retranscrire le dernier enregistrement",
   "tray_log_action": "Ouvrir le fichier journal",
   "tray_cancel_action": "Annuler l'enregistrement (sans transcription)",
   "tray_update_action": "Rechercher des mises à jour",
