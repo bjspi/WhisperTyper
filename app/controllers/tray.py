@@ -29,6 +29,7 @@ from app.services.gitutil import git_available, release_changes
 from app.services.releases import Release
 from app.services.updater import GitUpdater
 from app.ui import macos_icons, message_dialog
+from app.ui.about_dialog import show_about
 from app.ui.durations import BALLOON_INFO_MS, BALLOON_SHORT_MS, BALLOON_WARNING_MS
 from app.ui.line_icons import line_icon
 from app.ui.local_engine_tab import status_text
@@ -51,6 +52,7 @@ _MODERN_ICONS = {
     "tray_log_action": "log",
     "menu_help_github": "code",
     "tray_update_action": "download",
+    "tray_about_action": "info",
     "tray_restart_action": "restart",
     "tray_quit_action": "quit",
 }
@@ -276,6 +278,7 @@ class TrayController(QObject):
             tray_menu.update_action = self.update_action
             # A rebuild must not lose an already-detected update.
             self._apply_update_indicator()
+        add(sp.SP_MessageBoxInformation, "tray_about_action", "a", lambda: show_about(self._window, self._ctx.tr))
         add(sp.SP_BrowserReload, "tray_restart_action", "n", self._restart)
         add(sp.SP_DialogCloseButton, "tray_quit_action", "q", self._quit)
 

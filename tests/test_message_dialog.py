@@ -71,3 +71,32 @@ def test_enter_cancels_a_destructive_question():
     dialog = MessageDialog(None, "Delete?", "", [("Cancel", SECONDARY), ("Delete", DANGER)])
     assert [button.text() for button in dialog.buttons if button.isDefault()] == ["Cancel"]
     dialog.deleteLater()
+
+
+def test_actions_keep_the_dialog_open_and_facts_show_in_a_card():
+    from PyQt6.QtWidgets import QFrame, QPushButton
+
+    opened = []
+    dialog = MessageDialog(None, "About", "Tagline", [("Close", PRIMARY)],
+                           facts=[("Version", "1.2.3"), ("Project", '<a href="https://x">x</a>')],
+                           actions=[("Open folder", lambda: opened.append(True))])
+    dialog.show()
+    next(b for b in dialog.findChildren(QPushButton) if b.text() == "Open folder").click()
+    assert opened == [True] and dialog.isVisible() and dialog.clicked is None
+    assert dialog.findChild(QFrame, "messageFacts") is not None
+    dialog.reject()
+    dialog.deleteLater()
+
+
+def test_about_dialog_names_version_and_data_folder(monkeypatch):
+    from app import __version__
+    from app.core.constants import APP_DATA_DIR
+    from app.ui import about_dialog
+
+    shown = {}
+    monkeypatch.setattr(about_dialog.message_dialog, "show_dialog",
+                        lambda parent, title, text, buttons, **kwargs: shown.update(title=title, **kwargs))
+    about_dialog.show_about(None, lambda key, **_kwargs: key)
+    values = dict(shown["facts"])
+    assert __version__ in shown["title"] and values["about_fact_data"] == APP_DATA_DIR.replace("&", "&amp;")
+    assert shown["actions"][0][0] == "about_open_data_folder"
