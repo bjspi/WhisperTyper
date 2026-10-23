@@ -1,18 +1,14 @@
-"""Expert settings: the config.json-only "expert" block, its validation and its use when pasting."""
+"""Expert settings: the config.json-only "expert" block and its validation (paste use: test_clipboard.py)."""
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
 
-import app.controllers.text_output as text_output_module
-from app.controllers.text_output import TextOutput
 from app.core.config_store import ConfigStore
 from app.core.expert_settings import EXPERT_SETTINGS, expert_defaults, expert_value, normalize_expert
 from app.core.hotkeys import normalize_hotkey_string
-from app.core.timing import OperationTiming
 
 
 def test_defaults_are_the_previous_fixed_timings():
@@ -88,27 +84,3 @@ def test_a_valid_block_loads_unchanged(tmp_path):
     store.save(_config)
     store, config, _changed = _load(tmp_path, json.loads(Path(store.config_file).read_text(encoding="utf-8")))
     assert config["expert"] == custom and store.load_warnings == []
-
-
-def test_paste_and_copy_use_the_configured_timings(monkeypatch):
-    config = {"restore_clipboard": True, "fast_paste": False,
-              "expert": {**expert_defaults(), "paste_prepare_ms": 30, "paste_settle_ms": 40,
-                         "clipboard_restore_ms": 700, "copy_settle_ms": 50, "select_all_settle_ms": 60}}
-    output = TextOutput(config, lambda key, **_kwargs: key, Mock(), lambda _permission: None)
-    monkeypatch.setattr(output, "_simulate_key_combination", lambda _char: True)
-    monkeypatch.setattr(text_output_module.ClipboardSnapshot, "capture", classmethod(lambda cls: cls("old")))
-    monkeypatch.setattr(text_output_module.copykitten, "copy", Mock())
-    monkeypatch.setattr(text_output_module.copykitten, "paste", Mock(return_value="selected"))
-    restore = Mock()
-    monkeypatch.setattr(output, "_schedule_clipboard_restore", restore)
-    sleeps = Mock()
-    monkeypatch.setattr(text_output_module.time, "sleep", sleeps)
-
-    assert output.insert("text", OperationTiming("recording"))
-    assert [call.args[0] for call in sleeps.call_args_list] == [0.03, 0.04]
-    assert restore.call_args.args[1] == 700
-
-    sleeps.reset_mock()
-    monkeypatch.setattr(text_output_module.ClipboardSnapshot, "restore", lambda self: None)
-    assert output.get_selected_text(select_all_first=True) == "selected"
-    assert [call.args[0] for call in sleeps.call_args_list] == [0.06, 0.05]
