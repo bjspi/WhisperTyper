@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 from PyQt6.QtCore import QSignalBlocker, Qt
-from PyQt6.QtWidgets import QComboBox, QLabel, QLineEdit, QMessageBox, QPushButton, QWidget
+from PyQt6.QtWidgets import QComboBox, QLabel, QLineEdit, QPushButton, QWidget
 
 from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED
 from app.core.api_keys import (
@@ -36,6 +36,7 @@ from app.core.models import (
     rephrasing_supports_temperature,
 )
 from app.core.textutil import clean_model_name, estimate_tokens
+from app.ui import message_dialog
 from app.ui.local_engine_tab import status_text
 from app.ui.settings.base import SettingsWindowBase
 from app.ui.settings.widgets import show_temperature_support
@@ -311,7 +312,8 @@ class ApiPage(SettingsWindowBase):
         """Store profiles, key choices, custom URLs and models; False (nothing stored) if a profile lacks a name."""
         profiles = self._api_keys_tab.profiles()
         if any(not profile["name"] for profile in profiles):
-            QMessageBox.warning(self, self.translator.tr("tab_api_keys"), self.translator.tr("api_key_name_required"))
+            message_dialog.inform(self, self.translator.tr("tab_api_keys"), self.translator.tr("api_key_name_required"),
+                                  self.translator.tr("ok_button"), message_dialog.WARNING)
             self.tabs.setCurrentWidget(self._api_keys_tab)
             return False
         self.config["api_key_profiles"] = profiles

@@ -15,7 +15,7 @@ from logging import Handler
 from typing import Optional
 
 from PyQt6.QtCore import QObject, QProcess, QTimer
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtWidgets import QApplication
 
 from app.audio.sound import SoundPlayer
 from app.audio.store import RecordingStore
@@ -38,6 +38,7 @@ from app.core.hotkeys import normalize_hotkey_string
 from app.core.paths import resource_path
 from app.services.http_transport import close_transport, set_ip_family
 from app.services.logging_config import apply_logging_config
+from app.ui import message_dialog
 from app.ui.durations import BALLOON_INFO_MS, BALLOON_SHORT_MS
 from app.ui.settings.window import SettingsWindow
 
@@ -210,10 +211,8 @@ class WhisperTyperApp(QObject):
         """Quit cleanly, optionally after a confirmation dialog."""
         tr = self.ctx.tr
         if not self.ctx.config.get("quit_without_confirmation", False):
-            reply = QMessageBox.question(self.settings, tr("quit_dialog_title"), tr("quit_dialog_text"),
-                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                                         QMessageBox.StandardButton.No)
-            if reply == QMessageBox.StandardButton.No:
+            if not message_dialog.ask(self.settings, tr("quit_dialog_title"), tr("quit_dialog_text"),
+                                      tr("quit_confirm_button"), tr("dialog_cancel_button")):
                 return
 
         logging.info("Quitting application.")

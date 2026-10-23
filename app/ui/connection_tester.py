@@ -2,7 +2,7 @@
 
 Single responsibility: drive the three "Test connection" buttons — read the current form
 values, run the network probe (via ``services.net`` / ``services.rephrasing``) off the GUI
-thread and report the outcome through QMessageBox. The networking itself lives in ``services``.
+thread and report the outcome in message dialogs. The networking itself lives in ``services``.
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from functools import partial
 from typing import Any, Callable, Dict, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton
+from PyQt6.QtWidgets import QApplication, QPushButton
 
 from app.core.api_keys import LOCAL_PROVIDER, provider_for_url
 from app.core.models import LOCAL_TRANSCRIPTION_MODEL
@@ -23,6 +23,7 @@ from app.services import net
 from app.services.http_transport import request
 from app.services.netutil import PX_PROXY_PORT, is_px_running
 from app.services.rephrasing import rephrase_text
+from app.ui import message_dialog
 
 #: Tiny, well-known connectivity endpoint (answers HTTP 204).
 _CONNECTIVITY_URL = "https://www.google.com/generate_204"
@@ -94,12 +95,14 @@ class ConnectionTester(QObject):
 
     def _fail(self, title_key: str, text_key: str, **kwargs: Any) -> None:
         """Warn about missing settings or a failed test."""
-        QMessageBox.warning(self._w, self._w.translator.tr(title_key), self._w.translator.tr(text_key, **kwargs))
+        tr = self._w.translator.tr
+        message_dialog.inform(self._w, tr(title_key), tr(text_key, **kwargs), tr("ok_button"), message_dialog.WARNING)
 
     def _crash(self, error: Exception) -> None:
         """Report an unexpected exception raised by a test."""
         tr = self._w.translator.tr
-        QMessageBox.critical(self._w, tr("api_test_fail_title"), tr("api_test_exception_text", error=str(error)))
+        message_dialog.inform(self._w, tr("api_test_fail_title"), tr("api_test_exception_text", error=str(error)),
+                              tr("ok_button"), message_dialog.ERROR)
 
     def test_transcription(self) -> None:
         """Send a tiny test audio to the endpoint and report the classified outcome."""
@@ -131,9 +134,11 @@ class ConnectionTester(QObject):
         message = w.translator.tr(f"conn_test_{result_key}", detail=detail)
         # Only a genuine 200 is a success; anything else must not read as "everything is fine".
         if result_key == "ok":
-            QMessageBox.information(w, w.translator.tr("conn_test_title"), message)
+            message_dialog.inform(w, w.translator.tr("conn_test_title"), message, w.translator.tr("ok_button"),
+                                  message_dialog.SUCCESS)
         else:
-            QMessageBox.warning(w, w.translator.tr("conn_test_title"), message)
+            message_dialog.inform(w, w.translator.tr("conn_test_title"), message, w.translator.tr("ok_button"),
+                                  message_dialog.WARNING)
 
     def test_internet(self) -> None:
         """Test plain internet reachability, honoring the proxy / px settings."""
@@ -160,8 +165,9 @@ class ConnectionTester(QObject):
         """Show the reachability success, naming px when it carried the request."""
         w = self._w
         key = "internet_test_ok_px" if used_px else "internet_test_ok"
-        QMessageBox.information(w, w.translator.tr("internet_test_title"),
-                                w.translator.tr(key, detail=f"HTTP {status_code}"))
+        message_dialog.inform(w, w.translator.tr("internet_test_title"),
+                              w.translator.tr(key, detail=f"HTTP {status_code}"), w.translator.tr("ok_button"),
+                              message_dialog.SUCCESS)
 
     def _report_internet_failed(self, reason_key: str, detail: str, px_hint: bool) -> None:
         """Show the reachability failure with its classified reason."""
@@ -170,7 +176,8 @@ class ConnectionTester(QObject):
         message = w.translator.tr("internet_test_fail", detail=f"[{reason_key}] {detail}")
         if px_hint:
             message += "\n\n" + w.translator.tr("internet_test_px_hint")
-        QMessageBox.warning(w, w.translator.tr("internet_test_title"), message)
+        message_dialog.inform(w, w.translator.tr("internet_test_title"), message, w.translator.tr("ok_button"),
+                              message_dialog.WARNING)
 
     def test_rephrasing(self) -> None:
         """Send a minimal chat request with the current rephrasing settings."""
@@ -198,7 +205,8 @@ class ConnectionTester(QObject):
         """Show whether the model answered with the expected word."""
         w = self._w
         if "success" in response_text.lower():
-            QMessageBox.information(w, w.translator.tr("api_test_success_title"),
-                                    w.translator.tr("api_test_success_text", response=response_text))
+            message_dialog.inform(w, w.translator.tr("api_test_success_title"),
+                                  w.translator.tr("api_test_success_text", response=response_text),
+                                  w.translator.tr("ok_button"), message_dialog.SUCCESS)
         else:
             self._fail("api_test_fail_title", "api_test_unexpected_response_text", response=response_text)

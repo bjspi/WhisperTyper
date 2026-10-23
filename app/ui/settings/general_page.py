@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QSignalBlocker
-from PyQt6.QtWidgets import QBoxLayout, QCheckBox, QHBoxLayout, QLabel, QLayout, QMessageBox, QSpinBox, QWidget
+from PyQt6.QtWidgets import QBoxLayout, QCheckBox, QHBoxLayout, QLabel, QLayout, QSpinBox, QWidget
 
 from app import __version__
 from app.controllers.file_actions import GITHUB_URL
 from app.core.env import is_WINDOWS
 from app.core.i18n import UI_LANGUAGES
+from app.ui import message_dialog
 from app.ui.durations import BALLOON_MAX_MS
 from app.ui.settings.base import SettingsWindowBase
 
@@ -109,10 +110,9 @@ class GeneralPage(SettingsWindowBase):
         self.ctx.save_config_keys("modern_design")
         if checked == self._modern:
             return  # switched back before restarting
-        reply = QMessageBox.question(
-            self, self.translator.tr("modern_design_restart_title"), self.translator.tr("modern_design_restart_text"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
-        if reply == QMessageBox.StandardButton.Yes:
+        tr = self.translator.tr
+        if message_dialog.ask(self, tr("modern_design_restart_title"), tr("modern_design_restart_text"),
+                              tr("update_restart_button"), tr("update_later_button")):
             self.restart_requested.emit()
 
     def populate_input_devices(self) -> None:
@@ -157,5 +157,6 @@ class GeneralPage(SettingsWindowBase):
 
     def show_about_dialog(self) -> None:
         """Show the 'About' dialog."""
-        QMessageBox.about(self, self.translator.tr("about_dialog_title"),
-                          self.translator.tr("about_dialog_text", version=__version__, url=GITHUB_URL))
+        message_dialog.inform(self, self.translator.tr("about_dialog_title"),
+                              self.translator.tr("about_dialog_text", version=__version__, url=GITHUB_URL),
+                              self.translator.tr("ok_button"))

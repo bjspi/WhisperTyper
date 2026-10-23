@@ -7,11 +7,12 @@ from typing import Callable, Optional
 
 from PyQt6.QtCore import QObject, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import QMessageBox, QWidget
+from PyQt6.QtWidgets import QWidget
 
 from app.context import AppContext
 from app.core.env import is_MACOS
 from app.services.macos_permissions import PERMISSIONS_GUIDE_URL, request_accessibility, request_input_monitoring
+from app.ui import message_dialog
 
 #: Translation keys (title, text) of the information dialog shown once per permission.
 _PERMISSION_DIALOGS = {
@@ -92,15 +93,8 @@ class MacPermissions(QObject):
 
     def _show_dialog(self, title: str, text: str, settings_url: str) -> None:
         """Show the permission information dialog (GUI thread)."""
-        msg_box = QMessageBox(self._dialog_parent())
-        msg_box.setIcon(QMessageBox.Icon.Information)
-        msg_box.setWindowTitle(title)
-        msg_box.setText(text)
-        msg_box.addButton(self._ctx.tr("ok_button"), QMessageBox.ButtonRole.AcceptRole)
-        open_instructions_button = None
-        if settings_url:
-            open_instructions_button = msg_box.addButton(
-                self._ctx.tr("macos_github_instructions_button"), QMessageBox.ButtonRole.ActionRole)
-        msg_box.exec()
-        if msg_box.clickedButton() == open_instructions_button:
+        instructions = self._ctx.tr("macos_github_instructions_button")
+        buttons = [(instructions, message_dialog.SECONDARY)] if settings_url else []
+        buttons.append((self._ctx.tr("ok_button"), message_dialog.PRIMARY))
+        if message_dialog.show_dialog(self._dialog_parent(), title, text, buttons) == instructions:
             QDesktopServices.openUrl(QUrl(settings_url))
