@@ -544,7 +544,7 @@ class RecordingController(QObject):
     def _min_recording_seconds(self) -> float:
         """Configured minimum length; shorter takes are an accidental double-tap, not speech."""
         try:
-            return float(self._config.get("min_recording_seconds", 2.5))
+            return float(self._config.get("min_recording_seconds", 1.5))
         except (TypeError, ValueError):
             return 1.0
 
