@@ -939,8 +939,35 @@
            </widget>
           </item>
           <item>
+           <layout class="QHBoxLayout" name="fast_paste_delay_layout">
+            <item>
+             <widget class="QLabel" name="fast_paste_delay_label">
+              <property name="text"><string>Pause before pasting (ms):</string></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="fast_paste_delay_input">
+              <property name="minimum"><number>0</number></property>
+              <property name="maximum"><number>100</number></property>
+              <property name="value"><number>5</number></property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="fast_paste_delay_spacer">
+              <property name="orientation"><enum>Qt::Horizontal</enum></property>
+              <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
            <widget class="QCheckBox" name="alt_clipboard_lib_checkbox">
             <property name="text"><string>Use alternative library for Copy/Paste (Better compatibility on MacOS)</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="paste_diagnostics_checkbox">
+            <property name="text"><string>Log paste diagnostics</string></property>
            </widget>
           </item>
          </layout>

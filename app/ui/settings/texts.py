@@ -160,6 +160,8 @@ TEXTS: Tuple[Text, ...] = (
     _check("windows_sendinput_fallback_checkbox", "windows_sendinput_fallback_checkbox",
            "windows_sendinput_fallback_tooltip", rich=True),
     _check("fast_paste_checkbox", "fast_paste_checkbox", "fast_paste_tooltip", rich=True),
+    _field("fast_paste_delay_label", "fast_paste_delay_tooltip", "fast_paste_delay_label", "fast_paste_delay_input"),
+    _check("paste_diagnostics_checkbox", "paste_diagnostics_checkbox", "paste_diagnostics_tooltip", rich=True),
     Text("save_button", "save_button"),
 )
 

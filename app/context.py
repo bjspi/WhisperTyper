@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QApplication
@@ -71,6 +71,8 @@ class AppContext(QObject):
         self._store = store
         self.config: Dict[str, Any]
         self.config, migrated = store.load()
+        #: Problems repaired while loading; the app logs them once file logging runs.
+        self.config_warnings: List[str] = list(getattr(store, "load_warnings", []))
         #: Saved values of keys the open settings form holds unsaved edits of (see ``set_unsaved_values``).
         self._unsaved_values: Optional[Callable[[], Mapping[str, Any]]] = None
         #: Whether the last full save reached the disk.

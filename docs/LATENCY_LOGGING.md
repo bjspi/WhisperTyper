@@ -318,8 +318,9 @@ applications running with higher privileges.
 The independent **Fast Copy/Paste** checkbox is available on Windows and macOS,
 and disabled by default. On macOS, Cmd+V still uses `osascript` first; this option
 does not eliminate subprocess/System Events latency. Real Mac testing is pending.
-It skips the 100 ms waits before and after paste and disables PyAutoGUI's additional
-post-paste pause for this call only (its failsafe and copy-selection waits remain).
+It replaces the 100 ms wait before paste with a configurable pause (`fast_paste_delay_ms`,
+default 5 ms, 0-100; 0 = none), skips the 100 ms wait after paste and disables PyAutoGUI's
+additional post-paste pause for this call only (its failsafe and copy-selection waits remain).
 The existing restore timer runs 600 ms after dispatch, preserving the previous
 approximate restore interval without blocking the GUI thread. If clipboard restoration
 is disabled, no restore timer is started. The option also applies to SendInput's paste
@@ -330,6 +331,33 @@ library checkbox lives in the same group and remains available on every platform
 SendInput and its fallback checkbox are individually hidden on macOS and Linux;
 fast paste is hidden only on Linux. Its configuration key is `fast_paste`; a choice saved
 under the former `windows_fast_paste` key is migrated on load.
+
+**Log paste diagnostics** (`paste_diagnostics`, Windows only, off by default) adds two
+`paste_diag` lines to every clipboard paste. `stage=before_paste` is written right before
+Ctrl+V: `fg_process`/`fg_class` and `focus_class` (e.g. `notepad++.exe`/`Scintilla`),
+`held_modifiers`, `clip_open_by` (a process currently holding the clipboard open),
+`clip_owner`, and `clip_seq_changes` since the text was written (0 means the clipboard
+still holds the text). `stage=before_restore` follows at restore time (or 500 ms later
+without restoration) with `clip_seq_changes` and `clip_text_still_ours`. The probes are
+plain Win32 queries that never open the clipboard before the paste; window titles and
+clipboard contents are never logged.
+
+**Expert timings** live only in the `"expert"` block of `config.json`, never in the GUI.
+Their defaults are the long-standing fixed values, so an untouched block changes nothing:
+
+| Key | Default | Range | Purpose |
+|---|---|---|---|
+| `paste_prepare_ms` | 100 | 0-2000 | wait between writing the clipboard and Ctrl/Cmd+V (regular paste) |
+| `paste_settle_ms` | 100 | 0-2000 | wait after Ctrl/Cmd+V (regular paste) |
+| `clipboard_restore_ms` | 500 | 0-10000 | restore the previous clipboard after a regular paste |
+| `clipboard_restore_fast_ms` | 600 | 0-10000 | restore the previous clipboard after a fast paste |
+| `copy_settle_ms` | 100 | 0-2000 | wait after Ctrl/Cmd+C when reading the selection |
+| `select_all_settle_ms` | 80 | 0-2000 | wait after Ctrl/Cmd+A before copying the selection |
+
+Missing keys are filled in on load. Values that are no whole number (e.g. `"abc"`, `true`)
+fall back to the default, out-of-range values are clamped, unknown keys are kept; each
+repair is logged as a warning. Edit the file while the app is closed; changes apply at
+the next start.
 
 ## Recording formats
 

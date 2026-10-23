@@ -264,6 +264,9 @@ class SettingsWindowBase(QWidget):
     windows_sendinput_text_checkbox: QCheckBox
     windows_sendinput_fallback_checkbox: QCheckBox
     fast_paste_checkbox: QCheckBox
+    fast_paste_delay_label: QLabel
+    fast_paste_delay_input: QSpinBox
+    paste_diagnostics_checkbox: QCheckBox
     post_rephrase_auto_select_all_checkbox: QCheckBox
 
     # Hooks implemented by other pages or the window itself.

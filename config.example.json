@@ -19,6 +19,16 @@
   "windows_sendinput_text": false,
   "windows_sendinput_fallback": true,
   "fast_paste": false,
+  "fast_paste_delay_ms": 5,
+  "paste_diagnostics": false,
+  "expert": {
+    "paste_prepare_ms": 100,
+    "paste_settle_ms": 100,
+    "clipboard_restore_ms": 500,
+    "clipboard_restore_fast_ms": 600,
+    "copy_settle_ms": 100,
+    "select_all_settle_ms": 80
+  },
   "rephrasing_api_url": "https://api.groq.com/openai/v1/chat/completions",
   "rephrasing_api_key": "YOUR_API_KEY_HERE",
   "rephrasing_model": "openai/gpt-oss-120b",
