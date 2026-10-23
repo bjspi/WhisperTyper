@@ -135,7 +135,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "windows_keep_mic_hot_idle_minutes": 15,
     # Recordings shorter than this (seconds) are treated as a mis-tap and discarded without
     # transcribing. 0 disables the guard. Allows an instant "oops" cancel by tapping again.
-    "min_recording_seconds": 2.5,
+    "min_recording_seconds": 1.5,
     "recording_format": "wav",
     "recording_aac_bitrate_kbps": 64,
     "input_language": SYS_LANG if SYS_LANG in LANGUAGES.values() else "en",
