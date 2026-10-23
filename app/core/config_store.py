@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import time
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.core.api_keys import migrate_api_keys, pin_custom_key_choices
 from app.core.constants import (
@@ -19,6 +19,7 @@ from app.core.constants import (
     LANGUAGES,
     WINDOW_MIN_HEIGHT,
 )
+from app.core.expert_settings import EXPERT_KEY, expert_defaults, normalize_expert
 from app.core.hotkeys import is_clipboard_shortcut
 from app.core.prompts import (
     INSTRUCTION,
@@ -69,6 +70,8 @@ class ConfigStore:
         self._keep_unreadable_file = False
         #: Why the last ``save`` failed ("" after a successful one).
         self.last_error = ""
+        #: Problems the last ``load`` repaired; logged once file logging runs.
+        self.load_warnings: List[str] = []
 
     def load(self) -> Tuple[Dict[str, Any], bool]:
         """Load the config, applying migrations and filling in defaults.
@@ -78,6 +81,7 @@ class ConfigStore:
             defaulted (in which case the caller should persist it back via ``save``).
         """
         loaded_config: Any = {}
+        self.load_warnings = []
         try:
             # Match save()'s utf-8 encoding so non-ASCII prompts (e.g. German umlauts) load
             # correctly on platforms whose default encoding is not utf-8.
@@ -241,6 +245,16 @@ class ConfigStore:
             current_h = int(cfg.get("window_height", DEFAULT_CONFIG["window_height"]) or 0)
             cfg["window_height"] = max(current_h, WINDOW_MIN_HEIGHT)
             cfg["config_schema_version"] = CONFIG_SCHEMA_VERSION
+            changed = True
+
+        # Expert block (config.json only): fill in missing keys, repair hand-edited nonsense.
+        if EXPERT_KEY in cfg:
+            expert, expert_warnings = normalize_expert(cfg[EXPERT_KEY])
+            self.load_warnings.extend(expert_warnings)
+        else:
+            expert = expert_defaults()
+        if cfg.get(EXPERT_KEY) != expert:
+            cfg[EXPERT_KEY] = expert
             changed = True
 
         # Ensure all default keys exist in the loaded config

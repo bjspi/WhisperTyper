@@ -95,6 +95,9 @@ BINDINGS: Tuple[Binding, ...] = (
     Binding("windows_sendinput_text_checkbox", "windows_sendinput_text", "check", "windows"),
     Binding("windows_sendinput_fallback_checkbox", "windows_sendinput_fallback", "check", "windows"),
     Binding("fast_paste_checkbox", "fast_paste", "check", "windows_macos"),
+    Binding("fast_paste_delay_input", "fast_paste_delay_ms", "int", "windows_macos",
+            companions=("fast_paste_delay_label",)),
+    Binding("paste_diagnostics_checkbox", "paste_diagnostics", "check", "windows"),
 )
 
 

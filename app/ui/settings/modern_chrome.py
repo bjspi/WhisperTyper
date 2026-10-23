@@ -406,7 +406,9 @@ class ModernChrome(SettingsWindowBase):
         ])
         self._rebuild(self.text_insertion_group, [
             switch(self.windows_sendinput_text_checkbox), switch(self.windows_sendinput_fallback_checkbox),
-            switch(self.fast_paste_checkbox), switch(self.alt_clipboard_lib_checkbox),
+            switch(self.fast_paste_checkbox), row(self.fast_paste_delay_label, self.fast_paste_delay_input),
+            switch(self.alt_clipboard_lib_checkbox),
+            switch(self.paste_diagnostics_checkbox),
         ])
         self._rebuild(self.logging_group, [
             row(self.log_retention_label, self.log_retention_input),

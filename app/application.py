@@ -56,6 +56,8 @@ class WhisperTyperApp(QObject):
         self.ctx.prune_recordings(startup=True)
         self._file_log_handler: Optional[Handler] = None
         self.apply_logging_configuration()
+        for warning in self.ctx.config_warnings:
+            logging.warning(warning)
         set_ip_family(config.get("network_ip_family", "auto"))
 
         self.workers = WorkerThreads()

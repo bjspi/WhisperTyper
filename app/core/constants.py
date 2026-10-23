@@ -13,6 +13,7 @@ import os
 from typing import Any, Dict
 
 from app.core.env import is_MACOS, is_WINDOWS
+from app.core.expert_settings import EXPERT_KEY, expert_defaults
 from app.core.models import DEFAULT_REPHRASING_MODEL, DEFAULT_TRANSCRIPTION_MODEL
 from app.core.prompts import (
     DEFAULT_TRANSCRIPTION_PROMPTS,
@@ -169,6 +170,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "windows_sendinput_text": False,
     "windows_sendinput_fallback": True,
     "fast_paste": False,
+    # Pause between writing the clipboard and Ctrl/Cmd+V while fast paste is on.
+    "fast_paste_delay_ms": 5,
+    # Windows: log target window, held modifiers and clipboard access around every paste.
+    "paste_diagnostics": False,
+    # Tuning values editable only in config.json (see app/core/expert_settings.py).
+    EXPERT_KEY: expert_defaults(),
 
     # Rephrasing. The prompt list always holds the instruction (LivePrompt) entry; the config
     # migration adds it in the UI language.

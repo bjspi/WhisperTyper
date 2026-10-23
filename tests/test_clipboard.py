@@ -1,6 +1,7 @@
 """Regression tests for rich clipboard capture and restoration."""
 from __future__ import annotations
 
+import logging
 from typing import Any
 from unittest.mock import Mock
 
@@ -350,9 +351,43 @@ def test_fast_paste_skips_waits_but_keeps_a_later_clipboard_restore(harness, mon
     monkeypatch.setattr(clipboard_module.time, "sleep", waits)
     timing = OperationTiming("recording")
     assert output.insert("text", timing)
-    assert waits.call_count == (0 if fast else 2)
+    # Fast paste keeps only its short configurable pause (default 5 ms) before Ctrl+V.
+    assert [call.args[0] for call in waits.call_args_list] == ([0.005] if fast else [0.1, 0.1])
     assert output._restore_timer.delay_ms == (600 if fast else 500)
     assert clipboard.mimeData().text() == "text"
     assert "paste_settle_end" in timing._events
     output._restore_timer.fire()
     assert clipboard.mimeData().imageData().pixelColor(1, 1) == QColor(17, 91, 203, 177)
+
+
+@pytest.mark.parametrize(("configured", "expected"), [(0, []), (20, [0.02]), (500, [0.1]), ("bad", [0.005])])
+def test_fast_paste_delay_is_configurable_and_clamped(harness, monkeypatch, configured, expected):
+    output, _clipboard = harness
+    output.config.update(fast_paste=True, fast_paste_delay_ms=configured)
+    monkeypatch.setattr(clipboard_module, "is_WINDOWS", True)
+    waits = Mock()
+    monkeypatch.setattr(clipboard_module.time, "sleep", waits)
+    assert output.insert("text", OperationTiming("recording"))
+    assert [call.args[0] for call in waits.call_args_list] == expected
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_paste_diagnostics_log_before_paste_and_before_restore(harness, monkeypatch, caplog, enabled):
+    output, clipboard = harness
+    output.config.update(fast_paste=True, paste_diagnostics=enabled)
+    monkeypatch.setattr(clipboard_module, "is_WINDOWS", True)
+    monkeypatch.setattr(clipboard_module.time, "sleep", Mock())
+    probe = Mock(return_value="fg_process=notepad++.exe")
+    sequence = iter([10, 10, 12])
+    monkeypatch.setattr(clipboard_module.paste_diagnostics, "probe", probe)
+    monkeypatch.setattr(clipboard_module.paste_diagnostics, "clipboard_sequence", lambda: next(sequence))
+    with caplog.at_level(logging.INFO):
+        assert output.insert("text", OperationTiming("recording"))
+        output._restore_timer.fire()
+    lines = [record.getMessage() for record in caplog.records if record.getMessage().startswith("paste_diag")]
+    if not enabled:
+        assert lines == [] and not probe.called
+        return
+    assert "stage=before_paste text_chars=4 clip_seq_changes=0 fg_process=notepad++.exe" in lines[0]
+    assert "stage=before_restore clip_seq_changes=2 clip_text_still_ours=True" in lines[1]
+    assert clipboard.mimeData() is not None

@@ -9,19 +9,13 @@ import copykitten
 from PyQt6.QtCore import QObject, QTimer
 
 from app.core.env import is_MACOS, is_WINDOWS
+from app.core.expert_settings import expert_seconds, expert_value
 from app.core.timing import NO_TIMING, OperationTiming
+from app.services import paste_diagnostics
 from app.services.clipboard import ClipboardSnapshot
 from app.services.key_simulation import simulate_shortcut
 from app.services.windows_text_input import send_unicode_text
-from app.ui.durations import (
-    BALLOON_LONG_MS,
-    CLIPBOARD_RESTORE_FAST_MS,
-    CLIPBOARD_RESTORE_MS,
-    COPY_SETTLE_S,
-    PASTE_PREPARE_S,
-    PASTE_SETTLE_S,
-    SELECT_ALL_SETTLE_S,
-)
+from app.ui.durations import BALLOON_LONG_MS
 
 
 class TextOutput(QObject):
@@ -36,6 +30,8 @@ class TextOutput(QObject):
         self._notify = notify
         self._warn_permission = warn_permission
         self._pending_restore: Optional[ClipboardSnapshot] = None
+        # (operation id, clipboard sequence after writing, pasted text) awaiting the late diagnostics probe.
+        self._pending_diagnostics: Optional[tuple[str, int, str]] = None
         self._restore_timer: Any = QTimer(self)
         self._restore_timer.setSingleShot(True)
         self._restore_timer.timeout.connect(self.restore_clipboard_now)
@@ -54,7 +50,7 @@ class TextOutput(QObject):
             return self._pending_restore
         return ClipboardSnapshot.capture()
 
-    def _schedule_clipboard_restore(self, snapshot: ClipboardSnapshot, delay_ms: int = CLIPBOARD_RESTORE_MS) -> None:
+    def _schedule_clipboard_restore(self, snapshot: ClipboardSnapshot, delay_ms: int) -> None:
         """
         Delay restoration until the target application has consumed the paste event.
 
@@ -77,6 +73,7 @@ class TextOutput(QObject):
         """Restore the delayed clipboard snapshot (timer expiry, or immediately at quit)."""
         self._restore_timer.stop()
         snapshot, self._pending_restore = self._pending_restore, None
+        self._log_paste_outcome()
         if not snapshot:
             return
         try:
@@ -106,10 +103,10 @@ class TextOutput(QObject):
             if select_all_first:
                 logging.debug("Selecting all text in the focused field before copying selection.")
                 self._simulate_key_combination('a')
-                time.sleep(SELECT_ALL_SETTLE_S)
+                time.sleep(expert_seconds(self._config, "select_all_settle_ms"))
             copykitten.copy("")
             self._simulate_key_combination('c')
-            time.sleep(COPY_SETTLE_S)
+            time.sleep(expert_seconds(self._config, "copy_settle_ms"))
             selected_text = copykitten.paste()
             if not selected_text:
                 logging.debug("No text selected (clipboard is empty after copy action).")
@@ -123,6 +120,35 @@ class TextOutput(QObject):
                 except Exception as e:
                     logging.error(f"Failed to restore clipboard: {e}")
         return selected_text.strip()
+
+    def _fast_paste_delay_s(self) -> float:
+        """Fast paste's configurable pause before Ctrl/Cmd+V, clamped to 0-100 ms."""
+        try:
+            delay_ms = int(self._config.get("fast_paste_delay_ms", 5))
+        except (TypeError, ValueError):
+            delay_ms = 5
+        return max(0, min(100, delay_ms)) / 1000
+
+    def _paste_diagnostics_enabled(self) -> bool:
+        """Extra Windows paste logging, for sporadically failed pastes."""
+        return is_WINDOWS and bool(self._config.get("paste_diagnostics", False))
+
+    def _log_paste_outcome(self) -> None:
+        """Late probe, just before the restore: did another program change the clipboard meanwhile?
+
+        Reading the text here no longer races with the target application's paste.
+        """
+        pending, self._pending_diagnostics = self._pending_diagnostics, None
+        if not pending:
+            return
+        operation_id, written_sequence, text = pending
+        sequence = paste_diagnostics.clipboard_sequence()
+        try:
+            still_ours = copykitten.paste() == text
+        except Exception:
+            still_ours = None
+        logging.info("paste_diag op=%s stage=before_restore clip_seq_changes=%s clip_text_still_ours=%s %s",
+                     operation_id, sequence - written_sequence, still_ours, paste_diagnostics.probe())
 
     def _fast_paste_enabled(self) -> bool:
         """Skip the fixed paste waits; offered on Windows and macOS only."""
@@ -183,6 +209,7 @@ class TextOutput(QObject):
         self._warn_permission('accessibility')
 
         fast_paste = self._fast_paste_enabled()
+        diagnostics = self._paste_diagnostics_enabled()
         logging.info("text_input op=%s mode=clipboard fast_paste=%s", timing.operation_id, fast_paste)
         snapshot: Optional[ClipboardSnapshot] = None
         try:
@@ -191,8 +218,19 @@ class TextOutput(QObject):
                     snapshot = self._capture_clipboard_state()
             with timing.span("clipboard_write"):
                 copykitten.copy(text)
-            if not fast_paste:
-                time.sleep(PASTE_PREPARE_S)
+            written_sequence = paste_diagnostics.clipboard_sequence() if diagnostics else 0
+            prepare_s = self._fast_paste_delay_s() if fast_paste else expert_seconds(self._config, "paste_prepare_ms")
+            if prepare_s:
+                time.sleep(prepare_s)
+            if diagnostics:
+                # An unchanged sequence number proves the clipboard still holds our text,
+                # without opening the clipboard right before the target application reads it.
+                logging.info("paste_diag op=%s stage=before_paste text_chars=%s clip_seq_changes=%s %s",
+                             timing.operation_id, len(text),
+                             paste_diagnostics.clipboard_sequence() - written_sequence, paste_diagnostics.probe())
+                self._pending_diagnostics = (timing.operation_id, written_sequence, text)
+                if not snapshot:
+                    QTimer.singleShot(expert_value(self._config, "clipboard_restore_ms"), self._log_paste_outcome)
             timing.mark("paste_dispatch_start")
             if not self._simulate_key_combination('v'):
                 timing.mark("text_commit_failed")
@@ -200,7 +238,7 @@ class TextOutput(QObject):
             timing.mark("paste_dispatch_end")
             timing.mark("text_commit_end")
             if not fast_paste:
-                time.sleep(PASTE_SETTLE_S)
+                time.sleep(expert_seconds(self._config, "paste_settle_ms"))
             timing.mark("paste_settle_end")
             return True
         except Exception as e:
@@ -212,8 +250,8 @@ class TextOutput(QObject):
             # or simulating the paste fails halfway through the operation.
             if snapshot:
                 try:
-                    # Fast paste skips the 100 ms waits, so the restore keeps ~600 ms after dispatch.
-                    self._schedule_clipboard_restore(
-                        snapshot, CLIPBOARD_RESTORE_FAST_MS if fast_paste else CLIPBOARD_RESTORE_MS)
+                    # Fast paste skips the 100 ms waits, so its restore defaults a little later.
+                    restore_key = "clipboard_restore_fast_ms" if fast_paste else "clipboard_restore_ms"
+                    self._schedule_clipboard_restore(snapshot, expert_value(self._config, restore_key))
                 except Exception as e:
                     logging.error(f"Failed to restore clipboard after insertion: {e}")
