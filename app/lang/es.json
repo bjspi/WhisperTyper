@@ -118,7 +118,7 @@
   "playback_play_tooltip": "Reproducir la última grabación",
   "playback_stop_tooltip": "Detener la reproducción",
   "tray_mark_bad_action": "Marcar la última grabación como mala",
-  "tray_retranscribe_action": "Volver a transcribir la última grabación (→ Portapapeles)",
+  "tray_retranscribe_action": "Volver a transcribir la última grabación",
   "tray_log_action": "Abrir archivo de registro",
   "tray_cancel_action": "Cancelar grabación (sin transcripción)",
   "tray_update_action": "Buscar actualizaciones",

@@ -118,7 +118,7 @@
   "playback_play_tooltip": "Letzte Aufnahme abspielen",
   "playback_stop_tooltip": "Wiedergabe stoppen",
   "tray_mark_bad_action": "Letzte Aufnahme als schlecht markieren",
-  "tray_retranscribe_action": "Letzte Aufnahme erneut transkribieren (→ Zwischenablage)",
+  "tray_retranscribe_action": "Letzte Aufnahme erneut transkribieren",
   "tray_log_action": "Protokolldatei öffnen",
   "tray_cancel_action": "Aufnahme abbrechen (ohne Transkription)",
   "tray_update_action": "Nach Updates suchen",

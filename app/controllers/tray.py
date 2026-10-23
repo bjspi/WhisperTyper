@@ -279,6 +279,7 @@ class TrayController(QObject):
             # A rebuild must not lose an already-detected update.
             self._apply_update_indicator()
         add(sp.SP_MessageBoxInformation, "tray_about_action", "a", lambda: show_about(self._window, self._ctx.tr))
+        tray_menu.addSeparator()
         add(sp.SP_BrowserReload, "tray_restart_action", "n", self._restart)
         add(sp.SP_DialogCloseButton, "tray_quit_action", "q", self._quit)
 
