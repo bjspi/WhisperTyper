@@ -208,7 +208,8 @@ are not announced) and shows the new version on the tray menu's *Update* entry. 
 asks whether to update — the changes can be unfolded there — then installs the release
 and offers an immediate restart. No manual steps needed.
 
-You can of course also update manually at any time:
+You can of course also update manually at any time (this also brings in commits that are
+not part of a release yet):
 ```bash
 git pull origin main
 ```
