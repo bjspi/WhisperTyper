@@ -12,6 +12,7 @@ from PyQt6.QtGui import QColor, QImage
 import app.controllers.text_output as clipboard_module
 import app.services.clipboard as snapshot_module
 from app.controllers.text_output import TextOutput
+from app.core.expert_settings import expert_defaults
 from app.core.timing import OperationTiming
 from app.services.clipboard import ClipboardSnapshot
 
@@ -391,3 +392,27 @@ def test_paste_diagnostics_log_before_paste_and_before_restore(harness, monkeypa
     assert "stage=before_paste text_chars=4 clip_seq_changes=0 fg_process=notepad++.exe" in lines[0]
     assert "stage=before_restore clip_seq_changes=2 clip_text_still_ours=True" in lines[1]
     assert clipboard.mimeData() is not None
+
+
+def test_paste_and_copy_use_the_configured_timings(monkeypatch):
+    config = {"restore_clipboard": True, "fast_paste": False,
+              "expert": {**expert_defaults(), "paste_prepare_ms": 30, "paste_settle_ms": 40,
+                         "clipboard_restore_ms": 700, "copy_settle_ms": 50, "select_all_settle_ms": 60}}
+    output = TextOutput(config, lambda key, **_kwargs: key, Mock(), lambda _permission: None)
+    monkeypatch.setattr(output, "_simulate_key_combination", lambda _char: True)
+    monkeypatch.setattr(clipboard_module.ClipboardSnapshot, "capture", classmethod(lambda cls: cls("old")))
+    monkeypatch.setattr(clipboard_module.copykitten, "copy", Mock())
+    monkeypatch.setattr(clipboard_module.copykitten, "paste", Mock(return_value="selected"))
+    restore = Mock()
+    monkeypatch.setattr(output, "_schedule_clipboard_restore", restore)
+    sleeps = Mock()
+    monkeypatch.setattr(clipboard_module.time, "sleep", sleeps)
+
+    assert output.insert("text", OperationTiming("recording"))
+    assert [call.args[0] for call in sleeps.call_args_list] == [0.03, 0.04]
+    assert restore.call_args.args[1] == 700
+
+    sleeps.reset_mock()
+    monkeypatch.setattr(clipboard_module.ClipboardSnapshot, "restore", lambda self: None)
+    assert output.get_selected_text(select_all_first=True) == "selected"
+    assert [call.args[0] for call in sleeps.call_args_list] == [0.06, 0.05]
