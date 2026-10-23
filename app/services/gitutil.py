@@ -82,27 +82,36 @@ def changed_paths(root: str, old: str, new: str, paths: List[str]) -> List[str]:
     return [line for line in result.stdout.splitlines() if line.strip()]
 
 
-def count_behind_upstream(root: str) -> Optional[int]:
-    """Return how many commits the checkout at ``root`` is *behind* its upstream branch.
+#: The changes shown before an update are cut off here; a full diff of a big release is unreadable anyway.
+MAX_CHANGES_CHARS = 200_000
 
-    Offline and instant — it reads the already-fetched remote-tracking ref (``@{u}``), so run
-    a ``git fetch`` first to refresh it. Returns ``None`` when there's no upstream configured
-    or git errors out (treated by callers as "no update known", never as an update).
+
+def release_changes(root: str, tag: str) -> Optional[str]:
+    """What updating the checkout at ``root`` to the (already fetched) ``tag`` brings: commits, files, diff.
+
+    ``None`` when git fails, e.g. because the tag was not fetched.
     """
-    try:
-        result = subprocess.run(
-            ["git", "rev-list", "--count", "HEAD..@{u}"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            **no_window_kwargs(),
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if result.returncode != 0:
-        return None
-    try:
-        return int(result.stdout.strip())
-    except ValueError:
-        return None
+    parts = []
+    for arguments in (["log", "--oneline", "--no-decorate", f"HEAD..{tag}"],
+                      ["diff", "--stat", "HEAD", tag],
+                      ["diff", "HEAD", tag]):
+        try:
+            result = subprocess.run(
+                ["git", *arguments],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+                **no_window_kwargs(),
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if result.returncode != 0:
+            return None
+        parts.append(result.stdout.strip())
+    changes = "\n\n".join(part for part in parts if part)
+    if len(changes) > MAX_CHANGES_CHARS:
+        changes = changes[:MAX_CHANGES_CHARS] + "\n\n[…]"
+    return changes

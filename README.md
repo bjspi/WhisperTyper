@@ -115,7 +115,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
         <img src="screenshots/app/tray-menu.jpg" alt="System tray menu with all quick actions" width="70%" />
       </a>
       <br />
-      <sub><b>🤫 System Tray</b> — The whole app lives in a tray icon: copy or re-transcribe the last recording, transcribe audio/video files, jump to the log, and self-update via <i>git pull</i> — every entry also has a one-letter shortcut.</sub>
+      <sub><b>🤫 System Tray</b> — The whole app lives in a tray icon: copy or re-transcribe the last recording, transcribe audio/video files, jump to the log, and update to the newest release — every entry also has a one-letter shortcut.</sub>
     </td>
     <td align="center" width="50%" valign="top">
       <a href="screenshots/app/liveprompt-help.jpg" target="_blank">
@@ -146,7 +146,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 -   **Resilient Uploads**: Optionally race a second request over a fresh connection when an upload or response stalls; the faster result wins and is processed once. Connections can be limited to IPv4 or IPv6 on the General tab, which helps on networks with a lossy IPv6 route. See [latency logging](docs/LATENCY_LOGGING.md).
 -   **Clipboard Safe**: Your clipboard is sacred. The app restores its previous content after pasting, so you never lose what you had copied. This is a major advantage over other tools that hijack your clipboard.
 -   **Discreet Operation**: Runs quietly in the system tray without cluttering your taskbar (e.g., using `pythonw.exe` on Windows).
--   **Self-Updating**: When run from a cloned repo, a background watcher flags new versions with a green dot in the tray menu — one click updates and restarts the app.
+-   **Self-Updating**: When run from a cloned repo, a background watcher flags new releases in the tray menu (*Update to 0.x.y*) — one click updates and restarts the app.
 -   **Full Customization**:
     -   Customizable API endpoints, keys, models, and temperature settings for both transcription and rephrasing.
     -   Fine-tune transcription with custom prompts to improve accuracy for specific jargon or formatting.
@@ -158,9 +158,9 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 
 > **💡 Recommended: clone the repo and run straight from the sources.** On Windows (and
 > Linux) there is no need to build an .exe — the app runs perfectly from the Python
-> sources, and a git clone unlocks the **built-in self-update**: WhisperTyper checks the
-> repository in the background, shows a green dot on the tray menu's *Update* entry when
-> a new version is available, and updates itself with one click. Alternatively, grab the
+> sources, and a git clone unlocks the **built-in self-update**: WhisperTyper checks for new
+> releases in the background, names the new version in the tray menu's *Update* entry,
+> and updates itself with one click. Alternatively, grab the
 > ready-to-run ZIP from the [latest release](https://github.com/bjspi/WhisperTyper/releases/latest)
 > — but you lose the self-update. (On macOS an App Bundle is recommended instead —
 > for permissions reasons, see the [macOS instructions](docs/INSTALL_MACOS.md).)
@@ -203,9 +203,10 @@ Bundle). The full guide lives in **[docs/INSTALL_MACOS.md](docs/INSTALL_MACOS.md
 ## ↗️ Updating
 
 **Running from a cloned repo (recommended):** WhisperTyper keeps itself up to date. A
-background watcher periodically checks the repository and shows a green dot on the tray
-menu's *Update* entry when a new version is available — one click pulls the update and
-offers an immediate restart. No manual steps needed.
+background watcher periodically checks for new releases (version tags; commits in between
+are not announced) and shows the new version on the tray menu's *Update* entry. One click
+asks whether to update — the changes can be unfolded there — then installs the release
+and offers an immediate restart. No manual steps needed.
 
 You can of course also update manually at any time:
 ```bash
