@@ -521,7 +521,7 @@ class TrayController(QObject):
             tr("update_confirm_text", version=release.version, current=__version__), changes,
             [(update, QDialogButtonBox.ButtonRole.AcceptRole),
              (tr("update_cancel_button"), QDialogButtonBox.ButtonRole.RejectRole)],
-            details_caption=tr("update_changes_button"))
+            details_captions=(tr("update_changes_button"), tr("update_changes_hide_button")))
         if choice != update or self.updater.pulling:
             return
         self._ctx.notifier.show(tr("update_running_message"), 0, spinner=True)
@@ -555,7 +555,7 @@ class TrayController(QObject):
         tr = self._ctx.tr
         title = tr("update_dialog_title")
         details = output or tr("update_no_output")
-        details_caption = tr("update_details_button")
+        details_captions = (tr("update_details_button"), tr("update_details_hide_button"))
         version = self.updater.target.version if self.updater.target else ""
         close = (tr("update_close_button"), QDialogButtonBox.ButtonRole.RejectRole)
         if not succeeded:
@@ -563,7 +563,7 @@ class TrayController(QObject):
             message = tr("update_failed_text", version=version) + ("" if forced else "\n\n" + tr("update_force_hint", version=version))
             buttons = [close] if forced else [(force, QDialogButtonBox.ButtonRole.DestructiveRole), close]
             if run_update_dialog(self._window, title, message, details, buttons, default=len(buttons) - 1,
-                                 details_caption=details_caption) == force:
+                                 details_captions=details_captions) == force:
                 self._force_update()
             return
         if not changed:
@@ -579,7 +579,7 @@ class TrayController(QObject):
         if run_update_dialog(self._window, title, message, details,
                              [(restart, QDialogButtonBox.ButtonRole.AcceptRole),
                               (tr("update_later_button"), QDialogButtonBox.ButtonRole.RejectRole)],
-                             details_caption=details_caption) == restart:
+                             details_captions=details_captions) == restart:
             self._restart()
 
     def _apply_update_indicator(self) -> None:

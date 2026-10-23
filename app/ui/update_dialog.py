@@ -22,10 +22,11 @@ Button = Tuple[str, QDialogButtonBox.ButtonRole]
 
 def run_update_dialog(parent: Optional[QWidget], title: str, message: str, output: str,
                       buttons: Sequence[Button], default: int = 0,
-                      details_caption: Optional[str] = None) -> Optional[str]:
+                      details_captions: Optional[Tuple[str, str]] = None) -> Optional[str]:
     """Show ``message`` and the scrollable ``output``; the clicked button's caption, or None when closed.
 
-    With ``details_caption`` the output starts hidden behind a toggle button of that caption.
+    With ``details_captions`` (show, hide) the output starts hidden behind a toggle button whose
+    caption names what a click does.
     """
     dialog = QDialog(parent)
     dialog.setWindowTitle(title)
@@ -43,15 +44,16 @@ def run_update_dialog(parent: Optional[QWidget], title: str, message: str, outpu
         text.setMinimumHeight(text.fontMetrics().lineSpacing() * (lines + 1) + 12)
         layout.addWidget(text, 1)
     box = QDialogButtonBox(dialog)
-    if text is not None and details_caption:
+    if text is not None and details_captions:
         details = text
         details.setVisible(False)
-        toggle = QPushButton(details_caption, dialog)
+        toggle = QPushButton(details_captions[0], dialog)
         toggle.setCheckable(True)
         toggle.setAutoDefault(False)
 
         def show_details(shown: bool) -> None:
             details.setVisible(shown)
+            toggle.setText(details_captions[shown])
             dialog.adjustSize()
 
         toggle.toggled.connect(show_details)
