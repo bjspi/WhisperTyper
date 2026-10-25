@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: pip install mypy PyQt6 ftfy "httpx>=0.28" "av>=14"
+      - run: pip install mypy PyQt6 ftfy "httpx>=0.28" "av>=14" "rich-click>=1.9"
       # Every package is type-checked; components declare their collaborators explicitly.
       - run: mypy app run.py
 
@@ -55,7 +55,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       # Keep the broad OS/Python matrix lightweight. The Qt-backed clipboard regression
       # suite runs once in the dedicated Windows job below.
-      - run: pip install pytest pytest-xdist ftfy "httpx>=0.28" "av>=14" "audioop-lts; python_version >= '3.13'"
+      - run: pip install pytest pytest-xdist ftfy "httpx>=0.28" "av>=14" "rich-click>=1.9" "audioop-lts; python_version >= '3.13'"
       - run: pytest -n auto --ignore=tests/test_clipboard.py
 
   clipboard-test:
@@ -68,6 +68,6 @@ jobs:
           python-version: "3.12"
       # Qt-backed tests (clipboard, settings bindings, editors, workers) skip themselves in the
       # lightweight matrix above; this job installs Qt plus the input backends and runs everything.
-      - run: pip install pytest pytest-xdist PyQt6 copykitten pynput pyautogui pyaudio ftfy "httpx>=0.28" "av>=14"
+      - run: pip install pytest pytest-xdist PyQt6 copykitten pynput pyautogui pyaudio ftfy "httpx>=0.28" "av>=14" "rich-click>=1.9"
       # One process per core; each has its own QApplication.
       - run: pytest -n auto
