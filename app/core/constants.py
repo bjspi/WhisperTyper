@@ -166,6 +166,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # Windows: while the mouse is over the recording palette, the number keys pick its chips in order.
     "recording_prompt_overlay_digit_keys": True,
     "quit_without_confirmation": False,
+    # The `whispertyper` command in ~/.local/bin (on PATH) and the Start menu / app list entry;
+    # both are kept up to date at every start (see app/controllers/system_integration.py).
+    "command_on_path": True,
+    "start_menu_entry": True,
     "alt_clipboard_lib": is_MACOS,
     "windows_sendinput_text": False,
     "windows_sendinput_fallback": True,

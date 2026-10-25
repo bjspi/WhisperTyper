@@ -1,11 +1,15 @@
-"""General page: languages, theme, input device and text insertion options."""
+"""General page: languages, theme, input device, system integration and text insertion options."""
 from __future__ import annotations
 
-from PyQt6.QtCore import QSignalBlocker
-from PyQt6.QtWidgets import QBoxLayout, QCheckBox, QHBoxLayout, QLabel, QLayout, QSpinBox, QWidget
+from typing import List, Tuple
 
+from PyQt6.QtCore import QSignalBlocker
+from PyQt6.QtWidgets import QBoxLayout, QCheckBox, QGroupBox, QHBoxLayout, QLabel, QLayout, QSpinBox, QVBoxLayout, QWidget
+
+from app.controllers.system_integration import COMMAND_KEY, START_MENU_KEY
 from app.core.env import is_WINDOWS
 from app.core.i18n import UI_LANGUAGES
+from app.platform import command_shim, start_menu
 from app.ui import message_dialog
 from app.ui.about_dialog import show_about
 from app.ui.durations import BALLOON_MAX_MS
@@ -75,6 +79,25 @@ class GeneralPage(SettingsWindowBase):
         self.modern_design_checkbox = QCheckBox(self)
         self.modern_design_checkbox.setChecked(bool(self.config.get("modern_design", True)))
         self.general_layout.insertWidget(self.general_layout.indexOf(self.misc_group), self.modern_design_checkbox)
+        self._build_system_integration_group()
+
+    def _build_system_integration_group(self) -> None:
+        """The terminal command and Start menu switches; they apply at once and only where supported."""
+        self.system_integration_group = QGroupBox(self.misc_group.parentWidget())
+        layout = QVBoxLayout(self.system_integration_group)
+        self.command_on_path_checkbox = QCheckBox(self.system_integration_group)
+        self.start_menu_entry_checkbox = QCheckBox(self.system_integration_group)
+        for checkbox, key, supported in self._system_integration_switches():
+            checkbox.setChecked(bool(self.config.get(key, True)))
+            checkbox.setVisible(supported)
+            layout.addWidget(checkbox)
+        self.system_integration_group.setVisible(command_shim.supported() or start_menu.supported())
+        self.general_layout.insertWidget(self.general_layout.indexOf(self.misc_group), self.system_integration_group)
+
+    def _system_integration_switches(self) -> List[Tuple[QCheckBox, str, bool]]:
+        """(switch, config key, supported here) of the system integration group."""
+        return [(self.command_on_path_checkbox, COMMAND_KEY, command_shim.supported()),
+                (self.start_menu_entry_checkbox, START_MENU_KEY, start_menu.supported())]
 
     def _connect_general_page(self) -> None:
         """React to immediate-apply selectors and dependent checkboxes."""
@@ -82,6 +105,8 @@ class GeneralPage(SettingsWindowBase):
             lambda _index: self.change_language(self.ui_language_selector.currentData()))
         self.color_theme_selector.currentIndexChanged.connect(self._on_color_theme_changed)
         self.modern_design_checkbox.toggled.connect(self._on_modern_design_toggled)
+        for checkbox, key, _supported in self._system_integration_switches():
+            checkbox.toggled.connect(lambda checked, config_key=key: self._on_system_integration_toggled(config_key, checked))
         self.input_device_selector.currentIndexChanged.connect(self._on_input_device_changed)
         # The clipboard fallback only matters while direct Unicode input is enabled.
         self.windows_sendinput_fallback_checkbox.setEnabled(is_WINDOWS and self.windows_sendinput_text_checkbox.isChecked())
@@ -113,6 +138,12 @@ class GeneralPage(SettingsWindowBase):
         if message_dialog.ask(self, tr("modern_design_restart_title"), tr("modern_design_restart_text"),
                               tr("update_restart_button"), tr("update_later_button")):
             self.restart_requested.emit()
+
+    def _on_system_integration_toggled(self, key: str, checked: bool) -> None:
+        """Persist the switch and have the command or the Start menu entry added or removed now."""
+        self.config[key] = checked
+        self.ctx.save_config_keys(key)
+        self.system_integration_changed.emit()
 
     def populate_input_devices(self) -> None:
         """Fill the input-device dropdown with the system default + available microphones."""

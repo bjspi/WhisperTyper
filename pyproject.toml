@@ -37,6 +37,8 @@ dependencies = [
   "ftfy",
   # stdlib `audioop` was removed in Python 3.13; this backport restores it.
   "audioop-lts; python_version >= \"3.13\"",
+  # The command line: grouped help, coloured output (brings click and rich).
+  "rich-click>=1.9",
 ]
 
 [project.optional-dependencies]
@@ -70,8 +72,13 @@ Homepage = "https://github.com/bjspi/WhisperTyper"
 Repository = "https://github.com/bjspi/WhisperTyper"
 Issues = "https://github.com/bjspi/WhisperTyper/issues"
 
-[project.gui-scripts]
+# `whispertyper` is the command line (without a command it starts the tray app);
+# `whispertyperw` starts the tray app without a console window (Windows).
+[project.scripts]
 whispertyper = "run:main"
+
+[project.gui-scripts]
+whispertyperw = "run:main"
 
 [tool.setuptools]
 py-modules = ["run"]
@@ -82,6 +89,10 @@ version = { attr = "app.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.setuptools.package-data]
+# Translations, icons, sounds and the settings form are read at runtime (app/core/paths.py).
+app = ["lang/*.json", "resources/*", "resources/fonts/*", "resources/icons/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -24,6 +24,8 @@ The codebase is organized as strict layers — lower layers never import from hi
 flowchart TB
     subgraph entry ["Entry"]
         RUN["run.py<br/><i>thin shim</i>"]
+        CLI["app/cli/<br/><i>whispertyper command: tray start,<br/>headless transcribe / rephrase</i>"]
+        HOST["app/host.py<br/><i>Qt application, event loop</i>"]
         BOOT["app/bootstrap.py<br/><i>logging, crash-log redirect,<br/>single-instance lock, venv re-exec</i>"]
     end
 
@@ -32,7 +34,7 @@ flowchart TB
     end
 
     subgraph controllers ["Controllers (app/controllers/) — one runtime responsibility each"]
-        CTRL["recording · transcription · text_output · hotkeys · tray · local_engine<br/>post_rephrase · permissions · warmup · workers · file_actions"]
+        CTRL["recording · transcription · text_output · hotkeys · tray · local_engine<br/>post_rephrase · permissions · warmup · workers · file_actions · system_integration"]
     end
 
     subgraph ui ["UI (app/ui/)"]
@@ -41,7 +43,7 @@ flowchart TB
     end
 
     subgraph services ["Services (app/services/) — I/O, workers, external tools"]
-        TW["transcription · transcription_worker"]
+        TW["transcription · transcription_requests · transcription_worker"]
         RW["rephrasing · rephrasing_worker"]
         NET["http_transport · http_warmup · net · netutil"]
         TOOLS["ffmpeg · gitutil · updater · macos_permissions · clipboard · key_simulation"]
@@ -50,17 +52,20 @@ flowchart TB
     subgraph platform ["Platform adapters"]
         AUD["app/audio/<br/><i>capture, devices, playback, recording store, AAC encoder</i>"]
         HK["app/hotkeys/<br/><i>Win32 RegisterHotKey thread, key tokens</i>"]
-        OS["app/platform/<br/><i>macOS bindings, system queries, processes</i>"]
+        OS["app/platform/<br/><i>macOS bindings, system queries, processes,<br/>command launchers, Start menu entry</i>"]
     end
 
     subgraph core ["Core (app/core/) — pure logic, no Qt, fully unit-tested"]
-        CORE["hotkeys · liveprompt · rephrase_routing · models · api_keys · config_store<br/>dsp · textutil · redaction · replacements · i18n · prompts · timing · paths · env · win32"]
+        CORE["hotkeys · liveprompt · rephrase_routing · models · api_keys · config_store<br/>dsp · textutil · redaction · replacements · i18n · prompts · timing · paths · env · win32 · icon_file"]
     end
 
     CTX["app/context.py<br/><b>AppContext</b> · Notifier"]
 
-    RUN --> BOOT
-    RUN --> APP
+    RUN --> CLI
+    CLI --> HOST
+    CLI --> services
+    HOST --> BOOT
+    HOST --> APP
     APP --> controllers
     APP --> SET
     APP --> CTX
@@ -83,6 +88,7 @@ flowchart TB
 | `app/context.py` | `AppContext`: the shared configuration dict and its persistence, the translator, the thread-safe `Notifier` (status balloons), the recording store, and a `files_changed` signal for menus. |
 | `app/controllers/` | The runtime behaviour, one class per responsibility (recording lifecycle, transcription pipeline, text insertion, hotkey listeners, tray menu, …). Each controller receives its collaborators in its constructor. |
 | `app/ui/` | Widgets, painters and the settings window. `app/ui/settings/` holds `SettingsWindow` and its pages; the declarative `bindings`/`texts` tables load, save and translate the form. |
+| `app/cli/` | The `whispertyper` command (rich-click). Without a command it starts the tray app through `app/host.py`, the only place that imports Qt at startup. `transcribe`, `rephrase`, `prompts` and `info` run headless and synchronously (`headless.py`): they read the saved configuration without writing it and reuse the services and core routing the tray app uses, so a file transcribed on the command line gets the same request, corrections and rephrasing. Results go to stdout (panels in a terminal, plain text when redirected, JSON with `--json`); progress and errors go to stderr. |
 | `app/application.py` | The composition root: builds the context, controllers and windows, connects their signals and owns startup/quit. |
 
 ### Composition and dependencies
@@ -214,6 +220,19 @@ sequenceDiagram
   "Local" provider reuses the normal HTTP transcription path. The packages are optional and
   installed on first use; on macOS the feature is switched off. See
   [LOCAL_TRANSCRIPTION.md](LOCAL_TRANSCRIPTION.md).
+- **One request builder for app and command line.** `app/services/transcription_requests.py`
+  turns the configuration into a `TranscriptionRequest` (key rotation, hedging, quality
+  fallback, ffmpeg). The tray pipeline and the CLI only differ in the target: the app starts
+  its local engine on demand, the CLI reaches it only through the running app's server for
+  other programs.
+- **The terminal command on PATH.** `SystemIntegration` (on by default, applied at every
+  start and on toggle, on a background thread) writes `whispertyper`/`whispertyperw` into
+  `~/.local/bin` and puts that folder on the user's PATH (Windows registry), plus a Start menu
+  entry. On Windows the launchers are pip's own launcher stubs (from the vendored `distlib`)
+  with the app icon written into their resources (`platform/windows_launcher.py`,
+  `core/icon_file.py`), followed by a `#!` line and a zipped `__main__.py` that runs this
+  installation's `run.py`. A launcher is rewritten only when its bytes change, and launchers
+  of another installation are never touched. Frozen builds get no command.
 - **Privacy in logs.** Transcripts and prompts are redacted in log output by default
   (`app/core/redaction.py`); only the first few characters survive.
 

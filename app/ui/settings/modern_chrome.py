@@ -404,6 +404,9 @@ class ModernChrome(SettingsWindowBase):
             switch(self.post_rephrase_auto_select_all_checkbox),
             switch(self.quit_without_confirmation_checkbox),
         ])
+        self._rebuild(self.system_integration_group, [
+            switch(self.command_on_path_checkbox), switch(self.start_menu_entry_checkbox),
+        ])
         self._rebuild(self.text_insertion_group, [
             switch(self.windows_sendinput_text_checkbox), switch(self.windows_sendinput_fallback_checkbox),
             switch(self.fast_paste_checkbox), row(self.fast_paste_delay_label, self.fast_paste_delay_input),

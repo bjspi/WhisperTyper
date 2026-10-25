@@ -144,6 +144,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 -   **Transcribe Audio & Video Files**: Pick existing audio files (MP3, M4A, WAV, FLAC, OGG, WebM, and voice messages such as WhatsApp `.opus` or Telegram `.oga`) or, with **FFmpeg** installed, video files (MP4, MOV, MKV, …) from the tray menu. With FFmpeg, videos and formats the APIs reject (`.opus`, `.oga`, `.aac`) are converted to a temporary 128 kbps MP3 first; without it, Ogg voice messages are uploaded as `.ogg`. Set the FFmpeg path (or leave it empty to auto-detect on your `PATH`) on the Transcription settings page.
 -   **Microphone Choice**: Pick an input device or follow the system default. A device that is not connected right now (a headset at another desk, a closed laptop) quietly falls back to the system default and stays selected for when it is back.
 -   **Resilient Uploads**: Optionally race a second request over a fresh connection when an upload or response stalls; the faster result wins and is processed once. Connections can be limited to IPv4 or IPv6 on the General tab, which helps on networks with a lossy IPv6 route. See [latency logging](docs/LATENCY_LOGGING.md).
+-   **Command Line for Scripts and Tools**: `transcribe` files and `rephrase` text with your saved keys, prompts and corrections — coloured output for people, `--json` for programs. See *Command Line* below.
 -   **Clipboard Safe**: Your clipboard is sacred. The app restores its previous content after pasting, so you never lose what you had copied. This is a major advantage over other tools that hijack your clipboard.
 -   **Discreet Operation**: Runs quietly in the system tray without cluttering your taskbar (e.g., using `pythonw.exe` on Windows).
 -   **Self-Updating**: When run from a cloned repo, a background watcher flags new releases in the tray menu (*Update to 0.x.y*) — one click updates and restarts the app.
@@ -199,6 +200,44 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 
 macOS needs a few extra steps for microphone and hotkey permissions (ideally via an App
 Bundle). The full guide lives in **[docs/INSTALL_MACOS.md](docs/INSTALL_MACOS.md)**.
+
+## ⌨️ Command Line
+
+WhisperTyper puts a `whispertyper` command (with the app icon) into `~/.local/bin` and, on
+Windows, that folder on your PATH — so it works in every new terminal, for a clone as well as a
+`pip install`. Settings → General → *System integration* switches it (and the Start menu entry
+with icon) on or off; both are on by default and kept up to date at every start. `python run.py`
+works the same way. Without a command it starts the tray app — from a terminal it detaches, so
+the terminal stays free (`whispertyper run --foreground` keeps it attached). `--help` lists the
+commands, grouped:
+
+| Group | Command | What it does |
+|---|---|---|
+| Speech | `transcribe FILE…` | Transcribe audio or video files — with your corrections, the automatic prompt and trigger words, like in the app |
+| Speech | `rephrase [TEXT]` | Rewrite text (argument or stdin) with a saved prompt (`-p`) or an ad-hoc instruction (`-s`) |
+| Speech | `prompts` | List the saved prompts with their numbers |
+| Application | `run` | Start the tray app (`-r` restarts a running one) |
+| Application | `info` | Version, folders, providers and models (keys masked) |
+
+The speech commands use the keys, models and prompts saved in the settings; the tray app does
+not need to run. In a terminal results appear in coloured panels; redirected (`> file`, a
+pipe) you get the plain text, and `--json` prints one JSON document for scripts and other
+tools. Progress and errors go to stderr, so they never end up in the result.
+
+```bash
+whispertyper transcribe memo.m4a                        # transcript in a panel
+whispertyper transcribe memo.m4a -p "Nice mail" --json  # rephrased, as JSON
+whispertyper transcribe talk.mp4 -l en --raw > talk.txt
+echo "can u send it tmrw" | whispertyper rephrase -p 2
+whispertyper prompts
+```
+
+Exit codes: `0` success, `1` a request failed (with several files: at least one), `2` wrong
+usage. The local engine is reachable from the command line only while WhisperTyper runs with
+its server for other programs switched on. The ZIP/PyInstaller build has no console and gets
+no command (only the Start menu entry); use the command line from a clone or a `pip install`.
+If an older `whispertyper` (e.g. a former `pip install -e .`) comes first on PATH, the log says
+so — remove it with `pip uninstall whispertyper`.
 
 ## ↗️ Updating
 
