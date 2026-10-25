@@ -29,8 +29,9 @@ from app.services.gitutil import find_git_root, project_root
 EXIT_FAILED = 1
 #: Characters of a prompt text shown in the ``prompts`` table.
 PROMPT_PREVIEW_CHARS = 70
-#: Help look: rich-click theme (colour scheme and layout).
-HELP_THEME = "cyan2-modern"
+PROGRAM = "whispertyper"
+SPEECH_COMMANDS = ("transcribe", "rephrase", "prompts")
+APPLICATION_COMMANDS = ("run", "info")
 #: The command that hosts the tray app; every other command logs to stderr instead of the app's log file.
 _TRAY_COMMAND = "run"
 _PHASE_MESSAGES = {
@@ -40,23 +41,32 @@ _PHASE_MESSAGES = {
 }
 _LANGUAGE_CODES = sorted({code for code in LANGUAGES.values() if code} | {AUTO_LANGUAGE})
 
+# The help layout of AgentRunner's command line: boxed panels per command group.
+click.rich_click.COMMAND_GROUPS = {
+    PROGRAM: [
+        {"name": "Speech", "commands": list(SPEECH_COMMANDS)},
+        {"name": "Application", "commands": list(APPLICATION_COMMANDS)},
+    ]
+}
+click.rich_click.STYLE_COMMANDS_TABLE_COLUMN_WIDTH_RATIO = (1, 4)
+click.rich_click.SHOW_ARGUMENTS = True
+click.rich_click.TEXT_MARKUP = "rich"
+click.rich_click.FOOTER_TEXT = "Every command takes --help. --json prints machine-readable output."
+
 json_option = click.option("--json", "as_json", is_flag=True, help="Print one JSON document (for scripts and tools).")
 
 
 @click.group(invoke_without_command=True, context_settings={"help_option_names": ["-h", "--help"]})
-@click.rich_config(help_config=click.RichHelpConfiguration(theme=HELP_THEME, text_markup="rich"))
-@click.command_panel("Speech", commands=["transcribe", "rephrase", "prompts"],
-                     help="Use the saved keys, models and prompts — no running app needed.")
-@click.command_panel("Application", commands=["run", "info"])
 @click.option("-v", "--verbose", is_flag=True, help="Log requests and timings on stderr.")
 @click.option("-r", "--restart", is_flag=True, hidden=True)
 @click.option("--show-settings", type=int, is_flag=False, flag_value=0, default=None, hidden=True)
 @click.version_option(__version__, "-V", "--version", prog_name="WhisperTyper", message="%(prog)s %(version)s")
 @click.pass_context
 def cli(ctx: click.Context, verbose: bool, restart: bool, show_settings: Optional[int]) -> None:
-    """[bold cyan]WhisperTyper[/] — voice to text and live AI prompting.
+    """WhisperTyper: voice to text and live AI prompting.
 
-    Without a command, WhisperTyper starts in the system tray.
+    Without a command it starts in the system tray (like `whispertyper run`). The speech
+    commands use the saved keys, models and prompts; the app does not need to run.
     """
     if ctx.invoked_subcommand is None:
         ctx.exit(_run_tray(restart, show_settings, foreground=False))
@@ -370,7 +380,7 @@ def _shown(value: Any) -> str:
 def main() -> None:
     """Entry point of the ``whispertyper`` command and of ``run.py``."""
     _prefer_utf8_output()
-    cli(prog_name="whispertyper")
+    cli(prog_name=PROGRAM)
 
 
 def _prefer_utf8_output() -> None:
