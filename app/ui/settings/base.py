@@ -60,6 +60,8 @@ class SettingsWindowBase(QWidget):
     appearance_changed = pyqtSignal()
     #: The user asked to restart now (to apply a design change).
     restart_requested = pyqtSignal()
+    #: The terminal command or the Start menu entry was switched (saved already; to be applied now).
+    system_integration_changed = pyqtSignal()
 
     ctx: AppContext
     config: Dict[str, Any]
@@ -254,6 +256,9 @@ class SettingsWindowBase(QWidget):
     recording_overlay_opacity_input: QSpinBox
     quit_without_confirmation_checkbox: QCheckBox
     modern_design_checkbox: QCheckBox
+    system_integration_group: QGroupBox
+    command_on_path_checkbox: QCheckBox
+    start_menu_entry_checkbox: QCheckBox
     misc_group: QGroupBox
     misc_layout: QVBoxLayout
     text_insertion_group: QGroupBox

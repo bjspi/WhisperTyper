@@ -26,6 +26,7 @@ from app.controllers.local_engine import LocalEngineController
 from app.controllers.permissions import MacPermissions
 from app.controllers.post_rephrase import PostRephraseController
 from app.controllers.recording import RecordingController
+from app.controllers.system_integration import SystemIntegration
 from app.controllers.text_output import TextOutput
 from app.controllers.transcription import TranscriptionPipeline
 from app.controllers.tray import TrayController
@@ -83,6 +84,8 @@ class WhisperTyperApp(QObject):
         self.hotkeys = HotkeyController(self.ctx, self.recording, self.permissions)
         self.post_rephrase = PostRephraseController(self.ctx, self.text_output, self.pipeline)
         self.files = FileActions(self.ctx)
+        # The terminal command and the Start menu entry, kept up to date at every start.
+        self.system_integration = SystemIntegration(self.ctx)
         self.settings = SettingsWindow(self.ctx, recording=self.recording, hotkeys=self.hotkeys,
                                        files=self.files, quit_app=self.quit_app, local_engine=self.local_engine)
         self.tray = TrayController(self.ctx, self.settings, self.settings, recording=self.recording,
@@ -99,12 +102,15 @@ class WhisperTyperApp(QObject):
         # The modern tray menu draws its icons in the theme's colours.
         self.settings.appearance_changed.connect(self.tray.build)
         self.settings.restart_requested.connect(self.restart_app)
+        self.settings.system_integration_changed.connect(lambda: self.system_integration.apply(report=True))
         # A local transcription loads the engine while the user still speaks (on demand, after an idle unload).
         self.recording.state_changed.connect(self._on_recording_state_changed)
 
         self.tray.set_tooltip(self.ctx.tr("tray_ready_tooltip", hotkey=config["hotkey"]))
         logging.info(f"Application started. Press '{config['hotkey']}' to start/stop recording.")
         self.ctx.notifier.show(self.ctx.tr("tray_started_message"), BALLOON_SHORT_MS)
+
+        self.system_integration.apply()
 
         if self.recording.keep_mic_hot():
             self.recording.start_background_capture()
