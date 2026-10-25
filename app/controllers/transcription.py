@@ -22,23 +22,22 @@ from app.controllers.workers import WorkerThreads
 from app.core.api_keys import (
     LOCAL_PROVIDER,
     GroqKeyRotation,
-    is_local_endpoint,
     provider_for_url,
     rephrasing_configured,
     selected_api_key,
 )
 from app.core.audio_formats import is_video_file, needs_audio_normalization
 from app.core.constants import LANGUAGES
-from app.core.models import LOCAL_TRANSCRIPTION_MODEL, transcription_form_fields, transcription_reports_confidence
-from app.core.prompts import auto_apply_prompt, transcription_prompt_for
+from app.core.models import LOCAL_TRANSCRIPTION_MODEL, transcription_form_fields
+from app.core.prompts import auto_apply_prompt
 from app.core.rephrase_routing import RephrasePlan, plan_rephrase, usable_transcript
 from app.core.replacements import ReplacementError, Replacements
 from app.core.textutil import shorten
 from app.core.timing import NO_TIMING, OperationTiming
-from app.services.ffmpeg import resolve_ffmpeg
 from app.services.net import proxies_for
 from app.services.rephrasing_worker import RephrasingWorker
-from app.services.transcription import DEFAULT_HEDGE_RESPONSE_WAIT_S, TranscriptionRequest
+from app.services.transcription import TranscriptionRequest
+from app.services.transcription_requests import TranscriptionTarget, build_request, configured_target, sent_prompt
 from app.services.transcription_worker import TranscriptionWorker
 from app.ui import message_dialog
 from app.ui.durations import (
@@ -119,12 +118,13 @@ class TranscriptionPipeline:
         # Retained microphone WAVs (including retries) use the selected recording format; the worker
         # resolves ffmpeg only if a long recording still exceeds the upload limit.
         recording_format = config.get("recording_format", "wav") if self._ctx.recordings.owns(audio_path) else None
-        ffmpeg_path = None if recording_format is not None else resolve_ffmpeg(config.get("ffmpeg_path", ""))
-        extracts_video = bool(ffmpeg_path) and is_video_file(audio_path)
-        converts_audio = bool(ffmpeg_path) and needs_audio_normalization(audio_path)
+        request = build_request(config, audio_path, self._target(), self._key_rotation, timing.operation_id,
+                                recording_format)
+        extracts_video = bool(request.ffmpeg_path) and is_video_file(audio_path)
+        converts_audio = bool(request.ffmpeg_path) and needs_audio_normalization(audio_path)
         # Snapshot the language together with the worker settings. A later settings change must
         # not make the status balloon disagree with the language used by this in-flight request.
-        lang_code = config["input_language"]
+        lang_code = request.language
 
         # Persistent spinner balloon: it stays until the result/error handler ends it, so the hint
         # tracks the real worker state instead of a fixed timeout. For videos it opens on the
@@ -136,58 +136,6 @@ class TranscriptionPipeline:
         else:
             self._notifier.show(prefix + self._transcription_progress_message(lang_code), 0, spinner=True)
 
-        api_key = self._key_rotation.next_key(config)
-        endpoint, model = config["api_endpoint"], config["model"]
-        provider = provider_for_url(endpoint)
-        local_wait_s, local_error = 0.0, ""
-        if provider == LOCAL_PROVIDER:
-            # The engine runs the model of its own settings page, at its own address.
-            model = LOCAL_TRANSCRIPTION_MODEL
-            engine = self._local_engine
-            problem = engine.problem() if engine is not None else "local_engine_disabled"
-            if problem:
-                local_error = self._ctx.tr("local_engine_unusable_error", reason=self._ctx.tr(problem))
-            else:
-                assert engine is not None
-                engine.ensure_running()
-                endpoint, local_wait_s = engine.endpoint(), READY_WAIT_S
-        logging.info("transcription_credential op=%s provider=%s profile_id=%s rotation=%s",
-                     timing.operation_id, provider, self._key_rotation.last_profile_id,
-                     bool(config["groq_key_rotation"] and provider == "groq"))
-        # Hedging: a stalled request is raced by a second one with the next key (rotation) or the same key.
-        # A server on this computer has no network path to stall on; a second request would only
-        # double its load.
-        hedging = bool(config.get("transcription_hedging", False)) and not is_local_endpoint(endpoint)
-        hedge_api_key = self._key_rotation.next_key(config) if hedging else None
-        # The quality fallback judges results by their log-probabilities; without them it only costs a request.
-        second_pass = config.get("transcription_second_pass", "off")
-        if second_pass != "off" and not transcription_reports_confidence(model):
-            logging.info("transcription_second_pass op=%s skipped reason=no_confidence_data model=%s",
-                         timing.operation_id, model)
-            second_pass = "off"
-        request = TranscriptionRequest(
-            api_key=api_key, api_endpoint=endpoint,
-            audio_path=audio_path, prompt=self._sent_prompt(),
-            model=model, language=lang_code,
-            temperature=config["transcription_temperature"],
-            proxies=proxies_for(config),
-            ffmpeg_path=ffmpeg_path,
-            max_upload_bytes=int(config.get("max_upload_mb", 24) * 1024 * 1024),
-            min_bitrate_kbps=int(config.get("min_audio_bitrate_kbps", 80)),
-            recording_format=recording_format,
-            recording_bitrate_kbps=int(config.get("recording_aac_bitrate_kbps", 64)),
-            ffmpeg_setting=config.get("ffmpeg_path", ""),
-            hedge_api_key=hedge_api_key,
-            hedge_response_wait_s=float(config.get("transcription_hedging_wait_s", DEFAULT_HEDGE_RESPONSE_WAIT_S)),
-            diagnostics=bool(config.get("transcription_diagnostics", True)),
-            second_pass=second_pass,
-            second_pass_threshold=float(config.get("transcription_second_pass_logprob", -0.5)),
-            second_pass_prompt=config.get("transcription_second_pass_prompt", ""),
-            second_pass_api_key=(self._key_rotation.next_key(config) or None
-                                 if second_pass == "always" else None),
-            local_engine_wait_s=local_wait_s,
-            local_engine_error=local_error,
-        )
         worker = TranscriptionWorker(request, timing=timing, tr=self._ctx.tr)
         if recording_format is not None:
             self._remember_request(request, transformation_prompt)
@@ -215,9 +163,24 @@ class TranscriptionPipeline:
         self._workers.start(worker, (worker.finished, worker.error),
                             queued=lambda: timing.mark("transcription_worker_queued"))
 
+    def _target(self) -> TranscriptionTarget:
+        """The configured provider, or the local engine's real address (started if needed)."""
+        target = configured_target(self._config)
+        if provider_for_url(target.endpoint) != LOCAL_PROVIDER:
+            return target
+        # The engine runs the model of its own settings page, at its own address.
+        engine = self._local_engine
+        problem = engine.problem() if engine is not None else "local_engine_disabled"
+        if problem:
+            reason = self._ctx.tr("local_engine_unusable_error", reason=self._ctx.tr(problem))
+            return TranscriptionTarget(target.endpoint, LOCAL_TRANSCRIPTION_MODEL, local_error=reason)
+        assert engine is not None
+        engine.ensure_running()
+        return TranscriptionTarget(engine.endpoint(), LOCAL_TRANSCRIPTION_MODEL, local_wait_s=READY_WAIT_S)
+
     def _sent_prompt(self) -> str:
-        """The transcription prompt for the configured input language (see ``transcription_prompt_for``)."""
-        return transcription_prompt_for(self._config["prompt"], self._config["input_language"])
+        """The transcription prompt for the configured input language (see ``sent_prompt``)."""
+        return sent_prompt(self._config)
 
     def _remember_request(self, request: TranscriptionRequest, transformation_prompt: Optional[str]) -> None:
         """Store what is sent for a recording (no API key); a retry of the same file replaces its entry."""

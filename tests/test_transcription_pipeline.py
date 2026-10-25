@@ -14,6 +14,7 @@ from PyQt6.QtCore import QObject, pyqtSignal  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 import app.controllers.transcription as pipeline_module  # noqa: E402
+import app.services.transcription_requests as transcription_requests  # noqa: E402
 from app.audio.store import RecordingStore  # noqa: E402
 from app.context import AppContext  # noqa: E402
 from app.controllers.transcription import TranscriptionPipeline  # noqa: E402
@@ -95,7 +96,7 @@ def test_a_dictation_finishing_during_a_batch_is_delivered_not_collected(tmp_pat
 def test_start_binds_the_batch_into_the_result_handlers(tmp_path, monkeypatch):
     pipeline, _output = make_pipeline(tmp_path)
     monkeypatch.setattr(pipeline_module, "TranscriptionWorker", FakeWorker)
-    monkeypatch.setattr(pipeline_module, "resolve_ffmpeg", lambda _setting: None)
+    monkeypatch.setattr(transcription_requests, "resolve_ffmpeg", lambda _setting: None)
     received = []
     monkeypatch.setattr(pipeline, "on_transcription_finished", lambda text, *args: received.append((text, args[-1])))
     monkeypatch.setattr(pipeline, "on_transcription_error",

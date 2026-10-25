@@ -34,6 +34,9 @@ _HANDLED_WINDOWS_CODE = re.compile(r"code 0x[0-9a-b][0-9a-f]{7}$", re.IGNORECASE
 #: Keeps the crash log open for the whole process: faulthandler writes to its descriptor.
 _crash_log_stream: Any = None
 
+#: Set for a launch without a console (pythonw, frozen build); the stderr crash log stays lean then.
+WINDOWED_ENV = "WHISPERTYPER_WINDOWED"
+
 # Project root = the directory above this package (…/app/bootstrap.py -> …/).
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -79,7 +82,7 @@ def redirect_std_streams_if_windowed() -> None:
 
     # Mark windowed mode so the app can keep the stderr crash-log lean (warnings + crashes
     # only, not every DEBUG line — otherwise this file grows unbounded during a long session).
-    os.environ["WHISPERTYPER_WINDOWED"] = "1"
+    os.environ[WINDOWED_ENV] = "1"
 
     try:
         stderr_path = os.path.join(app_data_dir, "WhisperTyper.stderr.log")
