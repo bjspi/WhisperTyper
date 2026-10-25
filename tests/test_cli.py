@@ -40,7 +40,7 @@ def runner(monkeypatch, session):
 
 
 def test_help_shows_the_command_groups(runner):
-    result = runner.invoke(cli, ["--help"])
+    result = runner.invoke(cli, ["--help"], prog_name=main_module.PROGRAM)
     assert result.exit_code == 0
     assert "Speech" in result.output and "Application" in result.output
     assert "transcribe" in result.output and "rephrase" in result.output
