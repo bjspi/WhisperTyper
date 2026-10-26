@@ -86,6 +86,10 @@ QPushButton#detailsToggle {
     background: transparent; border: none; padding: 7px 4px; min-width: 0; color: %(accent)s;
 }
 QPushButton#detailsToggle:hover { color: %(accent_hover)s; text-decoration: underline; }
+QProgressBar#messageProgress {
+    background: %(panel2)s; border: 1px solid %(border)s; border-radius: 3px; max-height: 6px;
+}
+QProgressBar#messageProgress::chunk { background: %(accent)s; border-radius: 3px; }
 """
 
 
@@ -160,6 +164,8 @@ class MessageDialog(QDialog):
         texts.addWidget(heading)
         # Labels that wrap get an explicit width in _fit(): nested layouts misjudge their height otherwise.
         self._wrapped: List[QLabel] = [heading]
+        #: The text below the heading, for dialogs that report progress in it.
+        self.text_label: Optional[QLabel] = None
         if text:
             label = QLabel(_tint_links(text, colors), body)
             label.setObjectName("messageText")
@@ -169,9 +175,12 @@ class MessageDialog(QDialog):
             label.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
             texts.addWidget(label)
             self._wrapped.append(label)
+            self.text_label = label
         texts.addStretch(1)
         header.addLayout(texts, 1)
         body_layout.addLayout(header)
+        #: Holds the header, facts and details; subclasses add their own widgets here.
+        self.body_layout = body_layout
         if facts:
             body_layout.addWidget(_facts_card(body, facts, colors))
 
