@@ -28,6 +28,7 @@ from app.local_engine.catalog import (
     settings_from_config,
 )
 from app.local_engine.supervisor import OFF, PROJECT_ROOT, EngineStatus, Supervisor, free_port
+from app.platform import installation
 
 #: The engine cannot run: packages missing, no usable device, or a frozen (PyInstaller) build.
 UNAVAILABLE = "unavailable"
@@ -237,7 +238,7 @@ class LocalEngineController(QObject):
             self._detection_finished()
             return
         process = QProcess(self)
-        process.setProgram(availability.console_python())
+        process.setProgram(installation.console_python())
         process.setArguments(["-m", "app.local_engine.devices"])
         process.setWorkingDirectory(PROJECT_ROOT)
         process.finished.connect(lambda _code, _status: self._on_detected(process))
