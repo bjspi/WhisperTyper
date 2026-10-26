@@ -11,7 +11,6 @@ from PyQt6.QtGui import QAction, QCursor, QIcon
 from PyQt6.QtWidgets import QApplication, QFileDialog, QLabel, QStyle, QSystemTrayIcon, QWidget
 
 from app import __version__
-from app.bootstrap import requirements_install_command
 from app.context import AppContext
 from app.controllers.file_actions import FileActions
 from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED, UNAVAILABLE, LocalEngineController
@@ -23,6 +22,7 @@ from app.core.constants import APP_DATA_DIR
 from app.core.env import is_MACOS
 from app.core.hotkeys import pretty_hotkey
 from app.local_engine.supervisor import OFF, READY, EngineStatus
+from app.platform.installation import REQUIREMENTS_FILE, repair_command
 from app.services import bad_recordings
 from app.services.ffmpeg import resolve_ffmpeg
 from app.services.gitutil import git_available, release_changes
@@ -33,6 +33,7 @@ from app.ui.about_dialog import show_about
 from app.ui.durations import BALLOON_INFO_MS, BALLOON_SHORT_MS, BALLOON_WARNING_MS
 from app.ui.line_icons import line_icon
 from app.ui.local_engine_tab import status_text
+from app.ui.package_install import install_requirements
 from app.ui.tray_icons import app_icon, recording_level_icon, tray_icon
 from app.ui.tray_menu import BadgeTrayMenu
 
@@ -584,9 +585,9 @@ class TrayController(QObject):
         message = tr("update_success_text")
         if forced:
             message += "\n\n" + tr("update_force_success_hint")
-        if self.updater.requirements_changed:
+        if self.updater.requirements_changed and not install_requirements(self._window, tr):
             # The new code may need packages the running interpreter lacks; it could not start.
-            message += "\n\n" + tr("update_requirements_hint", command=requirements_install_command())
+            message += "\n\n" + tr("update_requirements_hint", command=repair_command() or REQUIREMENTS_FILE)
         if message_dialog.show_dialog(self._window, tr("update_success_title", version=version), message,
                                       [(tr("update_later_button"), message_dialog.SECONDARY),
                                        (restart, message_dialog.PRIMARY)],

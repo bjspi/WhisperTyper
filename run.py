@@ -4,7 +4,7 @@ Without a command it starts the tray app (app/host.py); ``python run.py --help``
 commands. Keep the stream redirect first so import-time crashes of a windowless start are
 captured.
 """
-from app.bootstrap import maybe_reexec_with_project_venv, redirect_std_streams_if_windowed, report_missing_dependency
+from app.bootstrap import maybe_reexec_with_project_venv, redirect_std_streams_if_windowed, resolve_missing_dependency
 
 redirect_std_streams_if_windowed()
 
@@ -13,7 +13,7 @@ try:
 except ModuleNotFoundError as exc:
     # Another interpreter may have the packages (the project venv); otherwise an update added one.
     maybe_reexec_with_project_venv()
-    report_missing_dependency(exc.name or str(exc))
+    resolve_missing_dependency(exc.name or str(exc))
     raise
 
 

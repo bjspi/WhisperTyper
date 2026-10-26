@@ -9,6 +9,7 @@ importable yet.
 from __future__ import annotations
 
 import faulthandler
+import json
 import logging
 import os
 import re
@@ -185,28 +186,53 @@ def _crashed(session: str) -> bool:
     return False
 
 
-def requirements_install_command() -> str:
-    """The pip command that installs the checkout's requirements into the running interpreter."""
-    return f'"{sys.executable}" -m pip install -r "{os.path.join(_PROJECT_ROOT, "requirements.txt")}"'
+def resolve_missing_dependency(module: str) -> None:
+    """A start found ``module`` missing, typically after an update added a requirement.
 
-
-def report_missing_dependency(module: str) -> None:
-    """Tell the user which package is missing, typically after an update added a requirement.
-
-    Started windowless, a failed import would only end in the stderr file and the tray icon
-    would simply not appear. PyQt6 itself is there (its absence is handled by the venv re-exec).
+    Started windowless, a failed import would only end in the stderr file and the tray icon would
+    simply not appear. A checkout offers to install its requirements and then starts again with
+    the same arguments (this process ends); otherwise the dialog names the repair and this returns.
+    PyQt6 itself is there (its absence is handled by the venv re-exec).
     """
-    command = requirements_install_command()
-    message = (f"WhisperTyper cannot start: the Python package '{module}' is not installed.\n\n"
-               f"An update may have added it. Install the requirements, then start WhisperTyper again:\n\n{command}")
-    logging.critical("Missing dependency %s; install it with: %s", module, command)
+    logging.critical("Missing dependency %s in %s", module, sys.prefix)
     try:
-        from PyQt6.QtWidgets import QApplication, QMessageBox
+        from PyQt6.QtWidgets import QApplication
 
-        _app = QApplication.instance() or QApplication([sys.argv[0]])
-        QMessageBox.critical(None, "WhisperTyper", message)
+        from app.core.i18n import TranslationManager
+        from app.ui.package_install import offer_missing_package_install
+
+        qt_app = QApplication.instance() or QApplication([sys.argv[0]])  # noqa: F841 - lives for the dialog
+        installed = offer_missing_package_install(module, TranslationManager(_saved_ui_language()).tr)
     except Exception:
-        pass
+        logging.exception("The missing dependency %s could not be offered for installation", module)
+        return
+    if installed:
+        sys.exit(_start_again())
+
+
+def _saved_ui_language() -> str:
+    """The UI language of the saved config; English when it cannot be read before the app is up."""
+    try:
+        from app.core.constants import CONFIG_FILE, DEFAULT_CONFIG
+
+        with open(CONFIG_FILE, encoding="utf-8") as handle:
+            return str(json.load(handle).get("ui_language", DEFAULT_CONFIG["ui_language"]))
+    except (ImportError, OSError, ValueError, AttributeError):
+        return "en"
+
+
+def _start_again() -> int:
+    """Run the checkout's entry script again with this process's arguments; returns the exit code.
+
+    A windowless start hands over to the new process; in a terminal the command runs to its end
+    there, so its output and exit code stay in this terminal.
+    """
+    command = [sys.executable, os.path.join(_PROJECT_ROOT, "run.py"), *sys.argv[1:]]
+    logging.info("Starting again after installing the requirements: %s", command)
+    if os.environ.get(WINDOWED_ENV):
+        subprocess.Popen(command, close_fds=True)
+        return 0
+    return subprocess.call(command)
 
 
 def install_qt_message_handler() -> None:

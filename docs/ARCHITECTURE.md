@@ -213,6 +213,12 @@ sequenceDiagram
   whose GitHub release (source ZIP) is published, fetches that tag and names the version
   in the tray entry. Updating fast-forwards to the tag (`git merge --ff-only`); after a
   failure a forced update stashes local changes and resets to the tag. Frozen (PyInstaller) builds never see this menu entry.
+- **Missing packages.** `platform/installation.py` tells how WhisperTyper is installed
+  (checkout, pipx, `uv tool`, `uvx`, other package, frozen) and installs into the running
+  environment with its own pip, or with `uv pip install --python …` where uv left out pip. An
+  update that changes `requirements.txt` installs it before the restart is offered; a start
+  that misses a package offers the install in a checkout and then starts again, and names the
+  tool's reinstall command for packaged installs (`ui/package_install.py`).
 - **Local transcription in a child process.** `app/local_engine/` runs Whisper as
   `python -m app.local_engine.server` (FastAPI, OpenAI-compatible) supervised by a watchdog
   thread (`supervisor.py`). The app never imports OpenVINO, CTranslate2 or CUDA: a crashed

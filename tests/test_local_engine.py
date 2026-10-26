@@ -403,6 +403,3 @@ def test_connection_test_blames_no_proxy_for_a_server_on_this_pc():
     assert classify_transport_error(error, "http://127.0.0.1:9017/v1/audio/transcriptions", px) == "local_down"
     assert classify_transport_error(error, "https://api.groq.com/openai/v1/audio/transcriptions", px) == "proxy"
 
-
-def test_pip_skips_the_path_warnings():
-    assert "--no-warn-script-location" in availability.pip_command(["x"])

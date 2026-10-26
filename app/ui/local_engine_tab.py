@@ -59,6 +59,7 @@ from app.local_engine.catalog import (
     resolve_device,
 )
 from app.local_engine.supervisor import CONFLICT, DOWN, LOADING, OFF, READY, STARTING, EngineStatus
+from app.platform import installation
 from app.services.http_transport import request
 from app.ui import message_dialog
 from app.ui.local_engine_install import install
@@ -619,7 +620,7 @@ class LocalEngineTab(QWidget):
         self.bench_table.setRowCount(0)
         self.bench_table.show()
         process = QProcess(self)
-        process.setProgram(availability.console_python())
+        process.setProgram(installation.console_python())
         process.setArguments(["-m", "app.local_engine.bench", path, "--device", device, "--models-dir",
                               self._models_dir(), "--language", str(self._ctx.config.get("input_language", ""))])
         from app.local_engine.supervisor import PROJECT_ROOT

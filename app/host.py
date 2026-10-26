@@ -20,7 +20,7 @@ from app.bootstrap import (
     install_qt_message_handler,
     mark_clean_exit,
     maybe_reexec_with_project_venv,
-    report_missing_dependency,
+    resolve_missing_dependency,
 )
 from app.core.env import is_WINDOWS
 from app.services.gitutil import project_root
@@ -43,7 +43,7 @@ def run_tray(restart: bool = False, show_settings: Optional[int] = None) -> int:
         if exc.name == "PyQt6":
             maybe_reexec_with_project_venv()
         else:
-            report_missing_dependency(exc.name or str(exc))
+            resolve_missing_dependency(exc.name or str(exc))
         raise
 
     app = QApplication([sys.argv[0]])

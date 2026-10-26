@@ -105,23 +105,6 @@ def install_packages(adapters: List[str]) -> List[str]:
     return [package.requirement for package in missing(wanted)]
 
 
-def console_python() -> str:
-    """This environment's interpreter with a console: under ``pythonw`` child processes get no output pipes."""
-    import os
-
-    folder, name = os.path.split(sys.executable)
-    if name.lower() == "pythonw.exe":
-        candidate = os.path.join(folder, "python.exe")
-        if os.path.isfile(candidate):
-            return candidate
-    return sys.executable
-
-
-def pip_command(requirements: List[str]) -> List[str]:
-    """Arguments of a pip run that installs ``requirements`` into this interpreter's environment."""
-    return ["-m", "pip", "install", "--disable-pip-version-check", "--no-warn-script-location", *requirements]
-
-
 def backend_ready(backend: str) -> bool:
     """The packages of ``backend`` are installed."""
     if backend == CTRANSLATE2:
