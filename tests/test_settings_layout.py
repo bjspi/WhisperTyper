@@ -15,6 +15,7 @@ from app.audio.store import RecordingStore  # noqa: E402
 from app.context import AppContext  # noqa: E402
 from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED  # noqa: E402
 from app.core.config_store import ConfigStore  # noqa: E402
+from app.core.env import is_WINDOWS  # noqa: E402
 from app.core.hotkeys import normalize_hotkey_string  # noqa: E402
 from app.ui.settings.collapsible import CollapsibleSection  # noqa: E402
 from app.ui.settings.window import SettingsWindow  # noqa: E402
@@ -199,6 +200,8 @@ def test_building_the_modern_rows_opens_no_windows(qapp, tmp_path):
     window.deleteLater()
 
 
+# macOS: the digit keys checkbox is Windows-only (hidden elsewhere), so there is no anchor to sit below.
+@pytest.mark.skipif(not is_WINDOWS, reason="digit keys checkbox is Windows-only")
 @pytest.mark.parametrize("modern", [False, True])
 def test_palette_opacity_sits_below_the_palette_options(qapp, tmp_path, modern):
     window = _make_window(tmp_path, modern)
