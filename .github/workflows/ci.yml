@@ -31,7 +31,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: pip install mypy PyQt6 ftfy "httpx>=0.28" "av>=14" "rich-click>=1.9"
+      # PyQt6 6.12 ships .pyi stubs mypy rejects as invalid syntax.
+      - run: pip install mypy "PyQt6<6.12" ftfy "httpx>=0.28" "av>=14" "rich-click>=1.9"
       # Every package is type-checked; components declare their collaborators explicitly.
       - run: mypy app run.py
 
