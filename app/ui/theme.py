@@ -431,6 +431,20 @@ def play_svg(color: str) -> str:
             f"</g></svg>")
 
 
+def no_rephrase_svg(color: str, background: str) -> str:
+    """SVG string for a crossed-out prompt window ``>_`` (no rephrasing prompt) in the given stroke colour.
+
+    The slash is cut free from the sign by a gap in ``background``, the colour behind the icon.
+    """
+    return (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
+            f"<g fill='none' stroke='{color}' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'>"
+            f"<rect x='1.75' y='2.75' width='12.5' height='10.5' rx='2'/>"
+            f"<path d='M3.75 5.5l2 1.75-2 1.75M9 10.25h2.5'/>"
+            f"<path d='M14.25 1.75L1.75 14.25' stroke='{background}' stroke-width='3'/>"
+            f"<path d='M14.25 1.75L1.75 14.25'/>"
+            f"</g></svg>")
+
+
 def move_svg(color: str) -> str:
     """SVG string for a four-way arrow cross (drag to move) in the given stroke colour."""
     return (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"

@@ -229,7 +229,7 @@ def test_texts_bundle_stands_in_for_the_single_string_parameters(qapp):
                                   pause_tooltip="Pause", resume_tooltip="Resume", move_tooltip="Drag to move")
     palette = RecordingPromptOverlay(PROMPTS, on_selection_changed=lambda _prompt: None, use_system_position=False,
                                      on_pause=lambda: None, texts=texts)
-    assert palette.status_label.text() == "Recording" and palette._prompt_buttons[0].text() == "None"
+    assert palette.status_label.text() == "Recording" and palette._prompt_buttons[0].toolTip() == "None"
     assert palette.pause_button is not None and palette.pause_button.toolTip() == "Pause"
     assert palette.move_handle is not None and palette.move_handle.toolTip() == "Drag to move"
     palette.set_paused(True)

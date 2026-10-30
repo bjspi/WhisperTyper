@@ -594,6 +594,7 @@ class RecordingPromptOverlay(_PromptCard):
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         card_layout, dark = self._build_card("recordingPromptCard", dark)
+        self._dark = dark
         self._icon_color = theme.palette(dark)["muted"]
 
         top = self._build_header(on_pause, on_restart, on_cancel, level_feed)
@@ -712,7 +713,17 @@ class RecordingPromptOverlay(_PromptCard):
     def _build_chips(self, card_layout: QVBoxLayout, prompts: List[Dict[str, Any]]) -> None:
         """The "None" chip and one chip per prompt; the ``auto_apply`` prompt starts selected."""
         card_layout.addLayout(self._chips, 1)  # the chips take the height their lines need
-        none_button = self._add_chip(self._texts.none_text, checkable=True)
+        # The "None" chip shows only a crossed-out prompt sign; its caption becomes the tooltip.
+        # The sign takes the chip's text and background colours, and the accent's once selected.
+        none_button = self._add_chip("", checkable=True)
+        none_button.setToolTip(self._texts.none_text)
+        pal = theme.palette(self._dark)
+        ratio = self.devicePixelRatioF()
+        none_icon = _svg_icon(theme.no_rephrase_svg(pal["text"], pal["panel2"]), 16, ratio)
+        none_icon.addPixmap(_svg_pixmap(theme.no_rephrase_svg(pal["on_accent"], pal["accent"]), 16, ratio),
+                            QIcon.Mode.Normal, QIcon.State.On)
+        none_button.setIcon(none_icon)
+        none_button.setIconSize(QSize(16, 16))
         none_button.clicked.connect(partial(self._select_prompt, None, none_button))
         preselected = none_button
         for prompt in prompts:
