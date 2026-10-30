@@ -92,6 +92,7 @@ def server(monkeypatch):
     API.seen = []
     API.cookies = []
     transport.close_transport()
+    monkeypatch.setattr(ThreadingHTTPServer, "request_queue_size", 32)  # macOS: backlog 5 rejects 12 parallel connects
     server = ThreadingHTTPServer(("127.0.0.1", 0), API)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

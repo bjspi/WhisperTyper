@@ -275,6 +275,7 @@ def controller(monkeypatch, tmp_path):
     ctx = AppContext(Store(_config(local_device="cpu")), RecordingStore(str(tmp_path)))
     engine = module.LocalEngineController(ctx)
     engine._supervisor = Mock(wanted=False, settings=None)
+    monkeypatch.setattr(module, "LOCAL_ENGINE_SUPPORTED", True)  # macOS: the engine is off there by default
     monkeypatch.setattr(module.availability, "engine_installed", lambda: True)
     monkeypatch.setattr(module.availability, "backend_ready", lambda _backend: True)
     return engine, ctx.config, module
