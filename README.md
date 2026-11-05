@@ -157,30 +157,64 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 
 ## ⬇️ Download & Installation
 
-> **💡 Recommended: clone the repo and run straight from the sources.** On Windows (and
-> Linux) there is no need to build an .exe — the app runs perfectly from the Python
-> sources, and a git clone unlocks the **built-in self-update**: WhisperTyper checks for new
-> releases in the background, names the new version in the tray menu's *Update* entry,
-> and updates itself with one click. Alternatively, grab the
-> ready-to-run ZIP from the [latest release](https://github.com/bjspi/WhisperTyper/releases/latest)
-> — but you lose the self-update. (On macOS an App Bundle is recommended instead —
-> for permissions reasons, see the [macOS instructions](docs/INSTALL_MACOS.md).)
+**You need:** [Git](https://git-scm.com/downloads) and either [Python 3.10–3.13](https://www.python.org/downloads/) or [uv](https://docs.astral.sh/uv/getting-started/installation/), which downloads Python by itself. Python 3.14 is not supported yet: on Windows, PyAudio cannot be installed on it.
+
+**Windows** (PowerShell):
+```powershell
+irm https://raw.githubusercontent.com/bjspi/WhisperTyper/main/install.ps1 | iex
+```
+
+**macOS and Linux:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/bjspi/WhisperTyper/main/install.sh | bash
+```
+
+The script clones the repository into `WhisperTyper` in your home folder, creates a virtual
+environment in `.venv`, installs the requirements into it and starts WhisperTyper; it does not touch
+your other Python projects. At its first start the app adds the `whispertyper` command and, on
+Windows and Linux, the Start menu entry. You can run the script again at any time.
+
+Prefer to read the script first, or to choose the folder? Clone it yourself and run it from there:
+```bash
+git clone https://github.com/bjspi/WhisperTyper.git
+cd WhisperTyper
+./install.sh                                              # macOS, Linux; --no-start only installs
+powershell -ExecutionPolicy Bypass -File .\install.ps1    # Windows; -NoStart only installs
+```
+
+> **Python somewhere else, for example on a network share?** If the Windows script finds no suitable
+> Python, it asks for the path. From a clone you can also pass it directly: `-Python <path to python.exe>`.
+> The virtual environment keeps using that Python, so it has to stay available. With your own Python,
+> packages are installed with its pip, which respects your `pip.ini`.
+
+> **macOS and Linux need PortAudio** to compile PyAudio; the script tells you the command for your
+> system if it is missing. On macOS an App Bundle is recommended for permissions reasons, see the
+> [macOS instructions](docs/INSTALL_MACOS.md).
+
+> **💡 Why a clone?** It unlocks the **built-in self-update**: WhisperTyper checks for new releases
+> in the background, names the new version in the tray menu's *Update* entry, and updates itself
+> with one click. Alternatively, grab the ready-to-run ZIP from the
+> [latest release](https://github.com/bjspi/WhisperTyper/releases/latest), which contains the same
+> install scripts — but you lose the self-update.
+
+> **Optional — transcribe video files**: Install [FFmpeg](https://ffmpeg.org/download.html) to enable picking video files (MP4, MOV, MKV, …) for transcription. If it's on your `PATH` it is detected automatically; otherwise set its path on the Transcription settings page. On Windows: `winget install ffmpeg` (or `choco install ffmpeg`); on macOS: `brew install ffmpeg`; on Linux: `sudo apt install ffmpeg`.
+
+> **Optional — AAC recordings**: `requirements.txt` includes [PyAV](https://pyav.basswood-io.com/) for the compact AAC (M4A) recording format. Without it (`pip uninstall av`) WhisperTyper records WAV only and hides the format setting. A PyInstaller build bundles AAC support only if PyAV is installed in the build environment (~70 MB).
+
+<details>
+<summary>Setting it up by hand</summary>
 
 1.  Clone the repository:
     ```bash
     git clone https://github.com/bjspi/WhisperTyper.git
     cd WhisperTyper
     ```
-2.  Install the required Python packages:
+2.  Create a virtual environment with Python 3.10–3.13 and install the packages:
     ```bash
+    python -m venv .venv
+    # Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
     pip install -r requirements.txt
     ```
-    > **Note for macOS users**: See the full [macOS installation instructions](docs/INSTALL_MACOS.md).
-
-    > **Optional — AAC recordings**: `requirements.txt` includes [PyAV](https://pyav.basswood-io.com/) for the compact AAC (M4A) recording format. It is optional: skip it (or `pip uninstall av`) and WhisperTyper records WAV only and hides the format setting. A PyInstaller build bundles AAC support only if PyAV is installed in the build environment (~70 MB).
-
-    > **Optional — transcribe video files**: Install [FFmpeg](https://ffmpeg.org/download.html) to enable picking video files (MP4, MOV, MKV, …) for transcription. If it's on your `PATH` it is detected automatically; otherwise set its path on the Transcription settings page. On Windows: `winget install ffmpeg` (or `choco install ffmpeg`); on macOS: `brew install ffmpeg`; on Linux: `sudo apt install ffmpeg`.
-
 3.  Run the application:
     ```bash
     python run.py
@@ -195,6 +229,8 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
     ```bat
     start "WhisperTyper" /B pythonw.exe "%~dp0run.py" %*
     ```
+
+</details>
 
 ## ⬇️🍏 Installation on macOS
 

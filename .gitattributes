@@ -3,3 +3,6 @@
 tests/          export-ignore
 .gitattributes  export-ignore
 .gitignore      export-ignore
+
+# Shell scripts keep LF on every checkout, also on Windows with core.autocrlf.
+install.sh      text eol=lf
