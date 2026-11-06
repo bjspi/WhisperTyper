@@ -40,6 +40,12 @@ def test_flow_layout_wraps_onto_more_lines_when_narrow(qapp):
     assert flow.heightForWidth(10_000) == one_line
 
 
+def test_without_prompts_the_palette_only_shows_the_recording(qapp):
+    palette = overlay([], prompts=[])
+    assert palette._prompt_buttons == []
+    assert palette.card.height() < overlay([]).card.height()
+
+
 def test_auto_apply_prompt_is_preselected_without_reporting_a_choice(qapp):
     selected: list = []
     palette = overlay(selected)

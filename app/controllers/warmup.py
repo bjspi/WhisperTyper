@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict
 
 from PyQt6.QtCore import QObject, QTimer
 
+from app.core.api_keys import rephrasing_configured, transcription_configured
 from app.services.http_warmup import WARM_INTERVAL_S, HttpWarmup
 
 
@@ -36,7 +37,11 @@ class WarmupScheduler(QObject):
         if not self.http.active:
             return
         config = self._config
-        endpoints = (config.get("api_endpoint", ""), config.get("rephrasing_api_url", ""))
+        # An origin no request can go to (no usable key) is not worth a connection.
+        endpoints = (config.get("api_endpoint", "") if transcription_configured(config) else "",
+                     config.get("rephrasing_api_url", "") if rephrasing_configured(config) else "")
+        if not any(endpoints):
+            return
         if self._rephrasing_first():
             endpoints = endpoints[::-1]
         self.http.schedule(endpoints, config.get("proxy_url", ""), config.get("use_local_px_proxy", False))

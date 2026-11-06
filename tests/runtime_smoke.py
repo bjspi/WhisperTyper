@@ -100,6 +100,7 @@ def _seed_config(iso_home: str, port: int) -> None:
     os.makedirs(app_data, exist_ok=True)
     with open(os.path.join(app_data, "config.json"), "w", encoding="utf-8") as f:
         json.dump({
+            "microphone_signal_confirmed": True,  # this run must not open the computer's other microphones
             "api_key": "sk-test-dummy",
             "api_endpoint": f"http://127.0.0.1:{port}/v1/audio/transcriptions",
             "rephrasing_api_url": f"http://127.0.0.1:{port}/v1/chat/completions",

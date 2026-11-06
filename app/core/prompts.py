@@ -189,6 +189,47 @@ _SCAN_DEPTH_RANGE = (1, 99)
 #: Maximum number of own templates; the instruction entry comes on top.
 MAX_TRANSFORMATIONS = 10
 
+#: Caption of the translation prompt a fresh configuration starts with (the flag of England).
+DEFAULT_ENGLISH_CAPTION = "\U0001F3F4\U000E0067\U000E0062\U000E0065\U000E006E\U000E0067\U000E007F"
+DEFAULT_ENGLISH_PROMPTS = {
+    "en": """You act as a professional translator.
+Translate the text provided by the user into English as precisely as possible.
+Return only the translation, without an introduction, explanations or other additions, and not in quotation marks.
+The goal is a clear, fluent translation that is faithful to the original.
+Carry over metaphors, idioms and nuances by meaning rather than word for word when that is more natural in English.
+Keep the original meaning, tone and style, without unnecessary interpretations or omissions.
+Strictly observe correct English spelling, grammar, capitalization and punctuation.
+Use natural, idiomatic phrasing without distorting the statement.
+Leave proper names and specific terms unchanged unless they clearly have a translation.""",
+    "de": """Du verhältst dich wie ein professioneller Übersetzer.
+Übersetze den vom Nutzer bereitgestellten Text so präzise wie möglich ins Englische.
+Gib ausschließlich die Übersetzung zurück – ohne Einleitung, zusätzliche Erläuterungen oder sonstige Ergänzungen, auch nicht in Anführungszeichen.
+Ziel ist eine klare, flüssige und originalgetreue Übersetzung.
+Übertrage Metaphern, Redewendungen und sprachliche Nuancen sinngemäß statt wortwörtlich, sofern dies für die Zielsprache natürlicher und angemessener ist.
+Bewahre den ursprünglichen Sinn, Ton und Stil des Originals, ohne unnötige Interpretationen oder Auslassungen.
+Achte strikt auf korrekte englische Rechtschreibung, Grammatik, Groß- und Kleinschreibung sowie Interpunktion.
+Verwende natürliche und idiomatische Formulierungen, ohne die Aussage zu verfälschen.
+Lasse Eigennamen und spezifische Begriffe unverändert, sofern sie nicht eindeutig übersetzbar sind.""",
+    "es": """Actúas como un traductor profesional.
+Traduce al inglés el texto proporcionado por el usuario con la mayor precisión posible.
+Devuelve únicamente la traducción, sin introducción, explicaciones ni otros añadidos, y tampoco entre comillas.
+El objetivo es una traducción clara, fluida y fiel al original.
+Traslada metáforas, modismos y matices según su sentido y no palabra por palabra cuando sea más natural en inglés.
+Conserva el sentido, el tono y el estilo originales, sin interpretaciones ni omisiones innecesarias.
+Cuida estrictamente la ortografía, la gramática, las mayúsculas y la puntuación del inglés.
+Usa expresiones naturales e idiomáticas sin alterar el mensaje.
+Deja sin cambios los nombres propios y los términos específicos, salvo que tengan una traducción clara.""",
+    "fr": """Tu agis comme un traducteur professionnel.
+Traduis en anglais le texte fourni par l'utilisateur aussi précisément que possible.
+Ne renvoie que la traduction, sans introduction, explications ni autres ajouts, et pas entre guillemets.
+L'objectif est une traduction claire, fluide et fidèle à l'original.
+Transpose les métaphores, expressions et nuances selon leur sens plutôt que mot à mot lorsque c'est plus naturel en anglais.
+Conserve le sens, le ton et le style d'origine, sans interprétations ni omissions inutiles.
+Veille strictement à l'orthographe, à la grammaire, aux majuscules et à la ponctuation de l'anglais.
+Utilise des formulations naturelles et idiomatiques sans déformer le propos.
+Laisse inchangés les noms propres et les termes spécifiques, sauf s'ils ont clairement une traduction.""",
+}
+
 
 def default_instruction_entry(lang_code: str) -> Dict[str, Any]:
     """The instruction entry a fresh configuration starts with, in the UI language."""
@@ -199,6 +240,22 @@ def default_instruction_entry(lang_code: str) -> Dict[str, Any]:
         "enabled": True,
         "trigger_enabled": True,
     })
+
+
+def first_start_transformations(lang_code: str) -> List[Dict[str, Any]]:
+    """The prompts of a brand-new installation; both are offered in the recording palette.
+
+    The palette only shows them once a rephrasing provider is set up. Existing configurations
+    never get these: an upgrade must not change what a user's palette offers.
+    """
+    return [
+        {**default_instruction_entry(lang_code), "show_during_recording": True},
+        transformation_entry({
+            "caption": DEFAULT_ENGLISH_CAPTION,
+            "text": _default_prompt_for(DEFAULT_ENGLISH_PROMPTS, lang_code),
+            "show_during_recording": True,
+        }),
+    ]
 
 
 def _scan_depth(value: Any) -> int:

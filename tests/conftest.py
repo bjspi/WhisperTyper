@@ -7,6 +7,7 @@ of module-scoped fixtures alive while their tests run.
 """
 from __future__ import annotations
 
+import importlib.util
 from typing import Iterator
 
 import pytest
@@ -25,6 +26,16 @@ def _reset_singletons() -> None:
 
     for cls in (FloatingButtonWindow, RecordingPromptOverlay, MouseFollowerTooltip):
         cls._instance = None
+
+
+@pytest.fixture(autouse=True)
+def _keep_real_microphones_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test take must never open this computer's input devices (tests run the scout directly)."""
+    if importlib.util.find_spec("pyaudio") is None:  # The lightweight CI matrix runs without PyAudio.
+        return
+    from app.audio.mic_scout import MicrophoneScout
+
+    monkeypatch.setattr(MicrophoneScout, "start", lambda _self: None)
 
 
 @pytest.fixture(autouse=True, scope="module")

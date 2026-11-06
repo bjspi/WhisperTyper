@@ -104,7 +104,7 @@ class MicrophoneInput:
         timing.mark("stream_open_start")
         for candidate in candidates:
             try:
-                self._stream = _open_input_stream(audio, candidate, self.chunk_size)
+                self._stream = open_input_stream(audio, candidate, self.chunk_size)
             except Exception as e:
                 last_error = e
                 failed.append(candidate["name"])
@@ -183,7 +183,7 @@ def _default_input_name(audio: pyaudio.PyAudio) -> str:
         return ""
 
 
-def _open_input_stream(audio: pyaudio.PyAudio, candidate: Mapping[str, Any], chunk_size: int) -> Any:
+def open_input_stream(audio: pyaudio.PyAudio, candidate: Mapping[str, Any], chunk_size: int) -> Any:
     """Open a 16-bit input stream for one device candidate (index None = system default)."""
     kwargs: dict[str, Any] = {
         "format": pyaudio.paInt16,

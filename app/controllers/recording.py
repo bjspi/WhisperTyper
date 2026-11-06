@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import QApplication
 
 from app.audio import macos_recorder
 from app.audio.capture import HotMicCapture, MicrophoneInput, OnDemandCapture
+from app.audio.mic_scout import MicrophoneScout
 from app.audio.sound import SoundPlayer
 from app.context import AppContext
 from app.controllers.permissions import MacPermissions
@@ -56,6 +57,9 @@ class RecordingController(QObject):
     _capture_failed = pyqtSignal(int)
     # The capture thread reports the first recorded block of a take; the palette opens on the GUI thread.
     _recording_audio = pyqtSignal(int)
+    # The microphone scout reports from its own thread.
+    _mic_scout_found = pyqtSignal(int, str, str)
+    _mic_scout_heard = pyqtSignal()
 
     def __init__(self, ctx: AppContext, *, permissions: MacPermissions, warmup: WarmupScheduler,
                  output: TextOutput, pipeline: TranscriptionPipeline, sounds: SoundPlayer,
@@ -110,6 +114,10 @@ class RecordingController(QObject):
         self._capture: Optional[Union[HotMicCapture, OnDemandCapture]] = None
         #: Saved settings that change the capture wait for the end of the running take.
         self._capture_settings_pending = False
+        #: Looks for a microphone that hears the user while the default stays silent (first takes only).
+        self._mic_scout: Optional[MicrophoneScout] = None
+        self._mic_scout_found.connect(self._on_mic_scout_found)
+        self._mic_scout_heard.connect(self._on_mic_scout_heard)
         self._capture_failed.connect(self._on_capture_failed)
         self._recording_audio.connect(self._on_recording_audio)
 
@@ -117,6 +125,9 @@ class RecordingController(QObject):
     def _update_latest_audio_level(self, pcm_chunk: bytes) -> None:
         """Feed the tray meter and the palette's waveform from a captured block (capture thread)."""
         self.latest_audio_level = dsp.meter_level(pcm_chunk)
+        scout = self._mic_scout
+        if scout is not None:
+            scout.observe(pcm_chunk)
         self._wave_levels.extend(dsp.block_dbfs(pcm_chunk, WAVE_BARS_PER_BLOCK))
 
     def drain_wave_levels(self) -> List[float]:
@@ -155,6 +166,7 @@ class RecordingController(QObject):
         Audio from two devices (possibly at different sample rates) cannot be joined, so the
         take so far is discarded, like the restart button does.
         """
+        self._stop_mic_scout()
         logging.info(f"Input device switch requested: {name or 'System Default'!r} "
                      f"(recording={self.is_recording}, was {self.microphone.device_name!r}).")
         self._config["input_device_name"] = name
@@ -226,10 +238,47 @@ class RecordingController(QObject):
 
     def _end_take_capture(self) -> None:
         """The take no longer uses its capture: release it and apply settings saved meanwhile."""
+        self._stop_mic_scout()
         self._capture = None
         if self._capture_settings_pending:
             self._capture_settings_pending = False
             self.apply_settings()
+
+    # --- First-run microphone help -----------------------------------------------------------
+    def _start_mic_scout(self, take: int) -> None:
+        """Watch this take for a silent default microphone, until one was heard for the first time."""
+        configured = str(self._config.get("input_device_name", "") or "").strip()
+        if (not is_WINDOWS or self.mac_recorder.active or configured or self._mic_scout is not None
+                or self._config.get("microphone_signal_confirmed")):
+            return
+        self._mic_scout = MicrophoneScout(
+            self.microphone, on_heard=self._mic_scout_heard.emit,
+            on_found=lambda device: self._mic_scout_found.emit(take, device.name, device.label))
+        self._mic_scout.start()
+
+    def _stop_mic_scout(self) -> None:
+        """End the search; a scout that already heard the default microphone still reports that."""
+        scout, self._mic_scout = self._mic_scout, None
+        if scout is not None:
+            scout.stop()
+
+    def _on_mic_scout_heard(self) -> None:
+        """The default microphone works: never search again."""
+        self._config["microphone_signal_confirmed"] = True
+        self._ctx.save_config()
+
+    def _on_mic_scout_found(self, take: int, name: str, label: str) -> None:
+        """Another microphone hears the user: record from it, starting the take over."""
+        self._mic_scout = None
+        if take != self._take or not self.is_recording or self.is_paused:
+            return
+        logging.info("Default microphone stays silent; switching to %r, which hears the user.", name)
+        self._config["microphone_signal_confirmed"] = True
+        self.switch_input_device(name)
+        overlay = RecordingPromptOverlay._instance
+        if overlay is not None:
+            overlay.set_configured_device(name)
+        self._notifier.show(self._ctx.tr("mic_scout_switched_message", device=label), BALLOON_WARNING_MS)
 
     def start_background_capture(self) -> None:
         """Start the Windows background mic reader to avoid clipped leading audio."""
@@ -405,6 +454,7 @@ class RecordingController(QObject):
         self._show_feedback()
         timing.mark("feedback_end")
         timing.finish("ok")
+        self._start_mic_scout(take)
 
     def _on_no_recording_audio_yet(self, take: int) -> None:
         """No audio yet after the grace period: show the plain recording balloon meanwhile."""
@@ -625,14 +675,10 @@ class RecordingController(QObject):
 
     # --- Recording feedback and prompt palette ---------------------------------------------
     def _show_feedback(self) -> None:
-        """Show either the ordinary recording balloon or the optional prompt palette."""
-        prompts = recording_prompt_entries(self._config.get("post_rephrasing_entries", []))
-        if not prompts:
-            self._notifier.show(self._ctx.tr("recording_running_message"), BALLOON_PERSISTENT_MS)
-            return
-        if not rephrasing_configured(self._config):
-            self._notifier.show(self._ctx.tr("recording_prompt_api_missing"), BALLOON_WARNING_MS)
-            return
+        """Show the recording palette; its prompts only when a rephrasing request can be sent."""
+        prompts: List[Dict[str, Any]] = []
+        if rephrasing_configured(self._config):
+            prompts = recording_prompt_entries(self._config.get("post_rephrasing_entries", []))
         self.show_prompt_palette(prompts)
 
     def show_prompt_palette(self, prompts: List[Dict[str, Any]]) -> None:

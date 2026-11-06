@@ -192,7 +192,8 @@ class _PromptCard(QWidget):
         chips_width = self._chips.sizeHint().width()
         width = min(self.MAX_CARD_WIDTH, max(header.sizeHint().width() + 24, chips_width) + padding)
         chips_height = self._chips.heightForWidth(width - padding)
-        height = header.sizeHint().height() + card_layout.spacing() + chips_height + padding
+        gap = card_layout.spacing() if self._prompt_buttons else 0
+        height = header.sizeHint().height() + gap + chips_height + padding
         self.card.setFixedSize(width, height)
         self.adjustSize()
 
@@ -711,8 +712,13 @@ class RecordingPromptOverlay(_PromptCard):
         self._update_device_name()
 
     def _build_chips(self, card_layout: QVBoxLayout, prompts: List[Dict[str, Any]]) -> None:
-        """The "None" chip and one chip per prompt; the ``auto_apply`` prompt starts selected."""
+        """The "None" chip and one chip per prompt; the ``auto_apply`` prompt starts selected.
+
+        Without prompts there is nothing to choose, so the palette only shows the recording.
+        """
         card_layout.addLayout(self._chips, 1)  # the chips take the height their lines need
+        if not prompts:
+            return
         # The "None" chip shows only a crossed-out prompt sign; its caption becomes the tooltip.
         # The sign takes the chip's text and background colours, and the accent's once selected.
         none_button = self._add_chip("", checkable=True)

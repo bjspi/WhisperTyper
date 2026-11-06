@@ -16,7 +16,7 @@ from app.core.constants import (
 )
 from app.core.env import is_MACOS
 from app.core.hotkeys import normalize_hotkey_string
-from app.core.prompts import default_instruction_entry
+from app.core.prompts import DEFAULT_ENGLISH_CAPTION, default_instruction_entry, first_start_transformations
 
 
 @pytest.fixture
@@ -36,8 +36,18 @@ class TestLoad:
         for key, value in DEFAULT_CONFIG.items():
             if key != "post_rephrasing_entries":
                 assert config[key] == value
-        # The prompt list starts with the instruction entry in the UI language.
-        assert config["post_rephrasing_entries"] == [default_instruction_entry(DEFAULT_CONFIG["ui_language"])]
+        # A new installation offers the instruction and the English translation while recording.
+        entries = config["post_rephrasing_entries"]
+        assert entries == first_start_transformations(DEFAULT_CONFIG["ui_language"])
+        assert [entry["kind"] for entry in entries] == ["instruction", "prompt"]
+        assert entries[1]["caption"] == DEFAULT_ENGLISH_CAPTION
+        assert all(entry["show_during_recording"] for entry in entries)
+
+    def test_an_existing_config_does_not_get_the_first_start_prompts(self, store: ConfigStore):
+        write_config(store, {"post_rephrasing_entries": [{"caption": "Polish", "text": "Improve it"}]})
+        entries = store.load()[0]["post_rephrasing_entries"]
+        assert [entry["caption"] for entry in entries][1:] == ["Polish"]
+        assert not any(entry["show_during_recording"] for entry in entries)
 
     def test_an_unedited_earlier_default_prompt_becomes_the_current_default(self, store: ConfigStore):
         from app.core.prompts import DEFAULT_TRANSCRIPTION_PROMPTS, PREVIOUS_TRANSCRIPTION_PROMPTS
@@ -132,7 +142,7 @@ class TestMigrations:
         store.save(config)
         reloaded, changed = store.load()
         assert changed is False
-        assert [entry.get("kind") for entry in reloaded["post_rephrasing_entries"]] == ["instruction", None]
+        assert [entry.get("kind") for entry in reloaded["post_rephrasing_entries"]] == ["instruction", "prompt", None]
 
     def test_windows_fast_paste_key_is_renamed(self, store: ConfigStore):
         write_config(store, {"windows_fast_paste": True})

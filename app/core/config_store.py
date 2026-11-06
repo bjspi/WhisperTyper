@@ -24,6 +24,7 @@ from app.core.hotkeys import is_clipboard_shortcut
 from app.core.prompts import (
     INSTRUCTION,
     default_instruction_entry,
+    first_start_transformations,
     transformation_entry,
     updated_default_transcription_prompt,
 )
@@ -88,7 +89,8 @@ class ConfigStore:
             with open(self.config_file, 'r', encoding='utf-8') as f:
                 loaded_config = json.load(f)
         except FileNotFoundError:
-            pass  # First start: proceed with defaults.
+            # First start: the defaults, plus the prompts only a new installation begins with.
+            loaded_config = {"post_rephrasing_entries": first_start_transformations(DEFAULT_CONFIG["ui_language"])}
         except (OSError, ValueError) as e:  # unreadable, invalid JSON or not UTF-8
             self._set_aside_corrupt_file(str(e))
             loaded_config = {}

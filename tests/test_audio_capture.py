@@ -278,7 +278,7 @@ def test_device_fallback_is_reported_only_when_a_connected_device_fails(monkeypa
             raise OSError("device busy")
         return SimpleNamespace(stop_stream=lambda: None, close=lambda: None)
 
-    monkeypatch.setattr(capture_module, "_open_input_stream", open_stream)
+    monkeypatch.setattr(capture_module, "open_input_stream", open_stream)
     for _ in range(2):
         mic.open()
         mic.close()

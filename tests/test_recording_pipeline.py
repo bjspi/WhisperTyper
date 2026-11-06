@@ -209,6 +209,60 @@ def test_hotkey_stop_reaches_output_with_ordered_milestones(api, tmp_path, monke
     assert "recording_tail_timeout" not in events
 
 
+@pytest.mark.parametrize(("rephrasing_key", "expected"), [(False, []), (True, ["Fix"])],
+                         ids=["no rephrasing provider", "rephrasing provider"])
+def test_the_palette_always_opens_and_offers_prompts_only_with_a_rephrasing_provider(rephrasing_key, expected):
+    profiles = [{"id": "p", "name": "Key", "provider": "openai", "key": "sk-test"}] if rephrasing_key else []
+    recording = RecordingController.__new__(RecordingController)
+    recording._config = {**copy.deepcopy(DEFAULT_CONFIG), "api_key_profiles": profiles,
+                         "post_rephrasing_entries": [{"caption": "Fix", "text": "Fix it",
+                                                      "show_during_recording": True}]}
+    recording.show_prompt_palette = Mock()
+    recording._show_feedback()
+    shown = recording.show_prompt_palette.call_args.args[0]
+    assert [prompt["caption"] for prompt in shown] == expected
+
+
+@pytest.mark.parametrize(("provider", "expected"), [
+    (None, None),
+    ("groq", None),  # keys of another provider send nothing to the configured OpenAI endpoints
+    ("openai", ("https://api.openai.com/v1/audio/transcriptions", "https://api.openai.com/v1/chat/completions")),
+], ids=["no key", "other provider's key", "matching key"])
+def test_only_endpoints_with_a_usable_key_are_warmed(provider, expected):
+    profiles = [{"id": "p", "name": "Key", "provider": provider, "key": "sk-test"}] if provider else []
+    config = {**copy.deepcopy(DEFAULT_CONFIG), "api_key_profiles": profiles}
+    warmup = WarmupScheduler(config, is_recording=lambda: False, rephrasing_first=lambda: False)
+    warmup.http.schedule = Mock()
+    try:
+        warmup.schedule(activate=True)
+        if expected is None:
+            warmup.http.schedule.assert_not_called()
+        else:
+            assert warmup.http.schedule.call_args.args[0] == expected
+    finally:
+        warmup.close()
+
+
+def test_a_custom_provider_without_a_key_counts_as_set_up():
+    """Not having a key is not the measure: a custom server may need none."""
+    url = "https://llm.example/v1/chat/completions"
+    config = {**copy.deepcopy(DEFAULT_CONFIG), "api_key_profiles": [], "rephrasing_api_url": url,
+              "rephrasing_key_profile_id": "none",
+              "post_rephrasing_entries": [{"caption": "Fix", "text": "Fix it", "show_during_recording": True}]}
+    recording = RecordingController.__new__(RecordingController)
+    recording._config = config
+    recording.show_prompt_palette = Mock()
+    recording._show_feedback()
+    assert [prompt["caption"] for prompt in recording.show_prompt_palette.call_args.args[0]] == ["Fix"]
+    warmup = WarmupScheduler(config, is_recording=lambda: False, rephrasing_first=lambda: False)
+    warmup.http.schedule = Mock()
+    try:
+        warmup.schedule(activate=True)
+        assert warmup.http.schedule.call_args.args[0] == ("", url)
+    finally:
+        warmup.close()
+
+
 def test_palette_clicks_decide_between_explicit_automatic_and_raw():
     recording = RecordingController.__new__(RecordingController)
     recording._config = {"post_rephrasing_entries": [{"caption": "Fix", "text": "Fix it", "auto_apply": True}]}
