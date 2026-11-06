@@ -7,6 +7,7 @@ server is on). The packages are optional: enabling the engine offers to install 
 """
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import sys
@@ -27,9 +28,12 @@ from app.local_engine.catalog import (
     resolve_device,
     settings_from_config,
 )
-from app.local_engine.supervisor import OFF, PROJECT_ROOT, EngineStatus, Supervisor, free_port
+from app.local_engine.supervisor import OFF, PROJECT_ROOT, READY, EngineStatus, Supervisor, free_port
 from app.platform import installation
+from app.ui.durations import BALLOON_INFO_MS, BALLOON_MAX_MS, BALLOON_NOTICE_MS
 
+#: So much of the end of a background install's output goes to the log.
+_SETUP_LOG_CHARS = 4000
 #: The engine cannot run: packages missing, no usable device, or a frozen (PyInstaller) build.
 UNAVAILABLE = "unavailable"
 #: The local engine is offered on Windows and Linux. On macOS it is switched off entirely (no page,
@@ -72,6 +76,10 @@ class LocalEngineController(QObject):
         self.detecting = False
         #: Start the engine once the device detection is done ("auto" needs its result).
         self._start_after_detection = False
+        #: The installer of the background setup, while it runs.
+        self._setup_process: Optional[QProcess] = None
+        #: Tell the user when the engine is ready for the first time after the background setup.
+        self._announce_ready = False
 
     # --- State ----------------------------------------------------------------------------
     @property
@@ -133,6 +141,8 @@ class LocalEngineController(QObject):
 
     def problem(self) -> str:
         """Translation key of why a local transcription cannot run now, or ""."""
+        if self._config.get("local_engine_setup_pending"):
+            return "local_engine_setting_up"
         return "local_engine_disabled" if not self.enabled() else self.unavailable_reason()
 
     def unavailable_reason(self) -> str:
@@ -151,6 +161,8 @@ class LocalEngineController(QObject):
     # --- Lifecycle ------------------------------------------------------------------------
     def apply_config(self) -> None:
         """Start, restart or stop the engine to match the saved settings."""
+        if self._config.get("local_engine_setup_pending"):
+            return  # the background setup applies the settings once the packages are there
         logging.info("local_engine_apply enabled=%s local_selected=%s server=%s strategy=%s idle_min=%s device=%s",
                      self.enabled(), local_selected(self._config), self.server_enabled(),
                      self._config.get("local_load_strategy"), self._config.get("local_idle_unload_minutes"),
@@ -214,8 +226,63 @@ class LocalEngineController(QObject):
         logging.info("local_engine_self_test requested by the user")
         self._supervisor.request_deep_check()
 
+    # --- Background setup -----------------------------------------------------------------
+    def setup_in_background(self) -> None:
+        """Install the missing packages without a window; loading the engine then fetches the model.
+
+        Chosen in the first-start guide, which told the user about the download. A setup that was
+        interrupted by quitting stays pending and runs again at the next start.
+        """
+        requirements = availability.install_packages(availability.display_adapters())
+        if not requirements:
+            self._finish_setup(installed=True)
+            return
+        command = installation.install_command(requirements)
+        if command is None:
+            logging.error("local_engine_setup: neither pip nor uv is available")
+            self._finish_setup(installed=False)
+            return
+        process = QProcess(self)
+        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        process.finished.connect(lambda code, _status: self._on_setup_ended(process, code == 0))
+        process.errorOccurred.connect(lambda _error: self._on_setup_ended(process, False))
+        self._setup_process = process
+        logging.info("local_engine_setup start: %s", installation.display_command(command))
+        process.start(command[0], command[1:])
+
+    def _on_setup_ended(self, process: QProcess, succeeded: bool) -> None:
+        """The installer ended; a failed start reports here too, so only the first report counts."""
+        if self._setup_process is not process:
+            return
+        self._setup_process = None
+        output = bytes(process.readAllStandardOutput().data()).decode("utf-8", "replace")
+        logging.log(logging.INFO if succeeded else logging.ERROR, "local_engine_setup succeeded=%s output:\n%s",
+                    succeeded, output[-_SETUP_LOG_CHARS:])
+        process.deleteLater()
+        importlib.invalidate_caches()  # the running process must find the new packages
+        self._finish_setup(installed=succeeded and availability.engine_installed())
+
+    def _finish_setup(self, *, installed: bool) -> None:
+        """End the pending state, tell the user and, with the packages there, load the engine."""
+        self._config["local_engine_setup_pending"] = False
+        self._ctx.save_config()
+        if not installed:
+            self._ctx.notifier.show(self._ctx.tr("local_engine_setup_failed"), BALLOON_MAX_MS)
+            self.devices_changed.emit()
+            return
+        self._announce_ready = True
+        self._ctx.notifier.show(self._ctx.tr("local_engine_setup_model"), BALLOON_NOTICE_MS)
+        self.devices = None
+        self._start_after_detection = True
+        self.detect_devices()
+
     def shutdown(self) -> None:
         """Stop the engine process (app quit)."""
+        setup, self._setup_process = self._setup_process, None
+        if setup is not None:
+            # A QProcess destroyed while its child still runs aborts the app at exit.
+            setup.kill()
+            setup.waitForFinished(3000)
         detector, self._detector = self._detector, None
         if detector is not None:
             # A QProcess destroyed while its child still runs aborts the app at exit.
@@ -224,6 +291,9 @@ class LocalEngineController(QObject):
         self._supervisor.shutdown()
 
     def _on_status(self, status: EngineStatus) -> None:
+        if self._announce_ready and status.state == READY:
+            self._announce_ready = False
+            self._ctx.notifier.show(self._ctx.tr("local_engine_setup_ready"), BALLOON_INFO_MS)
         self._status = status
         self.status_changed.emit(status)
 

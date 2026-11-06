@@ -106,6 +106,42 @@ def test_open_log_action_follows_the_log_file_in_refresh_actions(window):
     assert not window.open_log_file_action.isEnabled()
 
 
+@pytest.mark.parametrize("modern", [True, False], ids=["modern", "classic"])
+def test_switching_rephrasing_off_hides_prompts_and_its_hotkey(qapp, tmp_path, modern):
+    window = _make_window(tmp_path, modern)
+    prompts_page = window.tabs.indexOf(window.post_rephrasing_tab)
+    selector = window.rephrasing_provider_selector
+    assert selector.itemData(0) == "off" and selector.currentData() == "openai"
+    assert window.tabs.isTabVisible(prompts_page) and not window.pr_hotkey_label.isHidden()
+
+    selector.setCurrentIndex(0)
+    assert not window.tabs.isTabVisible(prompts_page)
+    assert window.pr_hotkey_display.isHidden() and window.set_pr_hotkey_button.isHidden()
+    assert window.rephrasing_model_input.isHidden() and window.test_rephrasing_api_button.isHidden()
+    assert not selector.isHidden()
+    assert not modern or window._nav.isRowHidden(prompts_page)
+    assert window.rephrasing_api_url_input.text() == "https://api.openai.com/v1/chat/completions"
+
+    selector.setCurrentIndex(selector.findData("groq"))
+    assert window.tabs.isTabVisible(prompts_page) and not window.pr_hotkey_display.isHidden()
+    assert not window.rephrasing_model_input.isHidden() and not window.test_rephrasing_api_button.isHidden()
+    assert not modern or not window._nav.isRowHidden(prompts_page)
+    assert "groq" in window.rephrasing_api_url_input.text()
+
+
+def test_a_saved_off_opens_switched_off_and_is_stored(qapp, tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"ui_language": "en", "modern_design": True, "rephrasing_enabled": False}), encoding="utf-8")
+    ctx = AppContext(ConfigStore(str(path), normalize_hotkey_string), RecordingStore(str(tmp_path)))
+    window = SettingsWindow(ctx, recording=Mock(selectable_input_devices=Mock(return_value=[])), hotkeys=Mock(),
+                            files=Mock(log_file_exists=Mock(return_value=False)), quit_app=Mock())
+    prompts_page = window.tabs.indexOf(window.post_rephrasing_tab)
+    assert window.rephrasing_provider_selector.currentData() == "off" and window._nav.isRowHidden(prompts_page)
+    assert window._save_api_settings() and ctx.config["rephrasing_enabled"] is False
+    window.rephrasing_provider_selector.setCurrentIndex(1)
+    assert window._save_api_settings() and ctx.config["rephrasing_enabled"] is True
+
+
 def test_classic_design_shows_tabs_and_menu_bar(window):
     assert not window.is_modern() and window.design_extra_width() == 0
     assert not window.tabs.tabBar().isHidden() and not window.menu_bar.isHidden()
@@ -119,21 +155,22 @@ def test_modern_design_splits_pages_and_mirrors_them_in_the_sidebar(modern_windo
     pages = [window.tabs.widget(index) for index in range(window.tabs.count())]
     # The local transcription page (after API keys) is not offered on macOS.
     shift = 1 if LOCAL_ENGINE_SUPPORTED else 0
-    assert window.tabs.count() == window._nav.count() == 8 + shift
+    assert window.tabs.count() == window._nav.count() == 9 + shift
     assert [pages.index(page) for page in (window.transcription_tab, window._api_keys_tab, window.post_rephrasing_tab,
                                            window._replacements_tab, window.general_tab)] == [
-        0, 2, 4 + shift, 5 + shift, 6 + shift]
+        0, 2, 5 + shift, 6 + shift, 7 + shift]
     assert not LOCAL_ENGINE_SUPPORTED or pages.index(window._local_engine_tab) == 3
     assert pages[1].isAncestorOf(window.shared_api_group)
-    recording, advanced = pages[3 + shift], pages[7 + shift]
-    assert recording.isAncestorOf(window.hotkeys_group) and recording.isAncestorOf(window.recording_group)
+    hotkeys, recording, advanced = pages[3 + shift], pages[4 + shift], pages[8 + shift]
+    assert hotkeys.isAncestorOf(window.hotkeys_group) and not hotkeys.isAncestorOf(window.recording_group)
+    assert recording.isAncestorOf(window.recording_group) and recording.isAncestorOf(window.input_device_selector)
     assert advanced.isAncestorOf(window.text_insertion_group) and advanced.isAncestorOf(window.ffmpeg_group)
     assert window.transcription_prompt_section.is_expanded() and window.second_pass_section.is_expanded()
     assert all(window.tabs.tabText(index) for index in range(window.tabs.count()))
-    window._nav.setCurrentRow(3 + shift)
-    assert window.tabs.currentIndex() == 3 + shift and window._page_title.text() == "Hotkeys & recording"
+    window._nav.setCurrentRow(4 + shift)
+    assert window.tabs.currentIndex() == 4 + shift and window._page_title.text() == "Recording"
     window.tabs.setCurrentWidget(window.general_tab)
-    assert window._nav.currentRow() == 6 + shift
+    assert window._nav.currentRow() == 7 + shift
 
 
 def test_modern_rows_follow_their_control_and_toggle_on_click(modern_window):
@@ -161,8 +198,7 @@ def test_modern_rows_strip_the_caption_colon_and_keep_every_control(modern_windo
         children = group.findChildren(QtWidgets.QWidget, options=Qt.FindChildOption.FindDirectChildrenOnly)
         assert [type(child).__name__ for child in children] == ["CardBody"]
     assert window.ffmpeg_group.isAncestorOf(window.ffmpeg_path_input) and window.ffmpeg_section.isHidden()
-    assert window.microphone_group.isAncestorOf(window.input_device_selector)
-    assert window.transcription_layout.indexOf(window.microphone_group) == 0
+    assert window.recording_group.isAncestorOf(window.input_device_selector)
 
 
 def test_modern_prompts_page_puts_list_and_editor_into_cards(modern_window):

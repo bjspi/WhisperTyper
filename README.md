@@ -132,6 +132,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
 -   **Global Voice Typing**: Transcribe your voice into any application with a single hotkey.
 -   **Recording-Time Prompts**: The palette appears for every recording; once a rephrasing provider is set up it also offers your prompts. A new installation starts with the ✨ instruction and an English translation. Mark prompts for a compact, non-activating palette during recording, choose `None` or a prompt before stopping, and have the result rephrased before it is inserted. A prompt marked **Apply automatically** is preselected and applies to every transcription unless you pick `None` (a LivePrompt trigger word takes precedence). The palette can sit by the Windows system tray / macOS menu bar or near the pointer; in system-area mode, a small recording indicator continues to follow the pointer.
     -   **Take controls**: The palette shows the elapsed time and buttons to **pause/resume**, **start over** and **discard** the recording. Paused audio is left out; the stop hotkey sends the take straight from the pause, without resuming first.
+    -   **Rephrasing off**: Choosing `Off` as the rephrasing provider hides the Prompts page, the rephrase hotkey and the palette's prompts. A new installation starts this way until you switch it on.
     -   **Microphone help (Windows)**: While the system default microphone has never been heard, a take that stays silent also listens on your other microphones. When one of them clearly hears you, the recording starts over on it and it becomes your selected input device.
     -   **Movable**: A palette opened near the pointer can be dragged anywhere by its card (the four-way arrow in the corner marks it); buttons and chips keep their clicks.
     -   **Number keys (Windows)**: While the mouse is over the palette, the number keys pick its entries in the order shown — `1` is `None`, `2` the first prompt and so on. The focus stays in your target app, and the keys type normally again as soon as the mouse leaves the palette. Can be switched off on the Prompts tab.
@@ -171,9 +172,9 @@ curl -fsSL https://raw.githubusercontent.com/bjspi/WhisperTyper/main/install.sh 
 ```
 
 The script clones the repository into `WhisperTyper` in your home folder, creates a virtual
-environment in `.venv`, installs the requirements into it and starts WhisperTyper; it does not touch
-your other Python projects. At its first start the app adds the `whispertyper` command and, on
-Windows and Linux, the Start menu entry. You can run the script again at any time.
+environment in `.venv`, installs the requirements into it, adds the `whispertyper` command and, on Windows and Linux, the
+Start menu entry, and starts WhisperTyper; it does not touch your other Python projects. You can run
+the script again at any time.
 
 Prefer to read the script first, or to choose the folder? Clone it yourself and run it from there:
 ```bash

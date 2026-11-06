@@ -5,7 +5,7 @@ widgets the pages add in code. Declaring them here lets every page be type-check
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QAction, QIcon
@@ -223,13 +223,16 @@ class SettingsWindowBase(QWidget):
     pr_hotkey_display: QLineEdit
     set_pr_hotkey_button: QPushButton
 
+    # Sidebar of the modern design
+    _nav: QListWidget
+    _nav_pages: List[Tuple[QWidget, str, str, str]]
+
     # General page
     general_layout: QVBoxLayout
     general_scroll_widget: QWidget
     general_selectors_layout: QHBoxLayout
     basics_group: QGroupBox
     ffmpeg_group: QGroupBox
-    microphone_group: QGroupBox
     ui_language_label: QLabel
     ui_language_selector: QComboBox
     color_theme_label: QLabel

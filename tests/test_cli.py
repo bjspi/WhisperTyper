@@ -46,6 +46,17 @@ def test_help_shows_the_command_groups(runner):
     assert "transcribe" in result.output and "rephrase" in result.output
 
 
+@pytest.mark.parametrize(("problems", "exit_code"), [([], 0), (["no access"], main_module.EXIT_FAILED)],
+                         ids=["success", "failure"])
+def test_install_integration_follows_the_settings_and_reports_problems(runner, session, monkeypatch, problems, exit_code):
+    system_integration = pytest.importorskip("app.controllers.system_integration")
+    seen = []
+    monkeypatch.setattr(system_integration, "apply_now", lambda config: seen.append(config) or problems)
+    result = runner.invoke(cli, ["install-integration"])
+    assert result.exit_code == exit_code
+    assert seen == [session.config]
+
+
 def test_loading_never_writes_the_config_file(config_file):
     before = open(config_file, encoding="utf-8").read()
     HeadlessSession(config_file)

@@ -243,6 +243,24 @@ def test_only_endpoints_with_a_usable_key_are_warmed(provider, expected):
         warmup.close()
 
 
+def test_switched_off_rephrasing_offers_nothing_and_warms_nothing_despite_a_key():
+    profiles = [{"id": "p", "name": "Key", "provider": "openai", "key": "sk-test"}]
+    config = {**copy.deepcopy(DEFAULT_CONFIG), "api_key_profiles": profiles, "rephrasing_enabled": False,
+              "post_rephrasing_entries": [{"caption": "Fix", "text": "Fix it", "show_during_recording": True}]}
+    recording = RecordingController.__new__(RecordingController)
+    recording._config = config
+    recording.show_prompt_palette = Mock()
+    recording._show_feedback()
+    assert recording.show_prompt_palette.call_args.args[0] == []
+    warmup = WarmupScheduler(config, is_recording=lambda: False, rephrasing_first=lambda: False)
+    warmup.http.schedule = Mock()
+    try:
+        warmup.schedule(activate=True)
+        assert warmup.http.schedule.call_args.args[0][1] == ""
+    finally:
+        warmup.close()
+
+
 def test_a_custom_provider_without_a_key_counts_as_set_up():
     """Not having a key is not the measure: a custom server may need none."""
     url = "https://llm.example/v1/chat/completions"

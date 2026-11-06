@@ -16,6 +16,7 @@ from app.core.api_keys import (
     LOCAL_PROVIDER,
     NO_KEY_PROFILE_ID,
     PROVIDER_NAMES,
+    REPHRASING_OFF,
     TASK_CUSTOM_URL_FIELDS,
     TASK_KEY_FIELDS,
     TRANSCRIPTION_PROVIDERS,
@@ -24,6 +25,7 @@ from app.core.api_keys import (
     provider_endpoint,
     provider_for_url,
     rephrasing_configured,
+    rephrasing_enabled,
     resolve_key_profile,
     selected_api_key,
     transcription_configured,
@@ -80,10 +82,10 @@ class ApiPage(SettingsWindowBase):
         for task in API_TASKS:
             widgets = self._task_widgets(task)
             provider = provider_for_url(widgets.endpoint.text())
-            providers = TRANSCRIPTION_PROVIDERS if task == "transcription" and LOCAL_ENGINE_SUPPORTED else PROVIDER_NAMES
-            for provider_id in providers:
+            for provider_id in self._selectable_providers(task):
                 widgets.provider.addItem(self._provider_label(provider_id), provider_id)
-            widgets.provider.setCurrentIndex(widgets.provider.findData(provider))
+            switched_off = task == "rephrasing" and not rephrasing_enabled(self.config)
+            widgets.provider.setCurrentIndex(widgets.provider.findData(REPHRASING_OFF if switched_off else provider))
             self._custom_urls[task] = (self.config.get(TASK_CUSTOM_URL_FIELDS[task], "")
                                        or (widgets.endpoint.text() if provider == "custom" else ""))
             # The selector opens on demand; the status line names the key in use either way.
@@ -118,17 +120,26 @@ class ApiPage(SettingsWindowBase):
                             self.rephrasing_key_add_button, self.rephrasing_model_input,
                             REPHRASING_MODEL_OPTIONS, "rephrasing_model")
 
+    @staticmethod
+    def _selectable_providers(task: str) -> Tuple[str, ...]:
+        """The entries of a task's provider selector; only rephrasing can be switched off."""
+        if task == "rephrasing":
+            return (REPHRASING_OFF, *PROVIDER_NAMES)
+        return TRANSCRIPTION_PROVIDERS if LOCAL_ENGINE_SUPPORTED else tuple(PROVIDER_NAMES)
+
     def _provider_label(self, provider: str) -> str:
-        """Display name of a provider; only the generic 'Custom' and the 'Local' entries are translated."""
+        """Display name of a provider; only the generic 'Custom', 'Local' and 'Off' entries are translated."""
         if provider == LOCAL_PROVIDER:
             return self.translator.tr("provider_local")
+        if provider == REPHRASING_OFF:
+            return self.translator.tr("provider_off")
         return self.translator.tr("api_key_custom_provider") if provider == "custom" else PROVIDER_NAMES[provider]
 
     def _retranslate_api_settings(self) -> None:
         """Re-label the translated provider entry, the key selectors and the key status."""
         for task in API_TASKS:
             selector = self._task_widgets(task).provider
-            for provider in ("custom", LOCAL_PROVIDER):
+            for provider in ("custom", LOCAL_PROVIDER, REPHRASING_OFF):
                 if selector.findData(provider) >= 0:
                     selector.setItemText(selector.findData(provider), self._provider_label(provider))
         self.transcription_local_setup_button.setText(self.translator.tr("local_setup_button"))
@@ -139,6 +150,9 @@ class ApiPage(SettingsWindowBase):
         widgets = self._task_widgets(task)
         self._key_choice_open[task] = False
         provider = widgets.provider.currentData()
+        if provider == REPHRASING_OFF:
+            self._refresh_api_state()  # the URL and key stay stored for switching back on
+            return
         if provider == LOCAL_PROVIDER and not self._local_engine_tab.request_enable():
             # The packages were not installed: stay with the previous provider.
             with QSignalBlocker(widgets.provider):
@@ -199,8 +213,9 @@ class ApiPage(SettingsWindowBase):
             if selected_id is None:
                 selected_id = self.config[TASK_KEY_FIELDS[task][1]]
             provider = provider_for_url(widgets.endpoint.text())
-            with QSignalBlocker(widgets.provider):
-                widgets.provider.setCurrentIndex(widgets.provider.findData(provider))
+            if widgets.provider.currentData() != REPHRASING_OFF:
+                with QSignalBlocker(widgets.provider):
+                    widgets.provider.setCurrentIndex(widgets.provider.findData(provider))
             previous_provider = selector.property("key_provider")
             selector.setProperty("key_provider", provider)
             if previous_provider is not None and previous_provider != provider:
@@ -220,6 +235,7 @@ class ApiPage(SettingsWindowBase):
     def _form_api_config(self) -> Dict[str, Any]:
         """Config snapshot of the unsaved API fields, so form checks reuse the runtime rules."""
         return {
+            "rephrasing_enabled": self.rephrasing_provider_selector.currentData() != REPHRASING_OFF,
             "api_key_profiles": self._api_keys_tab.profiles(),
             "api_endpoint": self.api_endpoint_input.text(),
             "transcription_key_profile_id": self.transcription_key_profile_selector.currentData(),
@@ -238,6 +254,8 @@ class ApiPage(SettingsWindowBase):
 
     def _refresh_api_state(self, *_args: object) -> None:
         """Show the controls each provider needs, the key in use, and mark incomplete sections."""
+        for widget in self._rephrasing_base_controls():
+            widget.setVisible(True)
         show_temperature_support(self.rephrasing_temp_slider, self.rephrasing_temp_label,
                                  rephrasing_supports_temperature(self.rephrasing_model_input.currentText()),
                                  self.translator)
@@ -247,10 +265,33 @@ class ApiPage(SettingsWindowBase):
         local_off = (provider_for_url(form["api_endpoint"]) == LOCAL_PROVIDER
                      and not self._local_engine_tab.is_enabled())
         set_style_state(self.transcription_api_group, "incomplete", not transcription_configured(form) or local_off)
-        rephrasing_incomplete = not rephrasing_configured(form)
+        switched_on = rephrasing_enabled(form)
+        rephrasing_incomplete = switched_on and not rephrasing_configured(form)
         set_style_state(self.shared_api_group, "incomplete", rephrasing_incomplete)
         # Prompts use the same fields, so their unavailable state shows on that tab live.
         self.transformations_unavailable_label.setVisible(rephrasing_incomplete)
+        self._show_rephrasing_features(switched_on)
+
+    def _rephrasing_base_controls(self) -> Tuple[QWidget, ...]:
+        """The rephrasing controls every provider shows (the key and URL rows depend on the provider)."""
+        return (self.rephrasing_model_label, self.rephrasing_model_input, self.rephrasing_temp_label_title,
+                self.rephrasing_temp_slider, self.rephrasing_temp_label, self.rephrasing_key_status_label,
+                self.test_rephrasing_api_button)
+
+    def _show_rephrasing_features(self, shown: bool) -> None:
+        """Rephrasing switched off leaves only its selector: no details, no Prompts page, no hotkey."""
+        for widget in (self.pr_hotkey_label, self.pr_hotkey_display, self.set_pr_hotkey_button):
+            widget.setVisible(shown)
+        prompts_page = self.tabs.indexOf(self.post_rephrasing_tab)
+        self.tabs.setTabVisible(prompts_page, shown)
+        if self._nav_pages:  # the modern sidebar is built after this page's first refresh
+            self._nav.setRowHidden(prompts_page, not shown)
+        if shown:
+            return
+        widgets = self._task_widgets("rephrasing")
+        for control in (*self._rephrasing_base_controls(), widgets.endpoint_label, widgets.endpoint, widgets.key_label,
+                        widgets.key_profile, widgets.key_choose, widgets.key_add):
+            control.setVisible(False)
 
     def _refresh_key_controls(self, task: str, form: Dict[str, Any]) -> None:
         """URL/key visibility and the status line for one task."""
@@ -316,6 +357,7 @@ class ApiPage(SettingsWindowBase):
                                   self.translator.tr("ok_button"), message_dialog.WARNING)
             self.tabs.setCurrentWidget(self._api_keys_tab)
             return False
+        self.config["rephrasing_enabled"] = rephrasing_enabled(self._form_api_config())
         self.config["api_key_profiles"] = profiles
         self.config["groq_key_rotation"] = self._api_keys_tab.groq_rotation.isChecked()
         for task in API_TASKS:

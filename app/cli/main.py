@@ -31,7 +31,7 @@ EXIT_FAILED = 1
 PROMPT_PREVIEW_CHARS = 70
 PROGRAM = "whispertyper"
 SPEECH_COMMANDS = ("transcribe", "rephrase", "prompts")
-APPLICATION_COMMANDS = ("run", "info")
+APPLICATION_COMMANDS = ("run", "info", "install-integration")
 #: The command that hosts the tray app; every other command logs to stderr instead of the app's log file.
 _TRAY_COMMAND = "run"
 _PHASE_MESSAGES = {
@@ -101,6 +101,21 @@ def info(as_json: bool) -> None:
     for section, rows in report.items():
         if isinstance(rows, dict):
             output.facts_table(section.capitalize(), [(_label(key), _shown(value)) for key, value in rows.items()])
+
+
+@cli.command("install-integration")
+def install_integration() -> None:
+    """Add the whispertyper command and the Start menu entry, as the settings say.
+
+    The app keeps both up to date at every start; the installers run this so they exist at once.
+    """
+    # Lazily: this needs Qt for the icon, which the other commands do without.
+    from app.controllers.system_integration import apply_now
+
+    problems = apply_now(_session().config)
+    if problems:
+        _fail("; ".join(problems))
+    output.stdout.print("[accent]WhisperTyper[/accent] system integration is up to date.")
 
 
 # --- Speech --------------------------------------------------------------------------------

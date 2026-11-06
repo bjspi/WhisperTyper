@@ -206,6 +206,13 @@ param(
         }
         if ($LASTEXITCODE -ne 0) { throw 'Installing the requirements failed.' }
 
+        Write-Host '==> Adding the Start menu entry and the whispertyper command'
+        & $venvPython (Join-Path $root 'run.py') install-integration
+        if ($LASTEXITCODE -ne 0) {
+            # Not fatal: the app tries again at every start.
+            Write-Host 'Could not add them now; WhisperTyper tries again when it starts.' -ForegroundColor Yellow
+        }
+
         if (-not $NoStart) {
             Write-Host '==> Starting WhisperTyper (look for its icon in the system tray)'
             Start-Process -FilePath (Join-Path $venv 'Scripts\pythonw.exe') -ArgumentList "`"$(Join-Path $root 'run.py')`"" -WorkingDirectory $root

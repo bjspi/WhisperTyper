@@ -55,6 +55,15 @@ _EXPECTED_TYPES: Dict[str, Any] = {
 }
 
 
+def _first_start_config() -> Dict[str, Any]:
+    """What only a new installation begins with; every other value comes from the defaults."""
+    return {
+        "post_rephrasing_entries": first_start_transformations(DEFAULT_CONFIG["ui_language"]),
+        "rephrasing_enabled": False,
+        "onboarding_done": False,
+    }
+
+
 class ConfigStore:
     """Reads/writes the JSON config file and applies backward-compatible migrations."""
 
@@ -89,8 +98,7 @@ class ConfigStore:
             with open(self.config_file, 'r', encoding='utf-8') as f:
                 loaded_config = json.load(f)
         except FileNotFoundError:
-            # First start: the defaults, plus the prompts only a new installation begins with.
-            loaded_config = {"post_rephrasing_entries": first_start_transformations(DEFAULT_CONFIG["ui_language"])}
+            loaded_config = _first_start_config()
         except (OSError, ValueError) as e:  # unreadable, invalid JSON or not UTF-8
             self._set_aside_corrupt_file(str(e))
             loaded_config = {}

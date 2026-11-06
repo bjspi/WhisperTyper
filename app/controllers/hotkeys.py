@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import QLineEdit, QPushButton
 from app.context import AppContext
 from app.controllers.permissions import MacPermissions
 from app.core import hotkeys
+from app.core.api_keys import rephrasing_enabled
 from app.core.env import is_MACOS, is_WINDOWS
 from app.hotkeys.key_tokens import injected_event_counts, pynput_key_tokens, qt_key_tokens
 from app.hotkeys.windows_listener import WindowsHotkeyListener
@@ -107,7 +108,7 @@ class HotkeyController(QObject):
         post_binding = hotkeys.parse_hotkey_binding(post_rephrase_hotkey_str, "post_rephrase")
         if main_binding:
             bindings.append(main_binding)
-        if post_binding:
+        if post_binding and rephrasing_enabled(self._config):
             bindings.append(post_binding)
 
         push_to_talk = self._config.get("push_to_talk", False)
@@ -156,7 +157,8 @@ class HotkeyController(QObject):
                     self._permissions.warn('input_monitoring')
                     self._permissions.warn('accessibility')
 
-        logging.info(f"Hotkey listeners started for combos: '{hotkey_str}' and '{post_rephrase_hotkey_str}'")
+        rephrase_state = post_rephrase_hotkey_str if rephrasing_enabled(self._config) else "off"
+        logging.info(f"Hotkey listeners started for combos: '{hotkey_str}', rephrasing: '{rephrase_state}'")
 
     def _binding_for(self, action: str) -> Optional[Dict[str, Any]]:
         """Return the configured binding for a given action, if any."""

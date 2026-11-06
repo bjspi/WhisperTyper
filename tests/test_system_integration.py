@@ -60,3 +60,15 @@ def test_uninstall_removes_only_own_launchers(bin_folder):
     shim.uninstall()
     assert not any(path.exists() for path in shim.launcher_paths())
     assert not shim.is_installed()
+
+
+def test_a_run_with_a_throwaway_home_folder_leaves_path_and_start_menu_alone(monkeypatch):
+    """Inherited by every process of such a run, so it also holds after the app restarts itself."""
+    from unittest.mock import Mock
+
+    system_integration = pytest.importorskip("app.controllers.system_integration")  # needs Qt
+    monkeypatch.setenv(system_integration.SKIP_ENV, "1")
+    render = Mock()
+    monkeypatch.setattr(system_integration, "render_icon", render)
+    system_integration.SystemIntegration(Mock(config={})).apply()
+    render.assert_not_called()

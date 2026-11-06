@@ -10,6 +10,7 @@ from typing import Any, Dict
 
 from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+from PyQt6.QtWidgets import QComboBox, QListView, QStyledItemDelegate, QWidget
 
 LIGHT: Dict[str, str] = {
     "bg": "#f5f8fa", "panel": "#ffffff", "panel2": "#eef3f6", "text": "#16212b",
@@ -164,9 +165,12 @@ QComboBox::drop-down {
 }
 QComboBox::drop-down:hover { background: %(hover)s; }
 QComboBox QAbstractItemView {
-    background: %(panel)s; color: %(text)s; border: 1px solid %(border)s; border-radius: 8px;
-    selection-background-color: %(accent)s; selection-color: %(on_accent)s; outline: none;
+    background: %(panel)s; color: %(text)s; border: 1px solid %(border)s; border-radius: 10px;
+    padding: 4px; selection-background-color: %(accent)s; selection-color: %(on_accent)s; outline: none;
 }
+QComboBox QAbstractItemView::item { min-height: 26px; padding: 2px 8px; border-radius: 6px; color: %(text)s; }
+QComboBox QAbstractItemView::item:hover { background: %(hover)s; }
+QComboBox QAbstractItemView::item:selected { background: %(accent)s; color: %(on_accent)s; }
 
 QPushButton {
     background: %(panel2)s; color: %(text)s; border: 1px solid %(border)s;
@@ -451,6 +455,23 @@ def move_svg(color: str) -> str:
             f"<g fill='none' stroke='{color}' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'>"
             f"<path d='M8 1.75v12.5M1.75 8h12.5M6 3.75l2-2 2 2M6 12.25l2 2 2-2M3.75 6l-2 2 2 2M12.25 6l2 2-2 2'/>"
             f"</g></svg>")
+
+
+def round_combo_popups(root: QWidget) -> None:
+    """Give the dropdown lists below ``root`` the stylesheet's look.
+
+    Qt's default item delegate paints like a menu and ignores the ``::item`` rules, and the list
+    sits in a square popup window, whose corners would show behind its rounded border.
+    """
+    for combo in root.findChildren(QComboBox):
+        view = QListView(combo)
+        combo.setView(view)
+        combo.setItemDelegate(QStyledItemDelegate(combo))
+        popup = view.window()
+        assert popup is not None  # a view always has a window
+        popup.setWindowFlags(popup.windowFlags() | Qt.WindowType.FramelessWindowHint
+                             | Qt.WindowType.NoDropShadowWindowHint)
+        popup.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
 
 def write_icon_qss(dark: bool, cache_dir: str, modern: bool = False) -> str:

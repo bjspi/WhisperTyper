@@ -26,6 +26,8 @@ LOCAL_PROVIDER = "local"
 #: Stored as the transcription endpoint while the local engine is selected; requests go to the
 #: engine's real address (see ``LocalEngineController.endpoint``).
 LOCAL_ENDPOINT = "local://engine/v1/audio/transcriptions"
+#: Entry of the rephrasing provider selector that switches rephrasing off; never a provider of a URL.
+REPHRASING_OFF = "off"
 #: Providers of the transcription selector (the local engine only transcribes).
 TRANSCRIPTION_PROVIDERS = (*PROVIDER_NAMES, LOCAL_PROVIDER)
 
@@ -96,9 +98,15 @@ def transcription_configured(config: Mapping[str, Any]) -> bool:
     return bool(str(config.get("api_endpoint", "")).strip() and resolve_key_profile(config, "transcription"))
 
 
+def rephrasing_enabled(config: Mapping[str, Any]) -> bool:
+    """The user has not switched rephrasing off (prompts, LivePrompt and the rephrase hotkey)."""
+    return config.get("rephrasing_enabled", True) is not False
+
+
 def rephrasing_configured(config: Mapping[str, Any]) -> bool:
-    """A rephrasing request can be sent: endpoint, model and a matching selected key (or "no key needed")."""
-    return bool(str(config.get("rephrasing_api_url", "")).strip()
+    """A rephrasing request can be sent: switched on, endpoint, model and a matching selected key (or "no key needed")."""
+    return bool(rephrasing_enabled(config)
+                and str(config.get("rephrasing_api_url", "")).strip()
                 and str(config.get("rephrasing_model", "")).strip()
                 and resolve_key_profile(config, "rephrasing"))
 

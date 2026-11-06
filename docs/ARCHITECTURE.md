@@ -108,6 +108,7 @@ component's constructor documents its dependencies and tests can build it in iso
 | `TrayController` | tray icon, menu, level meter, git updater | — |
 | `MacPermissions` | one-time permission dialogs, startup prompts | — |
 | `SettingsWindow` | the form, theme, translations | `saved`, `hotkeys_changed`, `language_changed`, `appearance_changed`, `restart_requested` |
+| `run_onboarding` (`app/ui/onboarding.py`, rules in `app/core/onboarding.py`) | first-start guide, run before the windows are built; a new installation only | — |
 | `WarmupScheduler` / `WorkerThreads` | warm HTTP pool timer / QThread registry | — |
 
 The settings window is one widget whose controls come from `main_window.ui`. Its pages

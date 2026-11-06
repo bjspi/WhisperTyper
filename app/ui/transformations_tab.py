@@ -27,14 +27,10 @@ from PyQt6.QtWidgets import (
 
 from app.core.i18n import TranslationManager
 from app.core.prompts import (
-    DEFAULT_ENGLISH_PROMPTS,
-    DEFAULT_INSTRUCTION_CAPTIONS,
-    DEFAULT_LIVEPROMPT_SYSTEM_PROMPTS,
     INSTRUCTION,
     MAX_TRANSFORMATIONS,
-    _default_prompt_for,
-    _is_known_default_prompt,
     load_transformations,
+    localize_unedited_entry,
     transformation_entry,
 )
 
@@ -167,12 +163,7 @@ class TransformationsEditor(QObject):
         """Switch built-in captions and prompts to ``lang_code`` while they are unedited defaults."""
         self._commit_editor()
         for entry in self._entries.values():
-            fields = [("caption", DEFAULT_INSTRUCTION_CAPTIONS), ("text", DEFAULT_LIVEPROMPT_SYSTEM_PROMPTS)]
-            if entry["kind"] != INSTRUCTION:
-                fields = [("text", DEFAULT_ENGLISH_PROMPTS)]
-            for field, defaults in fields:
-                if _is_known_default_prompt(defaults, entry[field]):
-                    entry[field] = _default_prompt_for(defaults, lang_code)
+            localize_unedited_entry(entry, lang_code)
         self._load_editor(self._current_id)
         self.retranslate()
         self.changed.emit()

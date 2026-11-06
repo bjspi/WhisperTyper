@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QApplication, QWidget
 from app.context import AppContext
 from app.controllers.text_output import TextOutput
 from app.controllers.transcription import TranscriptionPipeline
-from app.core.api_keys import rephrasing_configured
+from app.core.api_keys import rephrasing_configured, rephrasing_enabled
 from app.core.env import is_MACOS
 from app.core.prompts import captioned_transformations
 from app.core.timing import NO_TIMING, OperationTiming
@@ -34,6 +34,8 @@ class PostRephraseController:
     def trigger(self) -> None:
         """Show the floating transformation buttons for the current selection (GUI thread)."""
         config = self._ctx.config
+        if not rephrasing_enabled(config):
+            return  # macOS keeps its listener until the next start; there it simply does nothing.
         if not rephrasing_configured(config):
             logging.warning("Post-rephrase hotkey pressed, but API settings are missing.")
             self._ctx.notifier.show(self._ctx.tr("rephrase_api_settings_missing"), BALLOON_ERROR_MS)

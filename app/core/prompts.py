@@ -258,6 +258,16 @@ def first_start_transformations(lang_code: str) -> List[Dict[str, Any]]:
     ]
 
 
+def localize_unedited_entry(entry: Dict[str, Any], lang_code: str) -> None:
+    """Switch a built-in caption or prompt of ``entry`` to ``lang_code`` while it is an unedited default."""
+    fields = [("caption", DEFAULT_INSTRUCTION_CAPTIONS), ("text", DEFAULT_LIVEPROMPT_SYSTEM_PROMPTS)]
+    if entry.get("kind") != INSTRUCTION:
+        fields = [("text", DEFAULT_ENGLISH_PROMPTS)]
+    for field, defaults in fields:
+        if _is_known_default_prompt(defaults, entry.get(field, "")):
+            entry[field] = _default_prompt_for(defaults, lang_code)
+
+
 def _scan_depth(value: Any) -> int:
     """A valid trigger scan depth (number of leading words searched)."""
     low, high = _SCAN_DEPTH_RANGE

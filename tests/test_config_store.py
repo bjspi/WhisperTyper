@@ -34,14 +34,20 @@ class TestLoad:
         config, changed = store.load()
         assert changed is True
         for key, value in DEFAULT_CONFIG.items():
-            if key != "post_rephrasing_entries":
+            if key not in ("post_rephrasing_entries", "rephrasing_enabled", "onboarding_done"):
                 assert config[key] == value
+        assert config["rephrasing_enabled"] is False and config["onboarding_done"] is False
         # A new installation offers the instruction and the English translation while recording.
         entries = config["post_rephrasing_entries"]
         assert entries == first_start_transformations(DEFAULT_CONFIG["ui_language"])
         assert [entry["kind"] for entry in entries] == ["instruction", "prompt"]
         assert entries[1]["caption"] == DEFAULT_ENGLISH_CAPTION
         assert all(entry["show_during_recording"] for entry in entries)
+
+    def test_an_existing_config_stays_as_it_was_without_a_guide(self, store: ConfigStore):
+        write_config(store, {"api_key_profiles": []})
+        config = store.load()[0]
+        assert config["rephrasing_enabled"] is True and config["onboarding_done"] is True
 
     def test_an_existing_config_does_not_get_the_first_start_prompts(self, store: ConfigStore):
         write_config(store, {"post_rephrasing_entries": [{"caption": "Polish", "text": "Improve it"}]})

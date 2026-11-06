@@ -7,8 +7,8 @@ import threading
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QHBoxLayout, QLabel, QSpinBox, QWidget
 
 from app.audio.aac_encoder import available_aac_bitrates, warm_up_encoder
-from app.core.constants import LANGUAGES
 from app.core.env import is_WINDOWS
+from app.ui.language_names import input_language_items
 from app.ui.settings.base import SettingsWindowBase
 
 
@@ -67,7 +67,7 @@ class RecordingPage(SettingsWindowBase):
         self.transcription_hedging_wait_input.setSuffix(" s")
         self._add_row(self.transcription_hedging_wait_label, self.transcription_hedging_wait_input)
 
-        for name, code in LANGUAGES.items():
+        for name, code in input_language_items():
             self.language_input.addItem(name, code)
         self.language_input.setCurrentIndex(max(0, self.language_input.findData(self.config["input_language"].lower())))
         self.gain_input.setText(str(self.config["gain_db"]))

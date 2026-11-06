@@ -13,7 +13,7 @@ import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Sequence
+from typing import Any, List, Mapping, Sequence
 
 from PyQt6.QtCore import QBuffer, QIODevice, Qt
 from PyQt6.QtGui import QImage
@@ -27,6 +27,9 @@ from app.platform import command_shim, start_menu
 from app.services.gitutil import project_root
 from app.ui.durations import BALLOON_WARNING_MS
 
+#: Set for a run with a throwaway home folder (local_test/fresh_start.py) and inherited by its child
+#: processes: it must neither add that folder to the real user PATH nor rewrite the Start menu entry.
+SKIP_ENV = "WHISPERTYPER_SKIP_SYSTEM_INTEGRATION"
 #: Config switches (see DEFAULT_CONFIG).
 COMMAND_KEY = "command_on_path"
 START_MENU_KEY = "start_menu_entry"
@@ -57,9 +60,10 @@ class SystemIntegration:
 
         ``report`` shows failures in a balloon (a toggle); at startup they are only logged.
         """
-        config = self._ctx.config
-        wanted = _Wanted(command=bool(config.get(COMMAND_KEY, True)) and command_shim.supported(),
-                         start_menu=bool(config.get(START_MENU_KEY, True)) and start_menu.supported())
+        if os.environ.get(SKIP_ENV):
+            logging.info("System integration skipped (%s).", SKIP_ENV)
+            return
+        wanted = _wanted_by(self._ctx.config)
         icon = render_icon() if wanted.command or wanted.start_menu else []
         threading.Thread(target=self._apply, args=(wanted, icon, report), name="system-integration",
                          daemon=True).start()
@@ -67,11 +71,17 @@ class SystemIntegration:
     def _apply(self, wanted: _Wanted, icon: Sequence[IconImage], report: bool) -> None:
         """Background thread: bring both in line with ``wanted``; failures are logged (and reported)."""
         with self._lock:
-            problems = [problem for problem in (self._apply_command(wanted.command, icon),
-                                                self._apply_start_menu(wanted.start_menu, icon)) if problem]
+            problems = self._apply_both(wanted, icon)
         if problems and report:
             self._ctx.notifier.show(self._ctx.tr("system_integration_failed_message", error="; ".join(problems)),
                                     BALLOON_WARNING_MS)
+
+    @staticmethod
+    def _apply_both(wanted: _Wanted, icon: Sequence[IconImage]) -> List[str]:
+        """Bring both in line with ``wanted``; returns the problems."""
+        results = (SystemIntegration._apply_command(wanted.command, icon),
+                   SystemIntegration._apply_start_menu(wanted.start_menu, icon))
+        return [problem for problem in results if problem]
 
     @staticmethod
     def _apply_command(wanted: bool, icon: Sequence[IconImage]) -> str:
@@ -106,6 +116,18 @@ class SystemIntegration:
             logging.warning("Start menu entry not updated: %s", error)
             return str(error)
         return ""
+
+
+def _wanted_by(config: Mapping[str, Any]) -> _Wanted:
+    """What the settings ask for, as far as this installation supports it."""
+    return _Wanted(command=bool(config.get(COMMAND_KEY, True)) and command_shim.supported(),
+                   start_menu=bool(config.get(START_MENU_KEY, True)) and start_menu.supported())
+
+
+def apply_now(config: Mapping[str, Any]) -> List[str]:
+    """Install or remove both as configured and wait for it (installer, no app running); returns the problems."""
+    wanted = _wanted_by(config)
+    return SystemIntegration._apply_both(wanted, render_icon() if wanted.command or wanted.start_menu else [])
 
 
 def tray_command() -> List[str]:

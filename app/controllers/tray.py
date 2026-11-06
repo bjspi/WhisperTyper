@@ -16,7 +16,7 @@ from app.controllers.file_actions import FileActions
 from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED, UNAVAILABLE, LocalEngineController
 from app.controllers.recording import RecordingController
 from app.controllers.transcription import TranscriptionPipeline
-from app.core.api_keys import transcription_configured
+from app.core.api_keys import rephrasing_enabled, transcription_configured
 from app.core.audio_formats import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, requires_ffmpeg
 from app.core.constants import APP_DATA_DIR
 from app.core.env import is_MACOS
@@ -253,9 +253,12 @@ class TrayController(QObject):
             action.triggered.connect(lambda _checked=False: handler())
             return action
 
+        # A saved setting may have changed what the menu offers.
+        tray_menu.aboutToShow.connect(self.refresh_actions)
         add(sp.SP_FileDialogDetailedView, "tray_settings_action", "k", self._settings.show_window)
         add(sp.SP_FileIcon, "menu_file_open_config", "o", self._files.open_config_file)
-        add(sp.SP_FileDialogListView, "tray_edit_transformations_action", "t", self._settings.show_transformations)
+        self.transformations_action = add(sp.SP_FileDialogListView, "tray_edit_transformations_action", "t",
+                                          self._settings.show_transformations)
         tray_menu.addSeparator()
         add(sp.SP_FileDialogContentsView, "tray_copy_action", "c", self._pipeline.copy_last_transcription)
         self.retranscribe_action = add(sp.SP_BrowserReload, "tray_retranscribe_action", "r",
@@ -303,6 +306,9 @@ class TrayController(QObject):
         self.retranscribe_action.setEnabled(exists)
         self.mark_bad_action.setEnabled(exists)
         self.open_log_action.setEnabled(self._files.log_file_exists())
+        rephrasing_on = rephrasing_enabled(self._ctx.config)
+        self.transformations_action.setVisible(rephrasing_on)
+        self.transformations_action.setEnabled(rephrasing_on)  # its badge key must not open a hidden page
         self._refresh_local_menu()
 
     # --- Local transcription submenu ---------------------------------------------------

@@ -22,7 +22,7 @@ from app.audio.store import RecordingStore
 from app.context import AppContext
 from app.controllers.file_actions import FileActions
 from app.controllers.hotkeys import HotkeyController
-from app.controllers.local_engine import LocalEngineController
+from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED, LocalEngineController
 from app.controllers.permissions import MacPermissions
 from app.controllers.post_rephrase import PostRephraseController
 from app.controllers.recording import RecordingController
@@ -41,6 +41,7 @@ from app.services.http_transport import close_transport, set_ip_family
 from app.services.logging_config import apply_logging_config
 from app.ui import message_dialog
 from app.ui.durations import BALLOON_INFO_MS, BALLOON_SHORT_MS
+from app.ui.onboarding import run_onboarding
 from app.ui.settings.window import SettingsWindow
 
 # Suppress verbose DEBUG messages from the pyuic module
@@ -60,6 +61,9 @@ class WhisperTyperApp(QObject):
         self.apply_logging_configuration()
         for warning in self.ctx.config_warnings:
             logging.warning(warning)
+        # Before the windows exist, so they are built from the choices made here.
+        if not config.get("onboarding_done", True):
+            run_onboarding(self.ctx, local_supported=LOCAL_ENGINE_SUPPORTED)
         set_ip_family(config.get("network_ip_family", "auto"))
 
         self.workers = WorkerThreads()
@@ -116,7 +120,9 @@ class WhisperTyperApp(QObject):
             self.recording.start_background_capture()
 
         QTimer.singleShot(0, self.settings.start_aac_bitrate_probe)
-        if self.local_engine.enabled():
+        if config.get("local_engine_setup_pending"):
+            QTimer.singleShot(0, self.local_engine.setup_in_background)
+        elif self.local_engine.enabled():
             QTimer.singleShot(0, self.local_engine.apply_config)
 
         if self.permissions.startup_prompts_wanted():

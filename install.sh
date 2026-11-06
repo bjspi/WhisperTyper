@@ -5,7 +5,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/bjspi/WhisperTyper/main/install.sh | bash
 #
 # Creates a virtual environment in .venv (Python 3.10-3.13), installs the requirements into it and
-# starts the tray app. At its first start the app adds the whispertyper command. Safe to run again.
+# starts the tray app. It also adds the whispertyper command. Safe to run again.
 #
 # Uses uv if it is installed (uv also downloads Python 3.13 if needed), otherwise a Python on PATH.
 #
@@ -135,6 +135,10 @@ main() {
   else
     "$python" -m pip install --disable-pip-version-check -r requirements.txt
   fi
+
+  echo "==> Adding the whispertyper command"
+  # Not fatal: the app tries again at every start.
+  "$python" run.py install-integration || echo "Could not add it now; WhisperTyper tries again when it starts."
 
   if [ "$start" = 1 ]; then
     echo "==> Starting WhisperTyper (look for its icon in the tray or menu bar)"

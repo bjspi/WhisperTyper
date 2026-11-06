@@ -118,6 +118,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # Local transcription (app/local_engine): off by default; enabling it offers to install its packages.
     # It runs only while needed: the "Local" provider is selected or the server is on.
     "local_engine_enabled": False,
+    # The engine's packages still have to be installed in the background (chosen in the first-start guide).
+    "local_engine_setup_pending": False,
     "local_device": "auto",  # "auto" | "cuda" | "intel_gpu" | "intel_npu" | "openvino_cpu" | "cpu"
     "local_model_openvino": "OpenVINO/whisper-large-v3-turbo-int4-ov",
     "local_model_ctranslate2": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
@@ -169,6 +171,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # Windows: while the mouse is over the recording palette, the number keys pick its chips in order.
     "recording_prompt_overlay_digit_keys": True,
     "quit_without_confirmation": False,
+    # False only for a new installation, until its first-start guide was finished or skipped.
+    "onboarding_done": True,
     # The `whispertyper` command in ~/.local/bin (on PATH) and the Start menu / app list entry;
     # both are kept up to date at every start (see app/controllers/system_integration.py).
     "command_on_path": True,
@@ -186,6 +190,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
     # Rephrasing. The prompt list always holds the instruction (LivePrompt) entry; the config
     # migration adds it in the UI language.
+    # Existing configurations stay switched on; a new installation starts switched off.
+    "rephrasing_enabled": True,
     "rephrasing_api_url": "https://api.openai.com/v1/chat/completions",
     "rephrasing_model": DEFAULT_REPHRASING_MODEL,
     "rephrasing_temperature": 0.7,

@@ -113,6 +113,7 @@ class LocalEngineTab(QWidget):
 
         engine.status_changed.connect(self._render_status)
         engine.devices_changed.connect(self._refresh_devices)
+        engine.devices_changed.connect(self._update_packages_row)
         self._test_done.connect(self._on_test_done)
         self.load(ctx.config)
         self.retranslate_ui()
@@ -341,6 +342,12 @@ class LocalEngineTab(QWidget):
             self.install_button.hide()
             self.packages_label.show()
             set_style_state(self.packages_label, "level", "bad")
+            return
+        if self._ctx.config.get("local_engine_setup_pending"):
+            self.packages_label.setText(tr("local_engine_setting_up"))
+            self.install_button.hide()
+            self.packages_label.show()
+            set_style_state(self.packages_label, "level", "busy")
             return
         requirements = self._missing_requirements()
         self.packages_label.setVisible(bool(requirements))

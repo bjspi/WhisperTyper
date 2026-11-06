@@ -18,15 +18,17 @@ from app.controllers.file_actions import FileActions
 from app.controllers.hotkeys import HotkeyController
 from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED, LocalEngineController
 from app.controllers.recording import RecordingController
+from app.core.api_keys import rephrasing_enabled
 from app.core.config_diff import describe_changes
 from app.core.constants import WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH
 from app.core.env import is_MACOS
 from app.core.hotkeys import is_clipboard_shortcut, normalize_hotkey_string, pretty_hotkey
 from app.core.paths import resource_path
 from app.core.replacements import ReplacementError, Replacements
-from app.ui import message_dialog
+from app.ui import message_dialog, theme
 from app.ui.api_keys import ApiKeysTab
 from app.ui.connection_tester import ConnectionTester
+from app.ui.language_names import DETECT_LANGUAGE
 from app.ui.local_engine_tab import LocalEngineTab
 from app.ui.replacements import ReplacementsTab
 from app.ui.settings.api_page import ApiPage
@@ -135,8 +137,10 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self.setWindowIcon(icon)
         self.apply_theme()
         compact_layouts(self)
+        theme.round_combo_popups(self)
         if self._modern:
             self._build_modern_rows()
+            self._refresh_api_state()  # the sidebar exists now: it follows a switched-off rephrasing
         self.retranslate_ui()
         self.refresh_actions()
 
@@ -331,6 +335,8 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         # Push-to-talk needs the key-up, which an OS-registered hotkey never reports: the
         # listeners are rebuilt for the new mode.
         hotkeys_changed |= bool(before.get("push_to_talk")) != bool(self.config.get("push_to_talk"))
+        # Switched off, the rephrase hotkey is not registered at all.
+        hotkeys_changed |= rephrasing_enabled(before) != rephrasing_enabled(self.config)
 
         if not self.ctx.save_config(with_unsaved_edits=True, notify=False):
             message_dialog.inform(self, self.translator.tr("settings_save_failed_title"),
@@ -383,6 +389,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         tr = self.translator.tr
         self.setWindowTitle(tr("window_title"))
         apply_texts(self, tr)
+        self.language_input.setItemText(self.language_input.findData(DETECT_LANGUAGE), tr("input_language_detect"))
         for tab, title_key, tooltip_key in (
             (self.transcription_tab, "tab_transcription", "tooltip_tab_transcription"),
             (self.post_rephrasing_tab, "tab_transformations", "tooltip_tab_transformations"),

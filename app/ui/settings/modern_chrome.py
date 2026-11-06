@@ -205,7 +205,6 @@ class ModernChrome(SettingsWindowBase):
         if self._rows:
             self.basics_group.setTitle(tr("basics_group_title").replace("&", "&&"))  # no mnemonic
             self.ffmpeg_group.setTitle(tr("ffmpeg_section"))
-            self.microphone_group.setTitle(tr("microphone_group_title"))
             self._retranslate_modern_prompts_page()
             for row in self._rows:
                 row.sync_texts()
@@ -217,18 +216,20 @@ class ModernChrome(SettingsWindowBase):
     def _build_modern_pages(self) -> None:
         """Split the long API providers and General tabs, so every page fits without scrolling."""
         rephrasing = self._scroll_page([self.shared_api_group])
-        recording = self._scroll_page([self.hotkeys_group, self.recording_group])
+        hotkeys = self._scroll_page([self.hotkeys_group])
+        recording = self._scroll_page([self.recording_group])
         advanced = self._scroll_page([self.text_insertion_group, self.logging_group, self.ffmpeg_group])
         # The smaller pages have room to show their sections open.
         for section in (self.transcription_prompt_section, self.second_pass_section):
             section.set_expanded(True)
         self._nav_pages = [
-            (self.transcription_tab, "mic", "page_transcription_title", "page_transcription_subtitle"),
+            (self.transcription_tab, "globe", "page_transcription_title", "page_transcription_subtitle"),
             (rephrasing, "pen", "page_rephrasing_title", "page_rephrasing_subtitle"),
             (self._api_keys_tab, "key", "tab_api_keys", "tooltip_tab_api_keys"),
             *([(self._local_engine_tab, "chip", "tab_local_engine", "tooltip_tab_local_engine")]
               if LOCAL_ENGINE_SUPPORTED else []),
-            (recording, "keyboard", "page_recording_title", "page_recording_subtitle"),
+            (hotkeys, "keyboard", "page_hotkeys_title", "page_hotkeys_subtitle"),
+            (recording, "mic", "page_recording_title", "page_recording_subtitle"),
             (self.post_rephrasing_tab, "sparkles", "tab_transformations", "tooltip_tab_transformations"),
             (self._replacements_tab, "replace", "tab_replacements", "tooltip_tab_replacements"),
             (self.general_tab, "sliders", "tab_general", "page_general_subtitle"),
@@ -365,6 +366,7 @@ class ModernChrome(SettingsWindowBase):
         self.recording_format_selector.setMaximumWidth(130)
         self.recording_bitrate_selector.setMaximumWidth(110)
         self._rebuild(self.recording_group, [
+            row(self.input_device_label, self.input_device_selector),
             row(self.input_language_label, self.language_input),
             row(self.gain_label, self.gain_input),
             switch(self.gain_normalize_checkbox),
@@ -389,11 +391,6 @@ class ModernChrome(SettingsWindowBase):
             row(self.color_theme_label, self.color_theme_selector),
             switch(self.modern_design_checkbox),
         ])
-        # The microphone matters most where transcription is set up: a card at the top of that page.
-        self.microphone_group = QGroupBox(self.transcription_api_group.parentWidget())
-        QVBoxLayout(self.microphone_group)
-        self.transcription_layout.insertWidget(0, self.microphone_group)
-        self._rebuild(self.microphone_group, [row(self.input_device_label, self.input_device_selector)])
         self.proxy_url_input.setMaximumWidth(240)
         self._rebuild(self.misc_group, [
             row(self.proxy_url_label, self.proxy_url_input, self.test_internet_button),
