@@ -112,7 +112,7 @@ class BadgeTrayMenu(QMenu):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         for action in self.actions():
             letter = action.data()
-            if action.isSeparator() or not isinstance(letter, str) or not letter:
+            if action.isSeparator() or not action.isVisible() or not isinstance(letter, str) or not letter:
                 continue
             if self._modern:
                 # The update state shows in the entry's text and accent icon instead of a dot.

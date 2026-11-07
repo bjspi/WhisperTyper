@@ -20,6 +20,7 @@ from app.core.api_keys import rephrasing_enabled, transcription_configured
 from app.core.audio_formats import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, requires_ffmpeg
 from app.core.constants import APP_DATA_DIR
 from app.core.env import is_MACOS
+from app.core.expert_mode import expert_mode_shown
 from app.core.hotkeys import pretty_hotkey
 from app.local_engine.supervisor import OFF, READY, EngineStatus
 from app.platform.installation import REQUIREMENTS_FILE, repair_command
@@ -76,6 +77,12 @@ class SettingsWindowLike(Protocol):
 
     def show_local_engine(self) -> None:
         """Open the settings window on the local transcription page."""
+
+
+def _offer(action: QAction, shown: bool, usable: bool = True) -> None:
+    """Show ``action`` or not; a hidden one is disabled too, so its badge key cannot trigger it."""
+    action.setVisible(shown)
+    action.setEnabled(shown and usable)
 
 
 class TrayController(QObject):
@@ -256,7 +263,7 @@ class TrayController(QObject):
         # A saved setting may have changed what the menu offers.
         tray_menu.aboutToShow.connect(self.refresh_actions)
         add(sp.SP_FileDialogDetailedView, "tray_settings_action", "k", self._settings.show_window)
-        add(sp.SP_FileIcon, "menu_file_open_config", "o", self._files.open_config_file)
+        self.open_config_action = add(sp.SP_FileIcon, "menu_file_open_config", "o", self._files.open_config_file)
         self.transformations_action = add(sp.SP_FileDialogListView, "tray_edit_transformations_action", "t",
                                           self._settings.show_transformations)
         tray_menu.addSeparator()
@@ -273,7 +280,7 @@ class TrayController(QObject):
         self._build_local_menu(tray_menu, modern)
         tray_menu.addSeparator()
         self.open_log_action = add(sp.SP_FileDialogInfoView, "tray_log_action", "l", self._files.open_log_file)
-        add(sp.SP_DriveNetIcon, "menu_help_github", "g", self._files.open_github_link)
+        self.github_action = add(sp.SP_DriveNetIcon, "menu_help_github", "g", self._files.open_github_link)
         tray_menu.addSeparator()
         # Self-update from git is only meaningful for a source checkout.
         self.update_action = None
@@ -297,18 +304,23 @@ class TrayController(QObject):
         # Kick off the periodic background update check (source checkouts only).
         self.updater.start_watching()
 
+    def _expert_mode_shown(self) -> bool:
+        """Whether the menu offers its expert tools (config file, log, GitHub, marking a recording)."""
+        return expert_mode_shown(self._ctx.config, self._settings.is_modern())
+
     def refresh_actions(self) -> None:
-        """Enable the recording and log actions only when their files exist."""
+        """Offer the actions the settings allow, usable only when their files exist."""
         if self.tray_menu is None:
             return
         exists = self._ctx.recordings.exists()
-        self.play_action.setEnabled(exists)
-        self.retranscribe_action.setEnabled(exists)
-        self.mark_bad_action.setEnabled(exists)
-        self.open_log_action.setEnabled(self._files.log_file_exists())
-        rephrasing_on = rephrasing_enabled(self._ctx.config)
-        self.transformations_action.setVisible(rephrasing_on)
-        self.transformations_action.setEnabled(rephrasing_on)  # its badge key must not open a hidden page
+        expert = self._expert_mode_shown()
+        _offer(self.play_action, True, exists)
+        _offer(self.retranscribe_action, True, exists)
+        _offer(self.mark_bad_action, expert, exists)
+        _offer(self.open_log_action, expert, self._files.log_file_exists())
+        _offer(self.open_config_action, expert)
+        _offer(self.github_action, expert)
+        _offer(self.transformations_action, rephrasing_enabled(self._ctx.config))
         self._refresh_local_menu()
 
     # --- Local transcription submenu ---------------------------------------------------
@@ -358,8 +370,11 @@ class TrayController(QObject):
         self._local_actions["status"].setText(status_text(self._ctx.translator, status, engine.devices or []))
         running = status.state not in (OFF, UNAVAILABLE)
         self._local_actions["load"].setText(tr("local_unload_button" if running else "local_load_button"))
-        self._local_actions["self_test"].setEnabled(status.state == READY)
-        self._local_actions["copy"].setVisible(engine.server_enabled())
+        expert = self._expert_mode_shown()
+        _offer(self._local_actions["self_test"], expert, status.state == READY)
+        _offer(self._local_actions["restart"], expert)
+        _offer(self._local_actions["log"], expert)
+        _offer(self._local_actions["copy"], expert and engine.server_enabled())
 
     def _toggle_local_engine(self) -> None:
         engine = self._local_engine

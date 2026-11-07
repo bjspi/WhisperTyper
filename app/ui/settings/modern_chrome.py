@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
 from app import __version__
 from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED
 from app.core.constants import WINDOW_MIN_WIDTH
+from app.core.expert_mode import EXPERT_MODE_KEY, expert_mode_shown
 from app.ui.line_icons import RoundedMenu, line_icon
 from app.ui.settings.base import SettingsWindowBase
 from app.ui.settings.modern_rows import CardBody, SettingRow, clear_layout, rebuild_card
@@ -182,7 +183,7 @@ class ModernChrome(SettingsWindowBase):
     def _build_expert_switch(self) -> SettingRow:
         """The sidebar's switch between all settings and only the common ones."""
         self.expert_mode_checkbox = QCheckBox(self._sidebar)
-        self.expert_mode_checkbox.setChecked(bool(self.config.get("expert_mode", True)))
+        self.expert_mode_checkbox.setChecked(expert_mode_shown(self.config, modern_design=True))
         self.expert_mode_checkbox.toggled.connect(self._on_expert_mode_toggled)
         self._expert_switch_row = SettingRow(None, (self.expert_mode_checkbox,), checkbox=self.expert_mode_checkbox,
                                              describe=False)
@@ -197,12 +198,12 @@ class ModernChrome(SettingsWindowBase):
 
     def _expert_settings_shown(self) -> bool:
         """Whether expert settings are on screen (the classic design has no switch and hides nothing)."""
-        return not self._modern or bool(self.config.get("expert_mode", True))
+        return expert_mode_shown(self.config, self._modern)
 
     def _on_expert_mode_toggled(self, checked: bool) -> None:
-        """Persist the choice and apply it at once, like the colour theme."""
-        self.config["expert_mode"] = checked
-        self.ctx.save_config_keys("expert_mode")
+        """Persist the choice and apply it at once, like the colour theme (the tray menu follows when it opens)."""
+        self.config[EXPERT_MODE_KEY] = checked
+        self.ctx.save_config_keys(EXPERT_MODE_KEY)
         self._apply_expert_mode()
         self.fit_height_to_pages()
 
