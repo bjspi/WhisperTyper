@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install ruff
-      - run: ruff check app tests run.py
+      - run: ruff check app tests scripts run.py
 
   typecheck:
     name: Type-check (mypy)

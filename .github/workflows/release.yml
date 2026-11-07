@@ -1,7 +1,8 @@
 name: Release
 
 # Pushing a version tag (e.g. v0.5.0) runs the full CI suite and, only if it
-# passes, publishes a GitHub Release with auto-generated notes and a clean,
+# passes, publishes a GitHub Release, its text written from the commits since the
+# previous release (scripts/release_notes.py), and a clean,
 # ready-to-run source ZIP (dev files stripped via .gitattributes export-ignore).
 
 on:
@@ -24,6 +25,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # The release notes read the commits since the previous tag.
 
       - name: Verify tag matches app version
         run: |
@@ -36,12 +39,15 @@ jobs:
       - name: Build source ZIP
         run: git archive --format=zip --prefix "WhisperTyper/" -o "WhisperTyper-${GITHUB_REF_NAME}.zip" "${GITHUB_REF_NAME}"
 
+      - name: Write the release notes from the commits since the previous release
+        run: python3 scripts/release_notes.py "${GITHUB_REF_NAME}" --repository "${GITHUB_REPOSITORY}" > release-notes.md
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
             --title "WhisperTyper ${GITHUB_REF_NAME}" \
-            --generate-notes \
+            --notes-file release-notes.md \
             --verify-tag \
             "WhisperTyper-${GITHUB_REF_NAME}.zip#WhisperTyper ${GITHUB_REF_NAME} — ready-to-run sources (zip)"
