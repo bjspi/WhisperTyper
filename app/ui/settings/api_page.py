@@ -304,10 +304,10 @@ class ApiPage(SettingsWindowBase):
         if task == "transcription":
             # The engine runs the model of its own page: no model, temperature or quality fallback here.
             hidden: Tuple[QWidget, ...] = (self.model_label, self.model_dropdown, self.transcription_temp_label_title,
-                                           self.transcription_temp_slider, self.transcription_temp_label,
-                                           self.second_pass_section)
+                                           self.transcription_temp_slider, self.transcription_temp_label)
             for widget in hidden:
                 widget.setVisible(not local)
+            self.second_pass_section.setVisible(not local and self._expert_settings_shown())
             self.transcription_local_setup_button.setVisible(local)
         if local:
             for widget in (widgets.key_label, widgets.key_profile, widgets.key_choose, widgets.key_add):

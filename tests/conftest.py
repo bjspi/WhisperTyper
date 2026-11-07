@@ -8,7 +8,7 @@ of module-scoped fixtures alive while their tests run.
 from __future__ import annotations
 
 import importlib.util
-from typing import Iterator
+from typing import Iterator, Set
 
 import pytest
 
@@ -38,11 +38,14 @@ def _keep_real_microphones_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(MicrophoneScout, "start", lambda _self: None)
 
 
-@pytest.fixture(autouse=True, scope="module")
-def _delete_leftover_windows() -> Iterator[None]:
+def _windows_now() -> Set[int]:
+    """IDs of the open top-level windows (none without a Qt application)."""
     app = QApplication.instance() if QApplication is not None else None
-    before = set(map(id, app.topLevelWidgets())) if app is not None else set()
-    yield
+    return set(map(id, app.topLevelWidgets())) if app is not None else set()
+
+
+def _delete_windows_opened_since(before: Set[int]) -> None:
+    """Close and really delete every top-level window that is not in ``before``."""
     app = QApplication.instance() if QApplication is not None else None
     if app is None:
         return
@@ -53,3 +56,18 @@ def _delete_leftover_windows() -> Iterator[None]:
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
     app.processEvents()
     _reset_singletons()
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _delete_leftover_windows() -> Iterator[None]:
+    before = _windows_now()
+    yield
+    _delete_windows_opened_since(before)
+
+
+@pytest.fixture
+def delete_windows_after_test() -> Iterator[None]:
+    """Opt-in for modules that build a settings window per test: each test's windows go right away."""
+    before = _windows_now()
+    yield
+    _delete_windows_opened_since(before)

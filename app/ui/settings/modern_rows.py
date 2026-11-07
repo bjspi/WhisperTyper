@@ -3,6 +3,8 @@
 The rows reuse the window's existing widgets (loaded from the .ui file or built by the pages), so
 bindings, signals and tests keep working; only their layout changes. A row hides with its control
 and greys its title with it, so the pages' own show/hide/enable logic carries over unchanged.
+Expert rows are concealed on top of that while expert mode is off; a card without a visible row
+disappears, title included.
 """
 from __future__ import annotations
 
@@ -16,6 +18,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFrame,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLayout,
@@ -43,15 +46,23 @@ class SettingRow(QWidget):
     """Title (and a one-line description) on the left, controls on the right.
 
     ``follow`` is the control whose visibility and enabled state the row mirrors.
+    ``expert`` rows only show in expert mode.
     """
 
     def __init__(self, title: Optional[QLabel], controls: Sequence[Control], *, follow: Optional[QWidget] = None,
-                 checkbox: Optional[QCheckBox] = None, stacked: bool = False, plain_title: bool = False) -> None:
-        """``plain_title`` keeps the title label's own text and style (a status line, not a caption)."""
+                 checkbox: Optional[QCheckBox] = None, stacked: bool = False, plain_title: bool = False,
+                 expert: bool = False, describe: bool = True) -> None:
+        """``plain_title`` keeps the title label's own text and style (a status line, not a caption).
+
+        Without ``describe`` a short tooltip stays a tooltip instead of becoming the row's description.
+        """
         super().__init__()
         self.setObjectName("settingRow")
         self.checkbox = checkbox
         self._plain_title = plain_title
+        self.expert = expert
+        self._describe = describe
+        self._concealed = False
         self.title = title if title is not None else (QLabel() if checkbox is not None else None)
         self.description = QLabel()
         self.description.setObjectName("rowDescription")
@@ -103,12 +114,19 @@ class SettingRow(QWidget):
         if watched is self.follow and event is not None:
             kind = event.type()
             if kind == QEvent.Type.ShowToParent:
-                self.show()
+                if not self._concealed:
+                    self.show()
             elif kind == QEvent.Type.HideToParent:
                 self.hide()
             elif kind == QEvent.Type.EnabledChange:
                 self._sync_enabled()
         return False
+
+    def set_concealed(self, concealed: bool) -> None:
+        """Hide the row whatever its control does; revealed, it follows the control again."""
+        self._concealed = concealed
+        control_hidden = self.follow is not None and self.follow.isHidden()
+        self.setVisible(not concealed and not control_hidden)
 
     def _sync_enabled(self) -> None:
         """Grey the texts while the control is disabled."""
@@ -127,7 +145,7 @@ class SettingRow(QWidget):
             self.title.setText(self.title.text().rstrip().rstrip(":").rstrip())
         source = self.checkbox if self.checkbox is not None else self.title
         tip = source.toolTip().strip()
-        plain = bool(tip) and "<" not in tip and "\n" not in tip and len(tip) <= DESCRIPTION_MAX_CHARS
+        plain = self._describe and bool(tip) and "<" not in tip and "\n" not in tip and len(tip) <= DESCRIPTION_MAX_CHARS
         self.description.setText(tip if plain else "")
         self.description.setVisible(plain)
         if self.checkbox is not None:
@@ -143,7 +161,7 @@ class SettingRow(QWidget):
 
 
 class CardBody(QWidget):
-    """The rows of one card, separated by hairlines that skip hidden rows."""
+    """The rows of one card, separated by hairlines that skip hidden rows; a card without visible rows hides."""
 
     def __init__(self, parent: QWidget, margins: Tuple[int, int, int, int] = CARD_MARGINS) -> None:
         """An empty body inside ``parent``, padded by ``margins``."""
@@ -170,7 +188,7 @@ class CardBody(QWidget):
         self._layout.setStretchFactor(widget, stretch)
 
     def eventFilter(self, watched: Optional[QObject], event: Optional[QEvent]) -> bool:  # noqa: N802 - Qt API
-        """Re-place the hairlines whenever a row is shown or hidden."""
+        """Re-place the hairlines and update the card whenever a row is shown or hidden."""
         if event is not None and event.type() in (QEvent.Type.ShowToParent, QEvent.Type.HideToParent):
             self._update_dividers()
         return False
@@ -182,6 +200,10 @@ class CardBody(QWidget):
             visible = not widget.isHidden()
             divider.setVisible(visible and seen_visible)
             seen_visible = seen_visible or visible
+        # Only cards: a collapsible section or the prompt editor's panel decides on its own visibility.
+        owner = self.parentWidget()
+        if isinstance(owner, QGroupBox):
+            owner.setVisible(seen_visible)
 
 
 def clear_layout(layout: QLayout) -> None:

@@ -68,6 +68,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "color_theme": "system",  # "system" (auto light/dark) | "light" | "dark"
     # Settings window with sidebar and cards, tray menu with line icons; off = the classic tabbed look.
     "modern_design": True,
+    # Sidebar switch: all settings, or only the ones most people need (hidden ones keep their values).
+    # Existing configurations keep seeing everything; a new installation starts with it off.
+    "expert_mode": True,
     "input_device_name": "",  # "" = system default input; else a device name from the dropdown
     "window_width": 760,
     "window_height": 880,

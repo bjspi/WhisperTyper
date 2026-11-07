@@ -154,6 +154,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
     -   Customizable API endpoints, keys, models, and temperature settings for both transcription and rephrasing.
     -   Fine-tune transcription with custom prompts to improve accuracy for specific jargon or formatting.
     -   Adjustable microphone **volume gain** to boost input from quieter microphones, significantly increasing accuracy.
+-   **Expert Mode**: A switch at the bottom of the settings sidebar shows every setting; off, only the ones most people need are shown, and hidden settings keep their values. A new installation starts with it off.
 -   **Multi-Language UI**: The application interface is available in English, German, Spanish, and French.
 -   **Cross-Platform**: Works on Windows, macOS, and Linux.
 

@@ -122,6 +122,11 @@ the same widgets in a sidebar, splits the long tabs into smaller pages and rebui
 as rows (title and description left, control right); rows follow their control's visibility
 and enabled state, so the pages' logic and the bindings work unchanged in both designs.
 
+Expert mode (`expert_mode`, a switch in the modern sidebar) only decides what is on screen: rows
+marked `expert=True` and the expert pages hide, and a card without a visible row hides with them.
+Hidden settings keep their values and stay in effect, and the classic design always shows
+everything. It is unrelated to the `expert` block of config.json, which has no GUI at all.
+
 **The recording hot path is a chain of direct calls on the GUI thread:** the queued hotkey
 signal reaches `RecordingController`, which stops capture (retaining the in-flight block),
 writes the WAV and calls `TranscriptionPipeline.start`; the worker's result handler calls

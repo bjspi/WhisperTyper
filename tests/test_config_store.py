@@ -34,9 +34,10 @@ class TestLoad:
         config, changed = store.load()
         assert changed is True
         for key, value in DEFAULT_CONFIG.items():
-            if key not in ("post_rephrasing_entries", "rephrasing_enabled", "onboarding_done"):
+            if key not in ("post_rephrasing_entries", "rephrasing_enabled", "onboarding_done", "expert_mode"):
                 assert config[key] == value
         assert config["rephrasing_enabled"] is False and config["onboarding_done"] is False
+        assert config["expert_mode"] is False
         # A new installation offers the instruction and the English translation while recording.
         entries = config["post_rephrasing_entries"]
         assert entries == first_start_transformations(DEFAULT_CONFIG["ui_language"])

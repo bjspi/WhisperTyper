@@ -169,8 +169,8 @@ class ModernPromptsPage(SettingsWindowBase):
             self._row(None, self.liveprompt_help_button, self.liveprompt_enabled_checkbox,
                       checkbox=self.liveprompt_enabled_checkbox),
             row(self.liveprompt_trigger_label, self.liveprompt_trigger_words_input),
-            row(self.liveprompt_trigger_scan_depth_label, self.liveprompt_trigger_scan_depth_input),
-            switch(self.liveprompt_strip_trigger_checkbox),
+            row(self.liveprompt_trigger_scan_depth_label, self.liveprompt_trigger_scan_depth_input, expert=True),
+            switch(self.liveprompt_strip_trigger_checkbox, expert=True),
             switch(self.rephrase_context_checkbox),
         ], margins=(0, 0, 0, 0))
         text_row = self._row(self.text_label, self.post_rp_text_edit, stacked=True)
@@ -188,9 +188,9 @@ class ModernPromptsPage(SettingsWindowBase):
         self.prompts_palette_group = QGroupBox(self)
         QVBoxLayout(self.prompts_palette_group)
         rebuild_card(self.prompts_palette_group, [
-            switch(self.recording_prompt_overlay_system_position_checkbox),
-            switch(self.recording_prompt_overlay_digit_keys_checkbox),
-            row(self.recording_overlay_opacity_label, self.recording_overlay_opacity_input),
+            switch(self.recording_prompt_overlay_system_position_checkbox, expert=True),
+            switch(self.recording_prompt_overlay_digit_keys_checkbox, expert=True),
+            row(self.recording_overlay_opacity_label, self.recording_overlay_opacity_input, expert=True),
         ])
         page = self.pr_layout
         page.insertWidget(page.indexOf(self.splitter) + 1, self.prompts_palette_group)

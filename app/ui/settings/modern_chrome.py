@@ -47,6 +47,8 @@ _FOOTER_MARGINS = (24, 12, 24, 12)
 _SCREEN_HEADROOM = 60
 #: Inner margin of the pages (from the .ui file); the page header uses it too.
 _PAGE_INSET = 8
+#: Margins of the expert switch in the sidebar; the left one lines its title up with the navigation icons.
+_EXPERT_SWITCH_MARGINS = (17, 6, 6, 6)
 
 
 class ModernChrome(SettingsWindowBase):
@@ -152,6 +154,7 @@ class ModernChrome(SettingsWindowBase):
         layout.addWidget(self._nav, 1)
 
         # The hotkey badge and the play button move here while the modern design is active.
+        layout.addWidget(self._build_expert_switch())
         self._sidebar_badge = QHBoxLayout()
         self._sidebar_badge.addStretch(1)
         layout.addLayout(self._sidebar_badge)
@@ -175,6 +178,54 @@ class ModernChrome(SettingsWindowBase):
         self._sidebar_tools.addWidget(self._more_button, 1)
         layout.addLayout(self._sidebar_tools)
         return self._sidebar
+
+    def _build_expert_switch(self) -> SettingRow:
+        """The sidebar's switch between all settings and only the common ones."""
+        self.expert_mode_checkbox = QCheckBox(self._sidebar)
+        self.expert_mode_checkbox.setChecked(bool(self.config.get("expert_mode", True)))
+        self.expert_mode_checkbox.toggled.connect(self._on_expert_mode_toggled)
+        self._expert_switch_row = SettingRow(None, (self.expert_mode_checkbox,), checkbox=self.expert_mode_checkbox,
+                                             describe=False)
+        row_layout = self._expert_switch_row.layout()
+        assert row_layout is not None
+        row_layout.setContentsMargins(*_EXPERT_SWITCH_MARGINS)
+        return self._expert_switch_row
+
+    # --- Expert mode --------------------------------------------------------------------
+    #: Pages only shown in expert mode; empty in the classic design, which always shows everything.
+    _expert_pages: Tuple[QWidget, ...] = ()
+
+    def _expert_settings_shown(self) -> bool:
+        """Whether expert settings are on screen (the classic design has no switch and hides nothing)."""
+        return not self._modern or bool(self.config.get("expert_mode", True))
+
+    def _on_expert_mode_toggled(self, checked: bool) -> None:
+        """Persist the choice and apply it at once, like the colour theme."""
+        self.config["expert_mode"] = checked
+        self.ctx.save_config_keys("expert_mode")
+        self._apply_expert_mode()
+        self.fit_height_to_pages()
+
+    def _apply_expert_mode(self) -> None:
+        """Show or hide expert rows, cards and pages; hidden settings keep their values and stay in effect."""
+        shown = self._expert_settings_shown()
+        for row in self._rows:
+            if row.expert:
+                row.set_concealed(not shown)
+        for card in (self._local_engine_tab.server_group, self._local_engine_tab.test_group):
+            card.setVisible(shown)
+        self._api_keys_tab.groq_rotation.setVisible(shown)
+        for page in self._expert_pages:
+            index = self.tabs.indexOf(page)
+            self.tabs.setTabVisible(index, shown)
+            self._nav.setRowHidden(index, not shown)
+        self._refresh_api_state()  # the quality fallback section depends on the provider as well
+
+    def _reveal_page(self, page: QWidget) -> None:
+        """Open ``page``, switching expert mode on if it is hidden with it (a problem there needs fixing)."""
+        if not self.tabs.isTabVisible(self.tabs.indexOf(page)):
+            self.expert_mode_checkbox.setChecked(True)
+        self.tabs.setCurrentWidget(page)
 
     # --- Navigation ---------------------------------------------------------------------
     def _on_nav_row_changed(self, row: int) -> None:
@@ -202,6 +253,7 @@ class ModernChrome(SettingsWindowBase):
         self._on_page_changed(self.tabs.currentIndex())
         self._brand_version.setText(tr("brand_version", version=__version__))
         self._more_button.setText(tr("sidebar_more_button"))
+        self._expert_switch_row.sync_texts()
         if self._rows:
             self.basics_group.setTitle(tr("basics_group_title").replace("&", "&&"))  # no mnemonic
             self.ffmpeg_group.setTitle(tr("ffmpeg_section"))
@@ -216,8 +268,7 @@ class ModernChrome(SettingsWindowBase):
     def _build_modern_pages(self) -> None:
         """Split the long API providers and General tabs, so every page fits without scrolling."""
         rephrasing = self._scroll_page([self.shared_api_group])
-        hotkeys = self._scroll_page([self.hotkeys_group])
-        recording = self._scroll_page([self.recording_group])
+        recording = self._scroll_page([self.hotkeys_group, self.recording_group])
         advanced = self._scroll_page([self.text_insertion_group, self.logging_group, self.ffmpeg_group])
         # The smaller pages have room to show their sections open.
         for section in (self.transcription_prompt_section, self.second_pass_section):
@@ -228,7 +279,6 @@ class ModernChrome(SettingsWindowBase):
             (self._api_keys_tab, "key", "tab_api_keys", "tooltip_tab_api_keys"),
             *([(self._local_engine_tab, "chip", "tab_local_engine", "tooltip_tab_local_engine")]
               if LOCAL_ENGINE_SUPPORTED else []),
-            (hotkeys, "keyboard", "page_hotkeys_title", "page_hotkeys_subtitle"),
             (recording, "mic", "page_recording_title", "page_recording_subtitle"),
             (self.post_rephrasing_tab, "sparkles", "tab_transformations", "tooltip_tab_transformations"),
             (self._replacements_tab, "replace", "tab_replacements", "tooltip_tab_replacements"),
@@ -240,6 +290,7 @@ class ModernChrome(SettingsWindowBase):
             if self.tabs.indexOf(page) < 0:
                 self.tabs.insertTab(index, page, "")
             self._nav.addItem(QListWidgetItem())
+        self._expert_pages = (self._replacements_tab, advanced)
         self._nav.setCurrentRow(self.tabs.currentIndex())
         self._apply_design_icons(True, self.theme_palette())
 
@@ -268,9 +319,9 @@ class ModernChrome(SettingsWindowBase):
             return
         self.ensurePolished()
         # The local transcription page is long and rarely visited: it scrolls instead of growing the window.
+        skipped = [self._local_engine_tab, *(() if self._expert_settings_shown() else self._expert_pages)]
         pages = [self.tabs.widget(index) for index in range(self.tabs.count())]
-        content = max((self._unscrolled_height(page) for page in pages if page is not self._local_engine_tab),
-                      default=0)
+        content = max((self._unscrolled_height(page) for page in pages if page not in skipped), default=0)
         margins = self._page_area.contentsMargins()
         chrome = (self._page_header.sizeHint().height() + self.footer.sizeHint().height()
                   + margins.top() + margins.bottom() + 2 * self._page_area.spacing())
@@ -281,16 +332,24 @@ class ModernChrome(SettingsWindowBase):
         if self.height() < needed:
             self.resize(self.width(), needed)
 
-    @staticmethod
-    def _unscrolled_height(page: Optional[QWidget]) -> int:
-        """The height ``page`` needs to show the whole content of its scroll areas."""
+    def _unscrolled_height(self, page: Optional[QWidget]) -> int:
+        """The height ``page`` needs to show the whole content of its scroll areas at the pages' width.
+
+        Measured for that width: without one, rows with wrapping titles report the height of a
+        very narrow window.
+        """
         if page is None:
             return 0
+        width = self.width() - self.design_extra_width()
         height = page.sizeHint().height()
         for area in page.findChildren(QScrollArea):
             content = area.widget()
-            if content is not None:
-                height += max(0, content.sizeHint().height() - area.sizeHint().height())
+            if content is None:
+                continue
+            needed = content.heightForWidth(width) if content.hasHeightForWidth() else -1
+            if needed < 0:
+                needed = content.sizeHint().height()
+            height += max(0, needed - area.sizeHint().height())
         return height
 
     # --- Settings as rows ---------------------------------------------------------------
@@ -304,9 +363,9 @@ class ModernChrome(SettingsWindowBase):
         self._rows.append(row)
         return row
 
-    def _switch(self, checkbox: QCheckBox) -> SettingRow:
+    def _switch(self, checkbox: QCheckBox, **options: object) -> SettingRow:
         """A row whose title is the checkbox caption and whose control is its switch."""
-        return self._row(None, checkbox, checkbox=checkbox)
+        return self._row(None, checkbox, checkbox=checkbox, **options)
 
     def _build_modern_rows(self) -> None:
         """Rebuild the cards of the API providers and General pages as rows (modern design, at startup)."""
@@ -335,7 +394,7 @@ class ModernChrome(SettingsWindowBase):
             temp_value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self._rebuild(group, [
                 row(provider_label, provider), row(model_label, model),
-                row(temp_label, temp_slider, temp_value, follow=temp_slider),
+                row(temp_label, temp_slider, temp_value, follow=temp_slider, expert=True),
                 row(url_label, url), row(key_label, key),
                 row(status, choose, add, *extra, test, follow=status, plain_title=True),
                 *sections,
@@ -368,16 +427,16 @@ class ModernChrome(SettingsWindowBase):
         self._rebuild(self.recording_group, [
             row(self.input_device_label, self.input_device_selector),
             row(self.input_language_label, self.language_input),
-            row(self.gain_label, self.gain_input),
-            switch(self.gain_normalize_checkbox),
+            row(self.gain_label, self.gain_input, expert=True),
+            switch(self.gain_normalize_checkbox, expert=True),
             switch(self.play_sounds_checkbox),
-            switch(self.windows_keep_mic_hot_checkbox),
-            row(self.windows_keep_mic_hot_idle_label, self.windows_keep_mic_hot_idle_input),
-            row(self.min_recording_label, self.min_recording_input),
+            switch(self.windows_keep_mic_hot_checkbox, expert=True),
+            row(self.windows_keep_mic_hot_idle_label, self.windows_keep_mic_hot_idle_input, expert=True),
+            row(self.min_recording_label, self.min_recording_input, expert=True),
             row(self.recording_format_label, self.recording_format_selector, self.recording_bitrate_label,
-                self.recording_bitrate_selector, follow=self.recording_format_selector),
-            switch(self.transcription_hedging_checkbox),
-            row(self.transcription_hedging_wait_label, self.transcription_hedging_wait_input),
+                self.recording_bitrate_selector, follow=self.recording_format_selector, expert=True),
+            switch(self.transcription_hedging_checkbox, expert=True),
+            row(self.transcription_hedging_wait_label, self.transcription_hedging_wait_input, expert=True),
         ])
 
         # General page: the selectors above the cards get a card of their own.
@@ -389,20 +448,20 @@ class ModernChrome(SettingsWindowBase):
         self._rebuild(self.basics_group, [
             row(self.ui_language_label, self.ui_language_selector),
             row(self.color_theme_label, self.color_theme_selector),
-            switch(self.modern_design_checkbox),
+            switch(self.modern_design_checkbox, expert=True),
         ])
         self.proxy_url_input.setMaximumWidth(240)
         self._rebuild(self.misc_group, [
             row(self.proxy_url_label, self.proxy_url_input, self.test_internet_button),
             switch(self.use_px_proxy_checkbox),
-            row(self.network_ip_family_label, self.network_ip_family_selector),
-            switch(self.restore_clipboard_checkbox),
-            switch(self.systray_double_click_copy_checkbox),
-            switch(self.post_rephrase_auto_select_all_checkbox),
-            switch(self.quit_without_confirmation_checkbox),
+            row(self.network_ip_family_label, self.network_ip_family_selector, expert=True),
+            switch(self.restore_clipboard_checkbox, expert=True),
+            switch(self.systray_double_click_copy_checkbox, expert=True),
+            switch(self.post_rephrase_auto_select_all_checkbox, expert=True),
+            switch(self.quit_without_confirmation_checkbox, expert=True),
         ])
         self._rebuild(self.system_integration_group, [
-            switch(self.command_on_path_checkbox), switch(self.start_menu_entry_checkbox),
+            switch(self.command_on_path_checkbox, expert=True), switch(self.start_menu_entry_checkbox, expert=True),
         ])
         self._rebuild(self.text_insertion_group, [
             switch(self.windows_sendinput_text_checkbox), switch(self.windows_sendinput_fallback_checkbox),

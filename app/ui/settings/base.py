@@ -259,6 +259,7 @@ class SettingsWindowBase(QWidget):
     recording_overlay_opacity_input: QSpinBox
     quit_without_confirmation_checkbox: QCheckBox
     modern_design_checkbox: QCheckBox
+    expert_mode_checkbox: QCheckBox
     system_integration_group: QGroupBox
     command_on_path_checkbox: QCheckBox
     start_menu_entry_checkbox: QCheckBox
@@ -298,8 +299,12 @@ class SettingsWindowBase(QWidget):
         """A row of the modern card layout."""
         raise NotImplementedError
 
-    def _switch(self, checkbox: QCheckBox) -> "SettingRow":
+    def _switch(self, checkbox: QCheckBox, **options: object) -> "SettingRow":
         """A modern row for a checkbox."""
+        raise NotImplementedError
+
+    def _expert_settings_shown(self) -> bool:
+        """Whether expert settings are on screen."""
         raise NotImplementedError
 
     def _playback_icon(self, active: bool) -> Optional[QIcon]:

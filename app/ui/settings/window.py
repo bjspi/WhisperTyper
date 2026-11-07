@@ -140,7 +140,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         theme.round_combo_popups(self)
         if self._modern:
             self._build_modern_rows()
-            self._refresh_api_state()  # the sidebar exists now: it follows a switched-off rephrasing
+            self._apply_expert_mode()  # also refreshes the API state: the sidebar follows a switched-off rephrasing
         self.retranslate_ui()
         self.refresh_actions()
 
@@ -310,7 +310,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
             message_dialog.inform(self, self.translator.tr("tab_replacements"),
                                   self.translator.tr("replacements_invalid", line=error.line),
                                   self.translator.tr("ok_button"), message_dialog.WARNING)
-            self.tabs.setCurrentWidget(self._replacements_tab)
+            self._reveal_page(self._replacements_tab)
             self._replacements_tab.editor.setFocus()
             return
         if not self._validate_hotkeys():

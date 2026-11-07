@@ -61,6 +61,7 @@ def _first_start_config() -> Dict[str, Any]:
         "post_rephrasing_entries": first_start_transformations(DEFAULT_CONFIG["ui_language"]),
         "rephrasing_enabled": False,
         "onboarding_done": False,
+        "expert_mode": False,
     }
 
 

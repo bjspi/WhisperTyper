@@ -129,6 +129,7 @@ TEXTS: Tuple[Text, ...] = (
     Text("ui_language_label", "ui_language_label"),
     Text("color_theme_label", "color_theme_label"),
     _check("modern_design_checkbox", "modern_design_checkbox", "modern_design_tooltip"),
+    _check("expert_mode_checkbox", "expert_mode_checkbox", "expert_mode_tooltip"),
     Text("input_device_label", "input_device_label"),
     _check("restore_clipboard_checkbox", "restore_clipboard_checkbox"),
     _check("debug_logging_checkbox", "debug_logging_checkbox"),

@@ -20,15 +20,19 @@ from app.core.hotkeys import normalize_hotkey_string  # noqa: E402
 from app.ui.settings.collapsible import CollapsibleSection  # noqa: E402
 from app.ui.settings.window import SettingsWindow  # noqa: E402
 
+# Every test builds a whole settings window: delete it right after the test (see conftest).
+pytestmark = pytest.mark.usefixtures("delete_windows_after_test")
+
 
 @pytest.fixture(scope="module")
 def qapp():
     return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 
-def _make_window(tmp_path, modern):
+def _make_window(tmp_path, modern, **config):
+    """A settings window built from a config file like at startup."""
     path = tmp_path / "config.json"
-    path.write_text(json.dumps({"ui_language": "en", "modern_design": modern}), encoding="utf-8")
+    path.write_text(json.dumps({"ui_language": "en", "modern_design": modern, **config}), encoding="utf-8")
     ctx = AppContext(ConfigStore(str(path), normalize_hotkey_string), RecordingStore(str(tmp_path)))
     return SettingsWindow(ctx, recording=Mock(selectable_input_devices=Mock(return_value=[])), hotkeys=Mock(),
                           files=Mock(log_file_exists=Mock(return_value=False)), quit_app=Mock())
@@ -155,22 +159,22 @@ def test_modern_design_splits_pages_and_mirrors_them_in_the_sidebar(modern_windo
     pages = [window.tabs.widget(index) for index in range(window.tabs.count())]
     # The local transcription page (after API keys) is not offered on macOS.
     shift = 1 if LOCAL_ENGINE_SUPPORTED else 0
-    assert window.tabs.count() == window._nav.count() == 9 + shift
+    assert window.tabs.count() == window._nav.count() == 8 + shift
     assert [pages.index(page) for page in (window.transcription_tab, window._api_keys_tab, window.post_rephrasing_tab,
                                            window._replacements_tab, window.general_tab)] == [
-        0, 2, 5 + shift, 6 + shift, 7 + shift]
+        0, 2, 4 + shift, 5 + shift, 6 + shift]
     assert not LOCAL_ENGINE_SUPPORTED or pages.index(window._local_engine_tab) == 3
     assert pages[1].isAncestorOf(window.shared_api_group)
-    hotkeys, recording, advanced = pages[3 + shift], pages[4 + shift], pages[8 + shift]
-    assert hotkeys.isAncestorOf(window.hotkeys_group) and not hotkeys.isAncestorOf(window.recording_group)
-    assert recording.isAncestorOf(window.recording_group) and recording.isAncestorOf(window.input_device_selector)
+    recording, advanced = pages[3 + shift], pages[7 + shift]
+    assert recording.isAncestorOf(window.hotkeys_group) and recording.isAncestorOf(window.recording_group)
+    assert recording.isAncestorOf(window.input_device_selector)
     assert advanced.isAncestorOf(window.text_insertion_group) and advanced.isAncestorOf(window.ffmpeg_group)
     assert window.transcription_prompt_section.is_expanded() and window.second_pass_section.is_expanded()
     assert all(window.tabs.tabText(index) for index in range(window.tabs.count()))
-    window._nav.setCurrentRow(4 + shift)
-    assert window.tabs.currentIndex() == 4 + shift and window._page_title.text() == "Recording"
+    window._nav.setCurrentRow(3 + shift)
+    assert window.tabs.currentIndex() == 3 + shift and window._page_title.text() == "Recording & hotkeys"
     window.tabs.setCurrentWidget(window.general_tab)
-    assert window._nav.currentRow() == 7 + shift
+    assert window._nav.currentRow() == 6 + shift
 
 
 def test_modern_rows_follow_their_control_and_toggle_on_click(modern_window):
@@ -253,3 +257,85 @@ def test_palette_opacity_sits_below_the_palette_options(qapp, tmp_path, modern):
         assert spin.value() == 100 and spin.minimum() == 30
     finally:
         window.close()
+
+
+def _make_expert_window(tmp_path, expert_mode, **config):
+    """A modern window with the given expert mode."""
+    return _make_window(tmp_path, True, expert_mode=expert_mode, **config)
+
+
+def test_expert_mode_off_hides_rows_cards_and_pages_in_the_sidebar(qapp, tmp_path):
+    window = _make_expert_window(tmp_path, False)
+    assert not window.expert_mode_checkbox.isChecked()
+    replacements = window.tabs.indexOf(window._replacements_tab)
+    assert not window.tabs.isTabVisible(replacements) and window._nav.isRowHidden(replacements)
+    gain_row = next(row for row in window._rows if row.follow is window.gain_input)
+    play_sounds_row = next(row for row in window._rows if row.follow is window.play_sounds_checkbox)
+    assert gain_row.isHidden() and not play_sounds_row.isHidden()
+    # Every row of these cards is an expert row, so the card goes with its title.
+    assert window.prompts_palette_group.isHidden() and window.system_integration_group.isHidden()
+    assert not window.recording_group.isHidden() and not window.misc_group.isHidden()
+    assert window.second_pass_section.isHidden()
+    assert window._local_engine_tab.server_group.isHidden() and not window._local_engine_tab.engine_group.isHidden()
+
+    window.expert_mode_checkbox.click()
+    assert window.tabs.isTabVisible(replacements) and not window._nav.isRowHidden(replacements)
+    assert not gain_row.isHidden() and not window.prompts_palette_group.isHidden()
+    assert not window.second_pass_section.isHidden() and not window._local_engine_tab.server_group.isHidden()
+
+
+def test_expert_mode_is_remembered_and_keeps_hidden_values_on_save(qapp, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.ui.message_dialog.inform", Mock())
+    window = _make_expert_window(tmp_path, True, gain_db=6.0)
+    window.expert_mode_checkbox.click()
+    stored = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    assert stored["expert_mode"] is False
+
+    window.save_settings()
+    stored = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    assert stored["gain_db"] == 6.0 and stored["expert_mode"] is False
+
+
+def test_a_control_shown_by_its_page_stays_hidden_while_expert_mode_is_off(qapp, tmp_path):
+    window = _make_expert_window(tmp_path, False)
+    temperature_row = next(row for row in window._rows if row.follow is window.rephrasing_temp_slider)
+    window.rephrasing_temp_slider.setVisible(False)
+    window.rephrasing_temp_slider.setVisible(True)  # as the API page does on every refresh
+    assert temperature_row.isHidden()
+    window.expert_mode_checkbox.click()
+    assert not temperature_row.isHidden()
+
+
+def test_a_row_whose_control_is_hidden_stays_hidden_when_expert_mode_comes_on(qapp, tmp_path):
+    window = _make_expert_window(tmp_path, False)
+    format_row = next(row for row in window._rows if row.follow is window.recording_format_selector)
+    assert window.recording_format_selector.isHidden()  # AAC is only offered after the encoder probe
+    window.expert_mode_checkbox.click()
+    assert format_row.isHidden()
+    window.recording_format_selector.setVisible(True)
+    assert not format_row.isHidden()
+
+
+def test_switching_expert_mode_off_leaves_a_hidden_page_for_a_visible_one(qapp, tmp_path):
+    window = _make_expert_window(tmp_path, True)
+    window.tabs.setCurrentWidget(window._replacements_tab)
+    window.expert_mode_checkbox.click()
+    assert window.tabs.currentWidget() is not window._replacements_tab
+    assert window.tabs.isTabVisible(window.tabs.currentIndex())
+    assert window._nav.currentRow() == window.tabs.currentIndex()
+    assert window._page_title.text() == window.tabs.tabText(window.tabs.currentIndex())
+
+
+def test_invalid_rules_on_a_hidden_page_switch_expert_mode_on_to_show_them(qapp, tmp_path, monkeypatch):
+    window = _make_expert_window(tmp_path, False)
+    monkeypatch.setattr("app.ui.message_dialog.inform", Mock())
+    window._replacements_tab.editor.setPlainText("only one field")
+    window.save_settings()
+    assert window.expert_mode_checkbox.isChecked() and window.tabs.currentWidget() is window._replacements_tab
+
+
+def test_classic_design_ignores_expert_mode(qapp, tmp_path):
+    window = _make_window(tmp_path, False, expert_mode=False)
+    assert window._sidebar.isHidden()
+    assert not window.gain_input.isHidden() and not window.second_pass_section.isHidden()
+    assert all(window.tabs.isTabVisible(index) for index in range(window.tabs.count()))
