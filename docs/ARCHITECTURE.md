@@ -56,7 +56,7 @@ flowchart TB
     end
 
     subgraph core ["Core (app/core/) — pure logic, no Qt, fully unit-tested"]
-        CORE["hotkeys · liveprompt · rephrase_routing · models · api_keys · config_store<br/>dsp · textutil · redaction · replacements · i18n · prompts · timing · paths · env · win32 · icon_file"]
+        CORE["hotkeys · liveprompt · rephrase_routing · models · api_keys · config_store<br/>dsp · textutil · redaction · replacements · i18n · prompts · timing · paths · env · win32 · icon_file · settings_search"]
     end
 
     CTX["app/context.py<br/><b>AppContext</b> · Notifier"]
@@ -121,6 +121,13 @@ tabs of the .ui file. The modern one (`modern_chrome`, `modern_rows`, `modern_pr
 the same widgets in a sidebar, splits the long tabs into smaller pages and rebuilds the cards
 as rows (title and description left, control right); rows follow their control's visibility
 and enabled state, so the pages' logic and the bindings work unchanged in both designs.
+
+The settings search (`search`, matching in `app/core/settings_search.py`) is part of the modern
+sidebar; the classic design has none. Its index needs no upkeep: at each keystroke it collects
+every page and the captioned `SettingRow`s on it (`SettingRow.search_texts`; status lines and
+rows whose control is hidden are left out). Opening a match selects the page, unfolds its
+section, switches expert mode on if the row is hidden with it, scrolls the row into view and
+lights it up for a moment (the `searchHit` style state).
 
 Expert mode (`expert_mode`, a switch in the modern sidebar) only decides what is on screen: rows
 marked `expert=True` and the expert pages hide, and a card without a visible row hides with them.

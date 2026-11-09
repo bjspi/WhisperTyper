@@ -8,8 +8,8 @@ from __future__ import annotations
 import logging
 from typing import Callable, Dict, List, Optional, Tuple
 
-from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import QSize, Qt, QTimer
+from PyQt6.QtGui import QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -31,9 +31,14 @@ from app import __version__
 from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED
 from app.core.constants import WINDOW_MIN_WIDTH
 from app.core.expert_mode import EXPERT_MODE_KEY, expert_mode_shown
+from app.core.settings_search import SettingEntry
+from app.ui.durations import SETTING_FOUND_MS
 from app.ui.line_icons import RoundedMenu, line_icon
 from app.ui.settings.base import SettingsWindowBase
+from app.ui.settings.collapsible import CollapsibleSection
 from app.ui.settings.modern_rows import CardBody, SettingRow, clear_layout, rebuild_card
+from app.ui.settings.search import SettingsSearch
+from app.ui.theme import set_style_state
 from app.ui.tray_icons import app_icon
 
 _SIDEBAR_WIDTH = 210
@@ -50,6 +55,8 @@ _SCREEN_HEADROOM = 60
 _PAGE_INSET = 8
 #: Margins of the expert switch in the sidebar; the left one lines its title up with the navigation icons.
 _EXPERT_SWITCH_MARGINS = (17, 6, 6, 6)
+#: Room kept above and below a setting scrolled into view by the settings search.
+_REVEAL_MARGIN = 24
 
 
 class ModernChrome(SettingsWindowBase):
@@ -145,6 +152,14 @@ class ModernChrome(SettingsWindowBase):
         layout.addLayout(brand)
         layout.addSpacing(12)
 
+        self._search = SettingsSearch(self._searchable, self.translator.tr, self._sidebar)
+        self._search.active_changed.connect(lambda active: self._nav.setVisible(not active))
+        self._search.chosen.connect(self._open_setting)
+        if self._modern:  # the classic design has no sidebar, so nothing to search with
+            QShortcut(QKeySequence.StandardKey.Find, self, self._search.focus)
+        layout.addWidget(self._search.field)
+        layout.addSpacing(4)
+
         self._nav = QListWidget(self._sidebar)
         self._nav.setObjectName("nav")
         self._nav.setFrameShape(QFrame.Shape.NoFrame)
@@ -153,6 +168,7 @@ class ModernChrome(SettingsWindowBase):
         self._nav.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._nav.currentRowChanged.connect(self._on_nav_row_changed)
         layout.addWidget(self._nav, 1)
+        layout.addWidget(self._search.results, 1)  # replaces the pages while a search is typed
 
         # The hotkey badge and the play button move here while the modern design is active.
         layout.addWidget(self._build_expert_switch())
@@ -255,12 +271,49 @@ class ModernChrome(SettingsWindowBase):
         self._brand_version.setText(tr("brand_version", version=__version__))
         self._more_button.setText(tr("sidebar_more_button"))
         self._expert_switch_row.sync_texts()
+        self._search.retranslate()
         if self._rows:
             self.basics_group.setTitle(tr("basics_group_title").replace("&", "&&"))  # no mnemonic
             self.ffmpeg_group.setTitle(tr("ffmpeg_section"))
             self._retranslate_modern_prompts_page()
             for row in self._rows:
                 row.sync_texts()
+
+    # --- Settings search ----------------------------------------------------------------
+    def _searchable(self) -> List[SettingEntry]:
+        """Every page and the captioned rows on it, expert ones included (opening one shows them)."""
+        entries = []
+        for index in range(self.tabs.count()):
+            page = self.tabs.widget(index)
+            if page is None:
+                continue
+            name = self.tabs.tabText(index)
+            entries.append(SettingEntry(index, name, name, self.tabs.tabToolTip(index)))
+            for row in page.findChildren(SettingRow):
+                texts = row.search_texts()
+                if texts is not None:
+                    entries.append(SettingEntry(index, name, *texts, group=_group_title(row), target=row))
+        return entries
+
+    def _open_setting(self, entry: SettingEntry) -> None:
+        """Show the entry's page, scrolled to its row, which lights up for a moment.
+
+        A folded section opens. A row or page hidden by expert mode switches expert mode on, like
+        a problem found on Save; a row that still does not show lights up what holds it.
+        """
+        row = entry.target
+        page = self.tabs.widget(entry.page_index)
+        if self._nav.isRowHidden(entry.page_index):
+            self.expert_mode_checkbox.setChecked(True)
+        self.tabs.setCurrentIndex(entry.page_index)
+        if not isinstance(row, QWidget) or page is None:
+            return
+        _unfold_sections(row)
+        if not row.isVisibleTo(page):
+            self.expert_mode_checkbox.setChecked(True)
+        target = _shown_part(row, page)
+        # After the page's layout, so the row's position is known.
+        QTimer.singleShot(0, lambda: _reveal(target))
 
     # --- Pages of the modern design ----------------------------------------------------
     #: (page, icon, title key, subtitle key) in sidebar order; empty in the classic design.
@@ -545,6 +598,7 @@ class ModernChrome(SettingsWindowBase):
                              (self.exit_action, "quit")):
             action.setIcon(line_icon(name, menu_icon) if modern else QIcon())
         self._more_button.setIcon(line_icon("more", menu_icon))
+        self._search.set_icon_color(muted)
 
     def _playback_icon(self, active: bool) -> Optional[QIcon]:
         """Modern design: the play/stop line icon of the sidebar button (None in the classic design)."""
@@ -552,3 +606,50 @@ class ModernChrome(SettingsWindowBase):
             return None
         colors = self.theme_palette()
         return line_icon("stop" if active else "play", colors.get("menu_icon", colors["muted"]))
+
+
+def _group_title(row: QWidget) -> str:
+    """Caption of the card or section holding ``row`` ("" without one)."""
+    parent = row.parentWidget()
+    while parent is not None:
+        if isinstance(parent, (QGroupBox, CollapsibleSection)) and parent.title():
+            return parent.title().replace("&&", "&")
+        parent = parent.parentWidget()
+    return ""
+
+
+def _unfold_sections(row: QWidget) -> None:
+    """Expand the collapsible sections holding ``row``."""
+    parent = row.parentWidget()
+    while parent is not None:
+        if isinstance(parent, CollapsibleSection):
+            parent.set_expanded(True)
+        parent = parent.parentWidget()
+
+
+def _shown_part(row: QWidget, page: QWidget) -> QWidget:
+    """``row`` if it shows on ``page``, else the nearest widget holding it that does."""
+    shown = row
+    while not shown.isVisibleTo(page):
+        parent = shown.parentWidget()
+        if parent is None or parent is page:
+            break
+        shown = parent
+    return shown
+
+
+def _reveal(widget: QWidget) -> None:
+    """Scroll ``widget`` into view and light it up for ``SETTING_FOUND_MS``."""
+    parent = widget.parentWidget()
+    while parent is not None and not isinstance(parent, QScrollArea):
+        parent = parent.parentWidget()
+    if isinstance(parent, QScrollArea):
+        parent.ensureWidgetVisible(widget, 0, _REVEAL_MARGIN)
+    widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+    set_style_state(widget, "searchHit", True)
+    # A timer owned by the widget, so a widget deleted meanwhile takes its timer with it.
+    timer = QTimer(widget)
+    timer.setSingleShot(True)
+    timer.timeout.connect(lambda: set_style_state(widget, "searchHit", False))
+    timer.timeout.connect(timer.deleteLater)
+    timer.start(SETTING_FOUND_MS)

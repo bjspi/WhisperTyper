@@ -13,4 +13,7 @@ BALLOON_MAX_MS = 5000       # the longest regular message
 # The "recording…" balloon stays until the stop/cancel path replaces it.
 BALLOON_PERSISTENT_MS = 99_999_999
 
+# A setting opened from the settings search stays lit this long.
+SETTING_FOUND_MS = 1600
+
 # Paste and copy timings are expert settings in config.json (app/core/expert_settings.py).

@@ -309,6 +309,10 @@ QListWidget#nav::item {
 }
 QListWidget#nav::item:hover { background: %(nav_hover)s; }
 QListWidget#nav::item:selected { background: %(panel)s; color: %(nav_selected)s; border-color: %(border)s; }
+QListWidget#nav::item:disabled { color: %(muted)s; }
+/* The settings search: a shade off the sidebar until it is focused. */
+QLineEdit#settingsSearch { background: %(nav_hover)s; border-color: %(nav_hover)s; padding: 5px 6px 5px 4px; }
+QLineEdit#settingsSearch:focus { background: %(field)s; border-color: %(accent)s; }
 #sidebarButton {
     background: transparent; border: 1px solid transparent; border-radius: 8px;
     padding: 7px 10px; color: %(nav_text)s;
@@ -330,6 +334,8 @@ QGroupBox::title {
     color: %(muted)s; background: transparent; font-weight: 600; font-size: 8pt;
 }
 QWidget#cardBody, QWidget#settingRow { background: transparent; }
+/* A setting opened from the settings search lights up for a moment. */
+QWidget#cardBody[searchHit="true"], QWidget#settingRow[searchHit="true"], *[searchHit="true"] { background: %(nav_hover)s; border-radius: 8px; }
 QListWidget#promptList { background: transparent; border: none; padding: 0; }
 QWidget#post_rp_instruction_options { background: transparent; }
 QListWidget#promptList::item, QListWidget#promptList::item:selected { background: transparent; border: none; }

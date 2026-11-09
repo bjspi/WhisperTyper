@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import List, Optional, Sequence, Tuple, Union
 
 from PyQt6.QtCore import QEvent, QObject, Qt
-from PyQt6.QtGui import QMouseEvent
+from PyQt6.QtGui import QMouseEvent, QTextDocumentFragment
 from PyQt6.QtWidgets import (
     QAbstractSpinBox,
     QBoxLayout,
@@ -127,6 +127,22 @@ class SettingRow(QWidget):
         self._concealed = concealed
         control_hidden = self.follow is not None and self.follow.isHidden()
         self.setVisible(not concealed and not control_hidden)
+
+    def search_texts(self) -> Optional[Tuple[str, str]]:
+        """Title and description a settings search finds the row by.
+
+        None for a row without a caption, a status line, or a row whose control is hidden
+        (it does not apply now, such as a field of another provider).
+        """
+        if self.title is None or self._plain_title or not self.title.text().strip():
+            return None
+        if self.follow is not None and self.follow.isHidden():
+            return None
+        description = self.description.text()
+        if not description:
+            source = self.checkbox if self.checkbox is not None else self.title
+            description = QTextDocumentFragment.fromHtml(source.toolTip()).toPlainText()
+        return self.title.text(), description
 
     def _sync_enabled(self) -> None:
         """Grey the texts while the control is disabled."""

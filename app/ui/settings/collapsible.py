@@ -80,6 +80,10 @@ class CollapsibleSection(QWidget):
         self._title = title
         self._apply()
 
+    def title(self) -> str:
+        """Caption of the header, like ``QGroupBox.title``."""
+        return self._title
+
     def is_expanded(self) -> bool:
         """Whether the content is shown."""
         return self._expanded
