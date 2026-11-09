@@ -14,7 +14,7 @@ from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, QUrl, p
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
 from app import __version__
-from app.services.gitutil import changed_paths, current_head, find_git_root, git_available
+from app.services.gitutil import changed_paths, current_head, find_git_root, git_available, is_pristine_release
 from app.services.releases import Release, newest_release, remote_tags
 
 # The first check runs shortly after launch so startup isn't slowed; after that the watcher
@@ -29,6 +29,9 @@ PUBLISHED_CHECK_TIMEOUT_MS = 20_000
 GIT_TIMEOUT_MS = 120_000
 #: Message of the stash a forced update keeps the local changes in.
 FORCE_UPDATE_STASH_MESSAGE = "WhisperTyper: local changes before a forced update"
+#: Added to the update output when a checkout from a rewritten history was moved to the release.
+REWRITTEN_HISTORY_NOTE = ("The release history was rewritten; the checkout matched {tag} exactly "
+                          "and was moved to the new release without losing anything.")
 _NOT_FOUND = 404
 
 #: Answers whether a release is published (True/False), or None when GitHub could not be asked.
@@ -60,6 +63,9 @@ class GitUpdater(QObject):
         # The git commands of the running update that are still to come, and their collected output.
         self._pending_steps: List[List[str]] = []
         self._pull_output: List[str] = []
+        # A failed fast-forward may come from a rewritten release history (see _check_rewritten_history).
+        self._recoverable = False
+        self._verifying_rewrite = False
         #: The last update changed requirements.txt (dependencies to install before restarting).
         self.requirements_changed = False
         self._check: Optional[QProcess] = None
@@ -116,9 +122,12 @@ class GitUpdater(QObject):
         # --ff-only keeps this safe as a one-click action: if the checkout has diverged (local
         # commits, changes in the way) git refuses with a clear message instead of opening a
         # blocking merge-commit editor. A checkout already past the release stays where it is.
+        # A checkout that cannot fast-forward only because the release history was rewritten
+        # (its files are exactly the installed release) is moved to the new release instead.
         if self.latest is not None:
             self._run_update(self.latest, [_fetch_tag(self.latest),
-                                           ["merge", "--ff-only", f"refs/tags/{self.latest.tag}"]])
+                                           ["merge", "--ff-only", f"refs/tags/{self.latest.tag}"]],
+                             recoverable=True)
 
     def force_update(self) -> None:
         """Move the checkout to the newest release even with local changes or commits.
@@ -132,8 +141,11 @@ class GitUpdater(QObject):
                                            ["stash", "push", "--include-untracked", "-m", FORCE_UPDATE_STASH_MESSAGE],
                                            ["reset", "--hard", f"refs/tags/{self.latest.tag}"]])
 
-    def _run_update(self, release: Release, steps: List[List[str]]) -> None:
-        """Run the git commands one after another; the first failing one ends the update."""
+    def _run_update(self, release: Release, steps: List[List[str]], recoverable: bool = False) -> None:
+        """Run the git commands one after another; the first failing one ends the update.
+
+        ``recoverable`` updates first check a failure for a rewritten release history.
+        """
         if not self.root or self._pull is not None:
             return
         if self._check is not None:
@@ -148,6 +160,8 @@ class GitUpdater(QObject):
         self._pre_pull_head = current_head(self.root)
         self._pending_steps = list(steps)
         self._pull_output = []
+        self._recoverable = recoverable
+        self._verifying_rewrite = False
         if len(steps) > 2 and self._pre_pull_head:
             self._pull_output.append(f"HEAD {self._pre_pull_head}")
         self._start_next_step()
@@ -203,13 +217,23 @@ class GitUpdater(QObject):
         logging.info("git update step finished (exit=%s): %s", exit_code, output)
         if output:
             self._pull_output.append(output)
-        if exit_code == 0 and self._pending_steps:
+        succeeded = exit_code == 0
+        if succeeded and self._pending_steps:
             self._start_next_step()
+            return
+        if self._verifying_rewrite:
+            # The fetched release decides; if it differs, the failed fast-forward is the result.
+            self._verifying_rewrite = False
+            if succeeded and self._continue_after_rewrite():
+                return
+            succeeded = False
+        elif not succeeded and self._recoverable and not self._pending_steps and self.current is not None:
+            self._check_rewritten_history(self.current)
             return
         self._pending_steps = []
         output = "\n".join(self._pull_output)
         pre_head, self._pre_pull_head = self._pre_pull_head, None
-        if exit_code != 0:
+        if not succeeded:
             self.pull_finished.emit(False, False, output)
             return
         new_head = current_head(self.root or "")
@@ -224,6 +248,29 @@ class GitUpdater(QObject):
             self.requirements_changed = bool(pre_head and new_head and changed_paths(
                 self.root or "", pre_head, new_head, ["requirements.txt"]))
         self.pull_finished.emit(True, changed, output)
+
+    def _check_rewritten_history(self, installed: Release) -> None:
+        """After a failed fast-forward, fetch the release the checkout should hold, for a comparison.
+
+        A rewritten history (same files, new commit IDs, e.g. a changed author address) never
+        fast-forwards; the local tag still names the old commit, so the published one is fetched.
+        """
+        self._recoverable = False
+        self._verifying_rewrite = True
+        self._pending_steps = [_fetch_tag(installed)]
+        self._start_next_step()
+
+    def _continue_after_rewrite(self) -> bool:
+        """Move a checkout that is exactly its published release to the new one; False if it is not."""
+        if self.current is None or self.target is None:
+            return False
+        if not is_pristine_release(self.root or "", f"refs/tags/{self.current.tag}"):
+            return False
+        logging.info("Checkout matches the rewritten %s; moving it to %s.", self.current.tag, self.target.tag)
+        self._pull_output.append(REWRITTEN_HISTORY_NOTE.format(tag=self.current.tag))
+        self._pending_steps = [["reset", "--hard", f"refs/tags/{self.target.tag}"]]
+        self._start_next_step()
+        return True
 
     def _check_in_background(self) -> None:
         """A periodic check; a failed one (offline, VPN down, …) is retried on the next tick."""

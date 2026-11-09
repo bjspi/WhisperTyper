@@ -135,3 +135,62 @@ def test_updates_move_the_checkout_to_the_release_tag(monkeypatch, tmp_path):
     assert started[-1][-1] == ["reset", "--hard", "refs/tags/v0.16.0"]
     assert updater.target == Release(0, 16, 0)
 
+
+
+def test_a_checkout_of_a_rewritten_release_moves_to_the_new_one(monkeypatch, tmp_path):
+    updater = make_updater(monkeypatch, tmp_path)
+    updater.current = Release(0, 15, 0)
+    updater.latest = Release(0, 16, 0)
+    started = []
+    monkeypatch.setattr(QProcess, "start", lambda self, program, arguments: started.append(arguments))
+    monkeypatch.setattr(updater_module, "current_head", lambda root: "old")
+    monkeypatch.setattr(updater_module, "changed_paths", lambda *args: [])
+    pristine = []
+    monkeypatch.setattr(updater_module, "is_pristine_release", lambda root, tag: pristine.append(tag) or True)
+    results = []
+    updater.pull_finished.connect(lambda *result: results.append(result))
+
+    def finish(exit_code: int) -> None:
+        updater._pull = _FakeProcess("")
+        updater._on_pull_finished(exit_code, QProcess.ExitStatus.NormalExit)
+
+    updater.pull()
+    finish(0)  # The new tag was fetched,
+    finish(128)  # but it does not fast-forward: the installed release is fetched to compare.
+    assert started[-1][-1] == "+refs/tags/v0.15.0:refs/tags/v0.15.0" and results == []
+    finish(0)
+    assert pristine == ["refs/tags/v0.15.0"]
+    assert started[-1] == ["reset", "--hard", "refs/tags/v0.16.0"]
+    monkeypatch.setattr(updater_module, "current_head", lambda root: "new")
+    finish(0)
+    assert results[0][:2] == (True, True) and "rewritten" in results[0][2]
+
+
+def test_a_changed_checkout_still_reports_the_failed_fast_forward(monkeypatch, tmp_path):
+    updater = make_updater(monkeypatch, tmp_path)
+    updater.current = Release(0, 15, 0)
+    updater.latest = Release(0, 16, 0)
+    started = []
+    monkeypatch.setattr(QProcess, "start", lambda self, program, arguments: started.append(arguments))
+    monkeypatch.setattr(updater_module, "current_head", lambda root: "old")
+    monkeypatch.setattr(updater_module, "is_pristine_release", lambda root, tag: False)
+    results = []
+    updater.pull_finished.connect(lambda *result: results.append(result))
+
+    def finish(exit_code: int, output: str = "") -> None:
+        updater._pull = _FakeProcess(output)
+        updater._on_pull_finished(exit_code, QProcess.ExitStatus.NormalExit)
+
+    updater.pull()
+    finish(0)
+    finish(128, "fatal: Not possible to fast-forward, aborting.")
+    finish(0)
+    assert results == [(False, False, "fatal: Not possible to fast-forward, aborting.")]
+    assert not any(step[:1] == ["reset"] for step in started)
+
+    # A forced update never takes the detour; nor does an offline fetch of the new tag.
+    updater.force_update()
+    finish(128)
+    updater.pull()
+    finish(128)
+    assert len(results) == 3 and len(started) == 5

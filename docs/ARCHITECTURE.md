@@ -218,8 +218,10 @@ sequenceDiagram
 - **Self-update to release tags.** When run from a source checkout, a background
   `git ls-remote --tags` watcher looks for a `vX.Y.Z` tag newer than `app.__version__`
   whose GitHub release (source ZIP) is published, fetches that tag and names the version
-  in the tray entry. Updating fast-forwards to the tag (`git merge --ff-only`); after a
-  failure a forced update stashes local changes and resets to the tag. Frozen (PyInstaller) builds never see this menu entry.
+  in the tray entry. Updating fast-forwards to the tag (`git merge --ff-only`). If that fails
+  because the release history was rewritten (the checkout's files are exactly the published
+  tag of its version, with no local changes), it resets to the new tag without asking; after any
+  other failure a forced update stashes local changes and resets to the tag. Frozen (PyInstaller) builds never see this menu entry.
 - **Missing packages.** `platform/installation.py` tells how WhisperTyper is installed
   (checkout, pipx, `uv tool`, `uvx`, other package, frozen) and installs into the running
   environment with its own pip, or with `uv pip install --python …` where uv left out pip. An

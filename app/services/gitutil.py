@@ -16,6 +16,9 @@ from typing import List, Optional
 from app.core.paths import resource_path
 from app.platform.system import no_window_kwargs
 
+#: Local git calls (no network) that take longer than this are hung.
+GIT_LOCAL_TIMEOUT_S = 10
+
 
 def project_root() -> str:
     """Return the source-checkout root (the parent of the bundled ``app`` package)."""
@@ -41,6 +44,24 @@ def git_available() -> bool:
     return shutil.which("git") is not None
 
 
+def _git(root: str, arguments: List[str]) -> Optional[str]:
+    """Run a fast, offline git command in ``root``; its stdout, or ``None`` when git fails."""
+    try:
+        result = subprocess.run(
+            ["git", *arguments],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=GIT_LOCAL_TIMEOUT_S,
+            **no_window_kwargs(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout if result.returncode == 0 else None
+
+
 def current_head(root: str) -> Optional[str]:
     """Return the current commit SHA of the checkout at ``root``, or ``None`` on failure.
 
@@ -48,38 +69,30 @@ def current_head(root: str) -> Optional[str]:
     by comparing the HEAD before and after a pull, which is robust against git's localized
     "Already up to date." wording.
     """
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            **no_window_kwargs(),
-        )
-    except (OSError, subprocess.SubprocessError):
+    output = _git(root, ["rev-parse", "HEAD"])
+    if output is None:
         return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip() or None
+    return output.strip() or None
 
 
 def changed_paths(root: str, old: str, new: str, paths: List[str]) -> List[str]:
     """Which of ``paths`` differ between commits ``old`` and ``new`` (empty on any git failure)."""
-    try:
-        result = subprocess.run(
-            ["git", "diff", "--name-only", old, new, "--", *paths],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            **no_window_kwargs(),
-        )
-    except (OSError, subprocess.SubprocessError):
-        return []
-    if result.returncode != 0:
-        return []
-    return [line for line in result.stdout.splitlines() if line.strip()]
+    output = _git(root, ["diff", "--name-only", old, new, "--", *paths]) or ""
+    return [line for line in output.splitlines() if line.strip()]
+
+
+def is_pristine_release(root: str, tag: str) -> bool:
+    """Whether the checkout holds exactly the (already fetched) ``tag``'s files and nothing else.
+
+    Compares content, not commits: after the release history was rewritten (same files, new
+    commit IDs) the checkout no longer fast-forwards, yet replacing it loses nothing. Local
+    edits or untracked files count as a difference; ignored files such as the config do not.
+    """
+    trees = _git(root, ["rev-parse", "HEAD^{tree}", f"{tag}^{{tree}}"])
+    if trees is None:
+        return False
+    head_tree, tag_tree = trees.split()
+    return head_tree == tag_tree and _git(root, ["status", "--porcelain"]) == ""
 
 
 #: The changes shown before an update are cut off here; a full diff of a big release is unreadable anyway.
@@ -95,22 +108,10 @@ def release_changes(root: str, tag: str) -> Optional[str]:
     for arguments in (["log", "--oneline", "--no-decorate", f"HEAD..{tag}"],
                       ["diff", "--stat", "HEAD", tag],
                       ["diff", "HEAD", tag]):
-        try:
-            result = subprocess.run(
-                ["git", *arguments],
-                cwd=root,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=10,
-                **no_window_kwargs(),
-            )
-        except (OSError, subprocess.SubprocessError):
+        output = _git(root, arguments)
+        if output is None:
             return None
-        if result.returncode != 0:
-            return None
-        parts.append(result.stdout.strip())
+        parts.append(output.strip())
     changes = "\n\n".join(part for part in parts if part)
     if len(changes) > MAX_CHANGES_CHARS:
         changes = changes[:MAX_CHANGES_CHARS] + "\n\n[…]"
