@@ -1,7 +1,8 @@
 """How WhisperTyper sits in the system: the ``whispertyper`` terminal command and the Start menu entry.
 
 Both follow their settings (on by default): applied at every start, which also installs them
-after a fresh install or a moved environment, and again when a switch is toggled. The work runs
+after a fresh install or a moved environment, and again when a switch is toggled. An enabled
+start at login (the tray switch; the registry is its only state) is pointed at this installation too. The work runs
 on a background thread (the Start menu link is written through PowerShell); the icon is rendered
 on the GUI thread first, because it needs Qt.
 """
@@ -23,12 +24,13 @@ from app.core.constants import APP_DATA_DIR
 from app.core.env import is_WINDOWS
 from app.core.icon_file import IconImage, ico_file
 from app.core.paths import resource_path
-from app.platform import command_shim, start_menu
+from app.platform import autostart, command_shim, start_menu
 from app.services.gitutil import project_root
 from app.ui.durations import BALLOON_WARNING_MS
 
 #: Set for a run with a throwaway home folder (local_test/fresh_start.py) and inherited by its child
-#: processes: it must neither add that folder to the real user PATH nor rewrite the Start menu entry.
+#: processes: it must neither add that folder to the real user PATH nor rewrite the Start menu entry
+#: or the start at login.
 SKIP_ENV = "WHISPERTYPER_SKIP_SYSTEM_INTEGRATION"
 #: Config switches (see DEFAULT_CONFIG).
 COMMAND_KEY = "command_on_path"
@@ -80,7 +82,8 @@ class SystemIntegration:
     def _apply_both(wanted: _Wanted, icon: Sequence[IconImage]) -> List[str]:
         """Bring both in line with ``wanted``; returns the problems."""
         results = (SystemIntegration._apply_command(wanted.command, icon),
-                   SystemIntegration._apply_start_menu(wanted.start_menu, icon))
+                   SystemIntegration._apply_start_menu(wanted.start_menu, icon),
+                   SystemIntegration._refresh_autostart())
         return [problem for problem in results if problem]
 
     @staticmethod
@@ -114,6 +117,19 @@ class SystemIntegration:
             start_menu.create(tray_command(), _entry_icon(icon), Path(project_root()))
         except OSError as error:
             logging.warning("Start menu entry not updated: %s", error)
+            return str(error)
+        return ""
+
+    @staticmethod
+    def _refresh_autostart() -> str:
+        """Point an enabled start at login at this installation; returns the problem, or ""."""
+        if not autostart.supported():
+            return ""
+        try:
+            if autostart.refresh(tray_command()):
+                logging.info("Start at login now runs %s", tray_command())
+        except OSError as error:
+            logging.warning("Start at login not updated: %s", error)
             return str(error)
         return ""
 

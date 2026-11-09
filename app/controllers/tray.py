@@ -15,6 +15,7 @@ from app.context import AppContext
 from app.controllers.file_actions import FileActions
 from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED, UNAVAILABLE, LocalEngineController
 from app.controllers.recording import RecordingController
+from app.controllers.system_integration import tray_command
 from app.controllers.transcription import TranscriptionPipeline
 from app.core.api_keys import rephrasing_enabled, transcription_configured
 from app.core.audio_formats import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, requires_ffmpeg
@@ -23,6 +24,7 @@ from app.core.env import is_MACOS
 from app.core.expert_mode import expert_mode_shown
 from app.core.hotkeys import pretty_hotkey
 from app.local_engine.supervisor import OFF, READY, EngineStatus
+from app.platform import autostart
 from app.platform.installation import REQUIREMENTS_FILE, repair_command
 from app.services import bad_recordings
 from app.services.ffmpeg import resolve_ffmpeg
@@ -58,6 +60,8 @@ _MODERN_ICONS = {
     "tray_restart_action": "restart",
     "tray_quit_action": "quit",
 }
+#: Modern design: the line icon that marks a switch as on (off shows none, the text stays aligned).
+_SWITCH_ON_ICON = "check"
 
 
 class SettingsWindowLike(Protocol):
@@ -126,6 +130,7 @@ class TrayController(QObject):
         self.updater.pull_failed_to_start.connect(self._on_update_failed_to_start)
         self.updater.checked.connect(self._on_update_checked)
         self.update_action: Optional[QAction] = None
+        self.autostart_action: Optional[QAction] = None
         self._header_status: Optional[QLabel] = None
         self._tooltip = ""
         self._local_engine = local_engine
@@ -266,6 +271,7 @@ class TrayController(QObject):
         self.open_config_action = add(sp.SP_FileIcon, "menu_file_open_config", "o", self._files.open_config_file)
         self.transformations_action = add(sp.SP_FileDialogListView, "tray_edit_transformations_action", "t",
                                           self._settings.show_transformations)
+        self.autostart_action = self._add_autostart_switch(tray_menu, modern) if autostart.supported() else None
         tray_menu.addSeparator()
         add(sp.SP_FileDialogContentsView, "tray_copy_action", "c", self._pipeline.copy_last_transcription)
         self.retranscribe_action = add(sp.SP_BrowserReload, "tray_retranscribe_action", "r",
@@ -321,7 +327,48 @@ class TrayController(QObject):
         _offer(self.open_config_action, expert)
         _offer(self.github_action, expert)
         _offer(self.transformations_action, rephrasing_enabled(self._ctx.config))
+        self._refresh_autostart_switch()
         self._refresh_local_menu()
+
+    # --- Start at login --------------------------------------------------------------------
+    def _add_autostart_switch(self, tray_menu: BadgeTrayMenu, modern: bool) -> QAction:
+        """The "Start with Windows" switch; its state is set from the registry in ``refresh_actions``.
+
+        The modern design marks "on" with a check icon (a checkable action would draw Qt's own
+        mark over the styled icon column); the classic design uses a plain checkable entry.
+        """
+        action = tray_menu.addAction(self._ctx.tr("tray_autostart_action"))
+        assert action is not None
+        action.setCheckable(not modern)
+        tray_menu.register_badge("w", action)
+        action.triggered.connect(lambda _checked=False: self.toggle_autostart())
+        return action
+
+    def _refresh_autostart_switch(self) -> None:
+        """Show whether WhisperTyper starts at login, as the registry says right now."""
+        action = self.autostart_action
+        if action is None:
+            return
+        enabled = autostart.is_enabled()
+        if action.isCheckable():
+            action.setChecked(enabled)
+        else:
+            action.setIcon(line_icon(_SWITCH_ON_ICON, self._menu_icon_color()) if enabled else QIcon())
+
+    def toggle_autostart(self) -> None:
+        """Switch the start at login; a failure is logged and shown in a balloon."""
+        enable = not autostart.is_enabled()
+        try:
+            if enable:
+                autostart.enable(tray_command())
+            else:
+                autostart.disable()
+        except OSError as error:
+            logging.error("autostart_toggle_failed enable=%s error=%s", enable, error)
+            self._ctx.notifier.show(self._ctx.tr("tray_autostart_failed_message", error=error), BALLOON_WARNING_MS)
+        else:
+            logging.info("autostart_toggled enabled=%s", enable)
+        self._refresh_autostart_switch()
 
     # --- Local transcription submenu ---------------------------------------------------
     def _build_local_menu(self, tray_menu: BadgeTrayMenu, modern: bool) -> None:

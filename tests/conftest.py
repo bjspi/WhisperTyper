@@ -8,7 +8,7 @@ of module-scoped fixtures alive while their tests run.
 from __future__ import annotations
 
 import importlib.util
-from typing import Iterator, Set
+from typing import Dict, Iterator, Optional, Set
 
 import pytest
 
@@ -36,6 +36,24 @@ def _keep_real_microphones_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.audio.mic_scout import MicrophoneScout
 
     monkeypatch.setattr(MicrophoneScout, "start", lambda _self: None)
+
+
+@pytest.fixture(autouse=True)
+def run_key(monkeypatch: pytest.MonkeyPatch) -> Dict[str, str]:
+    """A test never reads or writes this computer's start at login: the Run key value lives in a dict."""
+    from app.platform import autostart
+
+    values: Dict[str, str] = {}
+
+    def write(command_line: Optional[str]) -> None:
+        if command_line is None:
+            values.pop(autostart.VALUE_NAME, None)
+        else:
+            values[autostart.VALUE_NAME] = command_line
+
+    monkeypatch.setattr(autostart, "_read_run_value", lambda: values.get(autostart.VALUE_NAME))
+    monkeypatch.setattr(autostart, "_write_run_value", write)
+    return values
 
 
 def _windows_now() -> Set[int]:
