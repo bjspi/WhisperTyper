@@ -64,7 +64,7 @@ class MouseFollowerTooltip(QWidget):
         self.label = QLabel(self)
         if dark is None:
             dark = theme.is_dark_mode(QApplication.instance())
-        pal = theme.palette(dark)
+        pal = theme.overlay_palette(dark)
         # A green that reads as "success" and stays legible on the panel in either theme.
         self._check_color = "#66bb6a" if dark else "#2e7d32"
         self._detail_color = {"good": self._check_color, "warn": "#ffca28" if dark else "#b26a00",

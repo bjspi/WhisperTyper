@@ -605,8 +605,8 @@ def main() -> int:
         original_profiles = tab.profiles()
         original_selection = (wt.ctx.config["transcription_key_profile_id"], wt.ctx.config["rephrasing_key_profile_id"])
         check("keys: table uses theme separators instead of the native grid", not table.showGrid())
-        # The modern design splits the API providers into a transcription and a rephrasing page.
-        provider_pages = 2 if sw.is_modern() else 1
+        # The API providers are split into a transcription and a rephrasing page.
+        provider_pages = 2
         check("keys: API keys tab follows the API providers tab",
               sw.tabs.indexOf(tab) == sw.tabs.indexOf(sw.transcription_tab) + provider_pages)
         check("keys: legacy identical keys migrated into one profile", len(original_profiles) == 1

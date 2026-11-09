@@ -99,7 +99,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
         <img src="screenshots/app/settings-general.jpg" alt="General settings: UI language, theme, design, proxy and clipboard options" />
       </a>
       <br />
-      <sub><b>🔧 General</b> — UI language (EN/DE/ES/FR), light/dark/system theme, modern or classic design, proxy support, IPv4/IPv6 connection choice, and the clipboard-safe mode that restores your clipboard after every paste.</sub>
+      <sub><b>🔧 General</b> — UI language (EN/DE/ES/FR), light/dark/system theme, proxy support, IPv4/IPv6 connection choice, and the clipboard-safe mode that restores your clipboard after every paste.</sub>
     </td>
     <td align="center" width="50%" valign="top">
       <a href="screenshots/app/settings-advanced.jpg" target="_blank">
@@ -155,7 +155,7 @@ This tool is designed for developers, writers, and anyone who wants to leverage 
     -   Fine-tune transcription with custom prompts to improve accuracy for specific jargon or formatting.
     -   Adjustable microphone **volume gain** to boost input from quieter microphones, significantly increasing accuracy.
 -   **Expert Mode**: A switch at the bottom of the settings sidebar shows every setting; off, only the ones most people need are shown, and hidden settings keep their values. A new installation starts with it off.
--   **Settings Search**: The field above the settings sidebar (or Ctrl+F, Cmd+F on macOS) finds every setting by its title or description; Enter or a click opens its page and lights the setting up, switching Expert Mode on if the setting is hidden with it. Modern design only.
+-   **Settings Search**: The field above the settings sidebar (or Ctrl+F, Cmd+F on macOS) finds every setting by its title or description; Enter or a click opens its page and lights the setting up, switching Expert Mode on if the setting is hidden with it.
 -   **Multi-Language UI**: The application interface is available in English, German, Spanish, and French.
 -   **Cross-Platform**: Works on Windows, macOS, and Linux.
 

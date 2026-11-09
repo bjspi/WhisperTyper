@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, Optional
 from PyQt6 import uic
 from PyQt6.QtCore import QSignalBlocker, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QCloseEvent
-from PyQt6.QtWidgets import QApplication, QMenuBar, QSizePolicy, QStyle
+from PyQt6.QtWidgets import QApplication, QSizePolicy, QStyle
 
 from app.audio.playback import WavPlayer
 from app.context import AppContext
@@ -34,7 +34,7 @@ from app.ui.replacements import ReplacementsTab
 from app.ui.settings.api_page import ApiPage
 from app.ui.settings.bindings import PLATFORMS, load_bindings, save_bindings
 from app.ui.settings.general_page import GeneralPage
-from app.ui.settings.modern_chrome import ModernChrome
+from app.ui.settings.modern_chrome import CHROME_WIDTH, ModernChrome
 from app.ui.settings.modern_prompts import ModernPromptsPage
 from app.ui.settings.recording_page import RecordingPage
 from app.ui.settings.texts import apply_texts
@@ -76,9 +76,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self.local_engine = local_engine or LocalEngineController(ctx)
 
         uic.loadUi(resource_path("resources", "main_window.ui"), self)
-        # The design is fixed for the window's lifetime; switching it takes a restart.
-        self._modern = bool(self.config.get("modern_design", True))
-        self._build_menu_bar()
+        self._build_window_actions()
 
         # Pages and controls the .ui file does not contain.
         self._api_keys_tab = ApiKeysTab(self.config["api_key_profiles"], self.translator, self)
@@ -127,6 +125,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
             SliderWheelToScrollArea(self.rephrasing_temp_slider, self.transcription_scroll_area)
         self._build_save_row()
         self._install_modern_chrome()
+        self._init_playback()
         self.aac_bitrates_ready.connect(self._apply_aac_bitrates)
         ctx.files_changed.connect(self.refresh_actions)
 
@@ -138,56 +137,44 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self.apply_theme()
         compact_layouts(self)
         theme.round_combo_popups(self)
-        if self._modern:
-            self._build_modern_rows()
-            self._apply_expert_mode()  # also refreshes the API state: the sidebar follows a switched-off rephrasing
+        self._build_modern_rows()
+        self._apply_expert_mode()  # also refreshes the API state: the sidebar follows a switched-off rephrasing
         self.retranslate_ui()
         self.refresh_actions()
 
         # Enforce a minimum window size and restore the last size.
-        # The minimum width follows the design (see ``_apply_design``).
+        # The minimum width includes the sidebar (see ``_install_modern_chrome``).
         self.setMinimumHeight(WINDOW_MIN_HEIGHT)
         try:
             width = max(int(self.config.get("window_width", _DEFAULT_WINDOW_WIDTH)), WINDOW_MIN_WIDTH)
             height = max(int(self.config.get("window_height", WINDOW_MIN_HEIGHT)), WINDOW_MIN_HEIGHT)
         except (TypeError, ValueError):
             width, height = _DEFAULT_WINDOW_WIDTH, WINDOW_MIN_HEIGHT
-        self.resize(width + self.design_extra_width(), height)
+        self.resize(width + CHROME_WIDTH, height)
         self.fit_height_to_pages()
 
-    def _build_menu_bar(self) -> None:
-        """File/Help menus and the branding header above the tabs (captions come from retranslate)."""
-        self.menu_bar = QMenuBar(self)
-        self.main_layout.insertWidget(0, self.menu_bar)
-        self.main_layout.setContentsMargins(0, 0, 0, 5)
-        self._install_brand_header()
+    def _build_window_actions(self) -> None:
+        """The actions of the sidebar's More menu (captions come from retranslate, icons from the theme)."""
+        for attr, handler in (
+            ("open_config_action", self._files.open_config_file),
+            ("open_log_file_action", self._files.open_log_file),
+            ("exit_action", self._quit_app),
+            ("about_action", self.show_about_dialog),
+            ("github_action", self._files.open_github_link),
+        ):
+            action = QAction("", self)
+            action.triggered.connect(lambda _checked=False, handler=handler: handler())
+            setattr(self, attr, action)
+
+    def _init_playback(self) -> None:
+        """The sidebar's play button plays the last recording in the app."""
         self._player = WavPlayer()
         self._playback_generation = 0
         self._playing_path: Optional[str] = None
-        self.brand_play_button.clicked.connect(self._toggle_playback)
+        self.play_button.clicked.connect(self._toggle_playback)
         self.playback_finished.connect(self._on_playback_finished)
         # The microphone would record the playback from the speakers: stop it when a recording starts.
         self._recording.state_changed.connect(self._stop_playback_for_recording)
-        file_menu = self.menu_bar.addMenu("")
-        help_menu = self.menu_bar.addMenu("")
-        assert file_menu is not None and help_menu is not None
-        self.file_menu, self.help_menu = file_menu, help_menu
-        for menu, attr, handler in (
-            (file_menu, "open_config_action", self._files.open_config_file),
-            (file_menu, "open_log_file_action", self._files.open_log_file),
-            (file_menu, "play_last_recording_action", self._files.play_latest_recording),
-            (file_menu, None, None),
-            (file_menu, "exit_action", self._quit_app),
-            (help_menu, "about_action", self.show_about_dialog),
-            (help_menu, "github_action", self._files.open_github_link),
-        ):
-            if attr is None or handler is None:
-                menu.addSeparator()
-                continue
-            action = QAction("", self)
-            action.triggered.connect(lambda _checked=False, handler=handler: handler())
-            menu.addAction(action)
-            setattr(self, attr, action)
 
     def _build_save_row(self) -> None:
         """Footer row: the Prompts tab's add/remove buttons share the line with a compact Save button."""
@@ -257,14 +244,13 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
     def refresh_actions(self) -> None:
         """Enable the file actions only when their files exist."""
         self.open_log_file_action.setEnabled(self._files.log_file_exists())
-        self.play_last_recording_action.setEnabled(self.ctx.recordings.exists())
         latest = self.ctx.recordings.latest()
-        self.brand_play_button.setEnabled(latest is not None)
+        self.play_button.setEnabled(latest is not None)
         if self._playing_path is not None and self._playing_path != latest:
             # A new recording replaced the one playing: the button belongs to the newest recording.
             self._stop_playback()
 
-    # --- Playback of the last recording (header button) ---------------------------------
+    # --- Playback of the last recording (sidebar button) --------------------------------
     def _toggle_playback(self) -> None:
         """Play the newest recording in the app, or stop the running playback."""
         if self._playing_path is not None:
@@ -344,7 +330,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
                                   self.translator.tr("ok_button"), message_dialog.ERROR)
         logging.info("settings_saved changes: %s", describe_changes(before, self.config))
         self._snapshot_live_config()
-        self.update_brand_header()
+        self.update_hotkey_badge()
         if hotkeys_changed:
             self.hotkeys_changed.emit()
         self.saved.emit()
@@ -390,18 +376,6 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self.setWindowTitle(tr("window_title"))
         apply_texts(self, tr)
         self.language_input.setItemText(self.language_input.findData(DETECT_LANGUAGE), tr("input_language_detect"))
-        for tab, title_key, tooltip_key in (
-            (self.transcription_tab, "tab_transcription", "tooltip_tab_transcription"),
-            (self.post_rephrasing_tab, "tab_transformations", "tooltip_tab_transformations"),
-            (self._api_keys_tab, "tab_api_keys", "tooltip_tab_api_keys"),
-            *([(self._local_engine_tab, "tab_local_engine", "tooltip_tab_local_engine")]
-              if LOCAL_ENGINE_SUPPORTED else []),
-            (self._replacements_tab, "tab_replacements", "tooltip_tab_replacements"),
-            (self.general_tab, "tab_general", "tooltip_tab_general"),
-        ):
-            index = self.tabs.indexOf(tab)
-            self.tabs.setTabText(index, tr(title_key))
-            self.tabs.setTabToolTip(index, tr(tooltip_key))
         self.transformations_info_label.setText(tr("transformations_info", max_entries=self._transformations.max_entries))
         self._transformations.retranslate()
         self._api_keys_tab.retranslate_ui()
@@ -418,8 +392,8 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self._refresh_api_state()
         # The texts table sets the general temperature tooltip; models without temperature say why.
         self._update_prompt_token_counter()
-        self.update_brand_header()
-        self._retranslate_modern_chrome()
+        self.update_hotkey_badge()
+        self._retranslate_modern_chrome()  # page titles and subtitles too
         self.language_changed.emit()
 
     def show_window(self) -> None:
@@ -481,8 +455,8 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self._discard_live_edits()
         try:
             # Only the size is persisted: the form's other edits wait for Save. The width excludes
-            # the modern sidebar, so both designs open with pages of the same width.
-            self.config["window_width"] = self.width() - self.design_extra_width()
+            # the sidebar: it is the width of the pages.
+            self.config["window_width"] = self.width() - CHROME_WIDTH
             self.config["window_height"] = self.height()
             self.ctx.save_config_keys("window_width", "window_height")
         except Exception as e:

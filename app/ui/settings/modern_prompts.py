@@ -1,7 +1,7 @@
-"""Modern design of the Prompts page: a card with the prompt list beside a card with the editor.
+"""The Prompts page: a card with the prompt list beside a card with the editor.
 
-Like the other modern pages it reuses the widgets of the classic page (built from the .ui file and
-driven by ``TransformationsEditor``) and only arranges them differently.
+Like the other pages it reuses the widgets of the .ui file's page (driven by
+``TransformationsEditor``) and only arranges them differently.
 """
 from __future__ import annotations
 
@@ -116,7 +116,7 @@ class ModernPromptsPage(SettingsWindowBase):
     """Arrange the Prompts page as list card, editor card and a card for the recording palette options."""
 
     def _build_modern_prompts_page(self) -> None:
-        """Rebuild the Prompts page (modern design, at startup)."""
+        """Rebuild the Prompts page (at startup)."""
         tr = self.translator.tr
         editor = self._transformations
         prompt_list = editor.list
@@ -206,7 +206,7 @@ class ModernPromptsPage(SettingsWindowBase):
         self.ctx.notifier.show(self._prompts_help_text(), BALLOON_MAX_MS)
 
     def _retranslate_modern_prompts_page(self) -> None:
-        """Card titles of the modern Prompts page."""
+        """Card titles of the Prompts page."""
         tr = self.translator.tr
         self.prompts_list_group.setTitle(tr("prompts_list_title"))
         self.prompts_editor_group.setTitle(tr("prompts_editor_title"))

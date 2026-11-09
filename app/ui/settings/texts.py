@@ -44,13 +44,10 @@ def _api_group_texts(provider_label: str, provider: str, model_label: str, model
 
 
 TEXTS: Tuple[Text, ...] = (
-    # Menus
-    Text("menu_file", "file_menu"),
+    # The sidebar's More menu
     Text("menu_file_open_config", "open_config_action"),
     Text("tray_log_action", "open_log_file_action"),
-    Text("tray_play_action", "play_last_recording_action"),
     Text("menu_file_exit", "exit_action"),
-    Text("menu_help", "help_menu"),
     Text("menu_help_about", "about_action"),
     Text("menu_help_github", "github_action"),
     # Transcription
@@ -128,7 +125,6 @@ TEXTS: Tuple[Text, ...] = (
     # General
     Text("ui_language_label", "ui_language_label"),
     Text("color_theme_label", "color_theme_label"),
-    _check("modern_design_checkbox", "modern_design_checkbox", "modern_design_tooltip"),
     _check("expert_mode_checkbox", "expert_mode_checkbox", "expert_mode_tooltip"),
     Text("input_device_label", "input_device_label"),
     _check("restore_clipboard_checkbox", "restore_clipboard_checkbox"),

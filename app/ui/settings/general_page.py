@@ -10,7 +10,6 @@ from app.controllers.system_integration import COMMAND_KEY, START_MENU_KEY
 from app.core.env import is_WINDOWS
 from app.core.i18n import UI_LANGUAGES
 from app.platform import command_shim, start_menu
-from app.ui import message_dialog
 from app.ui.about_dialog import show_about
 from app.ui.durations import BALLOON_MAX_MS
 from app.ui.settings.base import SettingsWindowBase
@@ -75,10 +74,6 @@ class GeneralPage(SettingsWindowBase):
 
         self.post_rephrase_auto_select_all_checkbox = QCheckBox(self)
         self.misc_layout.addWidget(self.post_rephrase_auto_select_all_checkbox)
-        # Applies at once, like the colour theme above it.
-        self.modern_design_checkbox = QCheckBox(self)
-        self.modern_design_checkbox.setChecked(bool(self.config.get("modern_design", True)))
-        self.general_layout.insertWidget(self.general_layout.indexOf(self.misc_group), self.modern_design_checkbox)
         self._build_system_integration_group()
 
     def _build_system_integration_group(self) -> None:
@@ -104,7 +99,6 @@ class GeneralPage(SettingsWindowBase):
         self.ui_language_selector.currentIndexChanged.connect(
             lambda _index: self.change_language(self.ui_language_selector.currentData()))
         self.color_theme_selector.currentIndexChanged.connect(self._on_color_theme_changed)
-        self.modern_design_checkbox.toggled.connect(self._on_modern_design_toggled)
         for checkbox, key, _supported in self._system_integration_switches():
             checkbox.toggled.connect(lambda checked, config_key=key: self._on_system_integration_toggled(config_key, checked))
         self.input_device_selector.currentIndexChanged.connect(self._on_input_device_changed)
@@ -127,17 +121,6 @@ class GeneralPage(SettingsWindowBase):
         self.config["color_theme"] = self.color_theme_selector.currentData() or "system"
         self.ctx.save_config_keys("color_theme")
         self.apply_theme()
-
-    def _on_modern_design_toggled(self, checked: bool) -> None:
-        """Persist the design choice; it applies after a restart, which is offered right away."""
-        self.config["modern_design"] = checked
-        self.ctx.save_config_keys("modern_design")
-        if checked == self._modern:
-            return  # switched back before restarting
-        tr = self.translator.tr
-        if message_dialog.ask(self, tr("modern_design_restart_title"), tr("modern_design_restart_text"),
-                              tr("update_restart_button"), tr("update_later_button")):
-            self.restart_requested.emit()
 
     def _on_system_integration_toggled(self, key: str, checked: bool) -> None:
         """Persist the switch and have the command or the Start menu entry added or removed now."""

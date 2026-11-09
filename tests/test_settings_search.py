@@ -55,9 +55,9 @@ def qapp():
 
 @pytest.fixture
 def window(qapp, tmp_path, delete_windows_after_test):
-    """The modern design with expert mode off, shown, so visibility checks mean something."""
+    """The window with expert mode off, shown, so visibility checks mean something."""
     path = tmp_path / "config.json"
-    path.write_text(json.dumps({"ui_language": "en", "modern_design": True, "expert_mode": False}), encoding="utf-8")
+    path.write_text(json.dumps({"ui_language": "en", "expert_mode": False}), encoding="utf-8")
     ctx = AppContext(ConfigStore(str(path), normalize_hotkey_string), RecordingStore(str(tmp_path)))
     instance = SettingsWindow(ctx, recording=Mock(selectable_input_devices=Mock(return_value=[])), hotkeys=Mock(),
                               files=Mock(log_file_exists=Mock(return_value=False)), quit_app=Mock())

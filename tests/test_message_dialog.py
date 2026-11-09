@@ -19,7 +19,7 @@ QAPP = QApplication.instance() or QApplication([])
 
 class _DarkWindow(QWidget):
     def theme_palette(self):
-        return theme.palette(True, True)
+        return theme.palette(True)
 
 
 def test_details_toggle_names_what_a_click_does():
@@ -47,7 +47,7 @@ def test_the_primary_button_is_the_default_and_details_without_toggle_show():
 def test_the_dialog_follows_the_parent_theme():
     parent = _DarkWindow()
     dialog = MessageDialog(parent, "Title", "Text", [("OK", PRIMARY)])
-    assert theme.palette(True, True)["panel"] in dialog.styleSheet()
+    assert theme.palette(True)["panel"] in dialog.styleSheet()
     dialog.deleteLater()
     parent.deleteLater()
 

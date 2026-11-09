@@ -49,7 +49,7 @@ _GUIDE_PROVIDERS = tuple(provider for provider in PROVIDER_NAMES if provider != 
 
 def _guide_stylesheet(dark: bool) -> str:
     """The guide's own look on top of the shared stylesheet: a floating card with selectable answers."""
-    colors = theme.palette(dark, True)
+    colors = theme.palette(dark)
     return f"""
 QDialog#guideWindow {{ background: transparent; }}
 QFrame#guideCard {{ background: {colors['bg']}; border: 1px solid {colors['border']}; border-radius: 18px; }}
@@ -160,7 +160,7 @@ class OnboardingDialog(QDialog):
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setWindowIcon(app_icon())
-        self.setStyleSheet(theme.build_stylesheet(self._dark, True) + self._icon_stylesheet()
+        self.setStyleSheet(theme.build_stylesheet(self._dark) + self._icon_stylesheet()
                            + _guide_stylesheet(self._dark))
         theme.round_combo_popups(self)
         self.setFixedWidth(_CARD_WIDTH + 2 * _SHADOW_MARGIN)
@@ -196,7 +196,7 @@ class OnboardingDialog(QDialog):
     def _icon_stylesheet(self) -> str:
         """The dropdown arrows; they are cosmetic, so a folder that cannot be written must not stop the guide."""
         try:
-            return theme.write_icon_qss(self._dark, os.path.join(APP_DATA_DIR, "theme_icons"), True)
+            return theme.write_icon_qss(self._dark, os.path.join(APP_DATA_DIR, "theme_icons"))
         except OSError as error:
             logging.warning("Guide icons not written: %s", error)
             return ""
@@ -232,7 +232,7 @@ class OnboardingDialog(QDialog):
 
     def _show_progress(self, index: int) -> None:
         """Colour the dots up to the current question."""
-        colors = theme.palette(self._dark, True)
+        colors = theme.palette(self._dark)
         for position, dot in enumerate(self._step_dots):
             color = colors["accent"] if position <= index else colors["border"]
             dot.setStyleSheet(f"background: {color}; border: none; border-radius: {_STEP_DOT_SIZE // 2}px;")

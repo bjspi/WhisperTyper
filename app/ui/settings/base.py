@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QAction, QIcon
+from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -18,8 +18,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
-    QMenu,
-    QMenuBar,
     QPushButton,
     QScrollArea,
     QSlider,
@@ -54,12 +52,10 @@ class SettingsWindowBase(QWidget):
     aac_bitrates_ready = pyqtSignal(object)
     #: Result of the background FFmpeg probe (``(generation, version or None)``), delivered on the GUI thread.
     ffmpeg_version_ready = pyqtSignal(object)
-    #: A header playback ended (its generation number), emitted from the playback thread.
+    #: A playback of the last recording ended (its generation number), emitted from the playback thread.
     playback_finished = pyqtSignal(int)
-    #: The stylesheet was (re)applied: colour theme or design changed; the tray menu redraws its icons.
+    #: The stylesheet was (re)applied: the colour theme changed; the tray menu redraws its icons.
     appearance_changed = pyqtSignal()
-    #: The user asked to restart now (to apply a design change).
-    restart_requested = pyqtSignal()
     #: The terminal command or the Start menu entry was switched (saved already; to be applied now).
     system_integration_changed = pyqtSignal()
 
@@ -73,18 +69,12 @@ class SettingsWindowBase(QWidget):
     _replacements_tab: ReplacementsTab
     _transformations: TransformationsEditor
     _theme_palette: Optional[Dict[str, str]] = None
-    #: The modern design (sidebar, cards) is active.
-    _modern: bool = False
 
     # Window chrome
     main_layout: QVBoxLayout
-    menu_bar: QMenuBar
-    file_menu: QMenu
-    help_menu: QMenu
     open_config_action: QAction
     exit_action: QAction
     open_log_file_action: QAction
-    play_last_recording_action: QAction
     about_action: QAction
     github_action: QAction
     tabs: QTabWidget
@@ -223,9 +213,11 @@ class SettingsWindowBase(QWidget):
     pr_hotkey_display: QLineEdit
     set_pr_hotkey_button: QPushButton
 
-    # Sidebar of the modern design
+    # Sidebar
     _nav: QListWidget
     _nav_pages: List[Tuple[QWidget, str, str, str]]
+    _hotkey_badge: QLabel
+    play_button: QPushButton
 
     # General page
     general_layout: QVBoxLayout
@@ -258,7 +250,6 @@ class SettingsWindowBase(QWidget):
     recording_overlay_opacity_label: QLabel
     recording_overlay_opacity_input: QSpinBox
     quit_without_confirmation_checkbox: QCheckBox
-    modern_design_checkbox: QCheckBox
     expert_mode_checkbox: QCheckBox
     system_integration_group: QGroupBox
     command_on_path_checkbox: QCheckBox
@@ -291,24 +282,20 @@ class SettingsWindowBase(QWidget):
         """Colours of the active theme."""
         raise NotImplementedError
 
-    def _apply_design(self, modern: bool, colors: Dict[str, str]) -> None:
-        """Show the modern chrome or the classic one."""
+    def _apply_chrome_icons(self, colors: Dict[str, str]) -> None:
+        """Tint the sidebar's line icons in the theme's colours."""
         raise NotImplementedError
 
     def _row(self, title: Optional[QLabel], *controls: object, **options: object) -> "SettingRow":
-        """A row of the modern card layout."""
+        """A row of the card layout."""
         raise NotImplementedError
 
     def _switch(self, checkbox: QCheckBox, **options: object) -> "SettingRow":
-        """A modern row for a checkbox."""
+        """A row for a checkbox."""
         raise NotImplementedError
 
     def _expert_settings_shown(self) -> bool:
         """Whether expert settings are on screen."""
-        raise NotImplementedError
-
-    def _playback_icon(self, active: bool) -> Optional[QIcon]:
-        """Modern design: the play/stop icon of the sidebar button (None in the classic design)."""
         raise NotImplementedError
 
     def swap_default_transcription_prompt(self, input_language: str, ui_language: str) -> None:

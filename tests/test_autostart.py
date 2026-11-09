@@ -47,7 +47,7 @@ def qapp():
 
 @pytest.fixture
 def tray(qapp, tmp_path, monkeypatch):
-    """A built modern tray menu that offers the switch on every platform."""
+    """A built tray menu that offers the switch on every platform."""
     from PyQt6 import QtWidgets
 
     from app.audio.store import RecordingStore
@@ -64,7 +64,7 @@ def tray(qapp, tmp_path, monkeypatch):
     path.write_text(json.dumps({"ui_language": "en"}), encoding="utf-8")
     ctx = AppContext(ConfigStore(str(path), normalize_hotkey_string), RecordingStore(str(tmp_path)))
     ctx.notifier = Mock()
-    settings = Mock(is_modern=Mock(return_value=True), theme_palette=lambda: theme.palette(False, True))
+    settings = Mock(theme_palette=lambda: theme.palette(False))
     controller = tray_module.TrayController(
         ctx, QtWidgets.QWidget(), settings, recording=Mock(is_recording=False), pipeline=Mock(),
         files=Mock(log_file_exists=Mock(return_value=True)), restart=Mock(), quit_app=Mock())

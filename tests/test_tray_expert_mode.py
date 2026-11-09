@@ -24,13 +24,13 @@ def qapp():
     return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 
-def _make_tray(tmp_path, monkeypatch, *, expert_mode, modern=True):
+def _make_tray(tmp_path, monkeypatch, *, expert_mode):
     """A built tray for the given expert mode; the updater never asks GitHub."""
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"ui_language": "en", "expert_mode": expert_mode}), encoding="utf-8")
     ctx = AppContext(ConfigStore(str(path), normalize_hotkey_string), RecordingStore(str(tmp_path)))
     monkeypatch.setattr(tray_module, "GitUpdater", lambda _parent: MagicMock(root=None))
-    settings = Mock(is_modern=Mock(return_value=modern), theme_palette=lambda: theme.palette(False, modern))
+    settings = Mock(theme_palette=lambda: theme.palette(False))
     controller = tray_module.TrayController(
         ctx, QtWidgets.QWidget(), settings, recording=Mock(is_recording=False), pipeline=Mock(),
         files=Mock(log_file_exists=Mock(return_value=True)), restart=Mock(), quit_app=Mock())
@@ -58,12 +58,6 @@ def test_the_menu_follows_expert_mode_when_it_opens(qapp, tmp_path, monkeypatch)
     assert controller.open_log_action.isEnabled() and controller.github_action.isEnabled()
 
 
-def test_the_classic_design_always_offers_everything(qapp, tmp_path, monkeypatch):
-    controller = _make_tray(tmp_path, monkeypatch, expert_mode=False, modern=False)
-    assert all(action.isVisible() for action in _expert_tools(controller))
-
-
-def test_expert_mode_defaults_to_shown_and_the_classic_design_ignores_it():
-    assert expert_mode_shown({}, modern_design=True)
-    assert not expert_mode_shown({"expert_mode": False}, modern_design=True)
-    assert expert_mode_shown({"expert_mode": False}, modern_design=False)
+def test_expert_mode_defaults_to_shown():
+    assert expert_mode_shown({})
+    assert not expert_mode_shown({"expert_mode": False})

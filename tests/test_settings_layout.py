@@ -1,4 +1,4 @@
-"""Layout of the settings window: classic tabs, the modern sidebar pages and rows, temperature support."""
+"""Layout of the settings window: sidebar pages and rows, expert mode, temperature support."""
 from __future__ import annotations
 
 import json
@@ -17,6 +17,7 @@ from app.core.config_store import ConfigStore  # noqa: E402
 from app.core.env import is_WINDOWS  # noqa: E402
 from app.core.hotkeys import normalize_hotkey_string  # noqa: E402
 from app.ui.settings.collapsible import CollapsibleSection  # noqa: E402
+from app.ui.settings.modern_chrome import CHROME_WIDTH  # noqa: E402
 from app.ui.settings.window import SettingsWindow  # noqa: E402
 
 # Every test builds a whole settings window: delete it right after the test (see conftest).
@@ -28,10 +29,10 @@ def qapp():
     return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 
-def _make_window(tmp_path, modern, **config):
+def _make_window(tmp_path, **config):
     """A settings window built from a config file like at startup."""
     path = tmp_path / "config.json"
-    path.write_text(json.dumps({"ui_language": "en", "modern_design": modern, **config}), encoding="utf-8")
+    path.write_text(json.dumps({"ui_language": "en", **config}), encoding="utf-8")
     ctx = AppContext(ConfigStore(str(path), normalize_hotkey_string), RecordingStore(str(tmp_path)))
     return SettingsWindow(ctx, recording=Mock(selectable_input_devices=Mock(return_value=[])), hotkeys=Mock(),
                           files=Mock(log_file_exists=Mock(return_value=False)), quit_app=Mock())
@@ -39,16 +40,8 @@ def _make_window(tmp_path, modern, **config):
 
 @pytest.fixture
 def window(qapp, tmp_path):
-    """The classic design: tabs as laid out in the .ui file."""
-    instance = _make_window(tmp_path, modern=False)
-    yield instance
-    instance.deleteLater()
-
-
-@pytest.fixture
-def modern_window(qapp, tmp_path):
-    """The modern design: sidebar pages and settings rows."""
-    instance = _make_window(tmp_path, modern=True)
+    """The settings window: sidebar pages and settings rows."""
+    instance = _make_window(tmp_path)
     yield instance
     instance.deleteLater()
 
@@ -85,9 +78,7 @@ def test_open_log_action_follows_the_log_file_in_refresh_actions(window):
     assert not window.open_log_file_action.isEnabled()
 
 
-@pytest.mark.parametrize("modern", [True, False], ids=["modern", "classic"])
-def test_switching_rephrasing_off_hides_prompts_and_its_hotkey(qapp, tmp_path, modern):
-    window = _make_window(tmp_path, modern)
+def test_switching_rephrasing_off_hides_prompts_and_its_hotkey(window):
     prompts_page = window.tabs.indexOf(window.post_rephrasing_tab)
     selector = window.rephrasing_provider_selector
     assert selector.itemData(0) == "off" and selector.currentData() == "openai"
@@ -98,19 +89,19 @@ def test_switching_rephrasing_off_hides_prompts_and_its_hotkey(qapp, tmp_path, m
     assert window.pr_hotkey_display.isHidden() and window.set_pr_hotkey_button.isHidden()
     assert window.rephrasing_model_input.isHidden() and window.test_rephrasing_api_button.isHidden()
     assert not selector.isHidden()
-    assert not modern or window._nav.isRowHidden(prompts_page)
+    assert window._nav.isRowHidden(prompts_page)
     assert window.rephrasing_api_url_input.text() == "https://api.openai.com/v1/chat/completions"
 
     selector.setCurrentIndex(selector.findData("groq"))
     assert window.tabs.isTabVisible(prompts_page) and not window.pr_hotkey_display.isHidden()
     assert not window.rephrasing_model_input.isHidden() and not window.test_rephrasing_api_button.isHidden()
-    assert not modern or not window._nav.isRowHidden(prompts_page)
+    assert not window._nav.isRowHidden(prompts_page)
     assert "groq" in window.rephrasing_api_url_input.text()
 
 
 def test_a_saved_off_opens_switched_off_and_is_stored(qapp, tmp_path):
     path = tmp_path / "config.json"
-    path.write_text(json.dumps({"ui_language": "en", "modern_design": True, "rephrasing_enabled": False}), encoding="utf-8")
+    path.write_text(json.dumps({"ui_language": "en", "rephrasing_enabled": False}), encoding="utf-8")
     ctx = AppContext(ConfigStore(str(path), normalize_hotkey_string), RecordingStore(str(tmp_path)))
     window = SettingsWindow(ctx, recording=Mock(selectable_input_devices=Mock(return_value=[])), hotkeys=Mock(),
                             files=Mock(log_file_exists=Mock(return_value=False)), quit_app=Mock())
@@ -121,16 +112,9 @@ def test_a_saved_off_opens_switched_off_and_is_stored(qapp, tmp_path):
     assert window._save_api_settings() and ctx.config["rephrasing_enabled"] is True
 
 
-def test_classic_design_shows_tabs_and_menu_bar(window):
-    assert not window.is_modern() and window.design_extra_width() == 0
-    assert not window.tabs.tabBar().isHidden() and not window.menu_bar.isHidden()
-    assert window._sidebar.isHidden() and window._page_header.isHidden()
-
-
-def test_modern_design_mirrors_its_pages_in_the_sidebar(modern_window):
-    window = modern_window
-    assert window.is_modern() and window.design_extra_width() > 0
-    assert window.tabs.tabBar().isHidden() and window.menu_bar.isHidden() and not window._sidebar.isHidden()
+def test_the_sidebar_mirrors_the_pages(window):
+    assert window.minimumWidth() > CHROME_WIDTH > 0
+    assert window.tabs.tabBar().isHidden() and not window._sidebar.isHidden() and not window._page_header.isHidden()
     assert window.tabs.count() == window._nav.count()
     assert all(window.tabs.tabText(index) for index in range(window.tabs.count()))
     recording = next(index for index in range(window.tabs.count())
@@ -141,8 +125,16 @@ def test_modern_design_mirrors_its_pages_in_the_sidebar(modern_window):
     assert window._nav.currentRow() == window.tabs.indexOf(window.general_tab)
 
 
-def test_modern_rows_follow_their_control_and_toggle_on_click(modern_window):
-    window = modern_window
+def test_an_old_classic_design_choice_is_ignored(qapp, tmp_path):
+    window = _make_window(tmp_path, modern_design=False, expert_mode=False)
+    assert window.tabs.tabBar().isHidden() and not window._sidebar.isHidden()
+    gain_row = next(row for row in window._rows if row.follow is window.gain_input)
+    assert not window.expert_mode_checkbox.isChecked() and gain_row.isHidden()
+    assert "modern_design" not in window.config
+    window.deleteLater()
+
+
+def test_rows_follow_their_control_and_toggle_on_click(window):
     checkbox = window.restore_clipboard_checkbox
     row = next(row for row in window._rows if row.checkbox is checkbox)
     assert row.title.text() == checkbox.text() and window.misc_group.isAncestorOf(row)
@@ -157,15 +149,14 @@ def test_modern_rows_follow_their_control_and_toggle_on_click(modern_window):
     assert not row.title.isEnabled()
 
 
-def test_modern_prompts_page_adds_a_prompt_and_paints_every_row(modern_window):
-    window = modern_window
+def test_the_prompts_page_adds_a_prompt_and_paints_every_row(window):
     count = window.post_rp_list.count()
     window.post_rp_add_btn.click()
     assert window.post_rp_list.count() == count + 1
     window.post_rp_list.grab()  # paints every row through the custom item delegate
 
 
-def test_building_the_modern_rows_opens_no_windows(qapp, tmp_path):
+def test_building_the_rows_opens_no_windows(qapp, tmp_path):
     shown = []
 
     class Watch(QtCore.QObject):
@@ -178,7 +169,7 @@ def test_building_the_modern_rows_opens_no_windows(qapp, tmp_path):
     watch = Watch()
     qapp.installEventFilter(watch)
     try:
-        window = _make_window(tmp_path, modern=True)
+        window = _make_window(tmp_path)
     finally:
         qapp.removeEventFilter(watch)
     assert shown == []
@@ -187,9 +178,8 @@ def test_building_the_modern_rows_opens_no_windows(qapp, tmp_path):
 
 # macOS: the digit keys checkbox is Windows-only (hidden elsewhere), so there is no anchor to sit below.
 @pytest.mark.skipif(not is_WINDOWS, reason="digit keys checkbox is Windows-only")
-@pytest.mark.parametrize("modern", [False, True])
-def test_palette_opacity_sits_below_the_palette_options(qapp, tmp_path, modern):
-    window = _make_window(tmp_path, modern)
+def test_palette_opacity_sits_below_the_palette_options(qapp, tmp_path):
+    window = _make_window(tmp_path)
     spin, anchor = window.recording_overlay_opacity_input, window.recording_prompt_overlay_digit_keys_checkbox
     window.tabs.setCurrentWidget(window.tabs.widget(next(
         index for index in range(window.tabs.count()) if window.tabs.widget(index).isAncestorOf(anchor))))
@@ -205,8 +195,8 @@ def test_palette_opacity_sits_below_the_palette_options(qapp, tmp_path, modern):
 
 
 def _make_expert_window(tmp_path, expert_mode, **config):
-    """A modern window with the given expert mode."""
-    return _make_window(tmp_path, True, expert_mode=expert_mode, **config)
+    """A window with the given expert mode."""
+    return _make_window(tmp_path, expert_mode=expert_mode, **config)
 
 
 def test_expert_mode_off_hides_rows_cards_and_pages_in_the_sidebar(qapp, tmp_path):
@@ -278,9 +268,3 @@ def test_invalid_rules_on_a_hidden_page_switch_expert_mode_on_to_show_them(qapp,
     window.save_settings()
     assert window.expert_mode_checkbox.isChecked() and window.tabs.currentWidget() is window._replacements_tab
 
-
-def test_classic_design_ignores_expert_mode(qapp, tmp_path):
-    window = _make_window(tmp_path, False, expert_mode=False)
-    assert window._sidebar.isHidden()
-    assert not window.gain_input.isHidden() and not window.second_pass_section.isHidden()
-    assert all(window.tabs.isTabVisible(index) for index in range(window.tabs.count()))

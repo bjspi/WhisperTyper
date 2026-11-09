@@ -1,4 +1,4 @@
-"""Modern design: the search field above the sidebar pages and the list of matching settings.
+"""The search field above the sidebar pages and the list of matching settings.
 
 Typing replaces the page list with the matches; choosing one opens its page, scrolls to the
 setting and lights it up for a moment (``ModernChrome`` does the opening).

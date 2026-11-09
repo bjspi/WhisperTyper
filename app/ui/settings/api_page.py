@@ -284,7 +284,7 @@ class ApiPage(SettingsWindowBase):
             widget.setVisible(shown)
         prompts_page = self.tabs.indexOf(self.post_rephrasing_tab)
         self.tabs.setTabVisible(prompts_page, shown)
-        if self._nav_pages:  # the modern sidebar is built after this page's first refresh
+        if self._nav_pages:  # the sidebar's pages are built after this page's first refresh
             self._nav.setRowHidden(prompts_page, not shown)
         if shown:
             return

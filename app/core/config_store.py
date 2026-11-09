@@ -204,7 +204,8 @@ class ConfigStore:
             changed = True
 
         # Automatic rephrasing is a per-prompt "apply automatically" flag; drop the global switch.
-        for removed_key in ("generic_rephrase_enabled", "generic_rephrase_prompt"):
+        # The design switch is gone too: there is only one design now.
+        for removed_key in ("generic_rephrase_enabled", "generic_rephrase_prompt", "modern_design"):
             if removed_key in cfg:
                 del cfg[removed_key]
                 changed = True

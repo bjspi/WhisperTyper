@@ -42,8 +42,8 @@ from app.ui.tray_menu import BadgeTrayMenu
 
 #: Refresh interval of the recording level meter in the tray icon.
 _METER_INTERVAL_MS = 80
-#: Modern design: the line icon (``resources/icons``) of each tray entry, by its label key.
-_MODERN_ICONS = {
+#: The line icon (``resources/icons``) of each tray entry, by its label key.
+_ENTRY_ICONS = {
     "tray_settings_action": "gear",
     "menu_file_open_config": "file",
     "tray_edit_transformations_action": "sparkles",
@@ -60,7 +60,7 @@ _MODERN_ICONS = {
     "tray_restart_action": "restart",
     "tray_quit_action": "quit",
 }
-#: Modern design: the line icon that marks a switch as on (off shows none, the text stays aligned).
+#: The line icon that marks a switch as on (off shows none, the text stays aligned).
 _SWITCH_ON_ICON = "check"
 
 
@@ -75,9 +75,6 @@ class SettingsWindowLike(Protocol):
 
     def theme_palette(self) -> Dict[str, str]:
         """Colours of the active theme."""
-
-    def is_modern(self) -> bool:
-        """Whether the window shows the modern design (the tray menu matches it)."""
 
     def show_local_engine(self) -> None:
         """Open the settings window on the local transcription page."""
@@ -152,8 +149,8 @@ class TrayController(QObject):
     def set_recording(self, active: bool) -> None:
         """Animate the level meter while recording; restore the idle icon otherwise."""
         self.cancel_action.setEnabled(active)
-        if active and self._settings.is_modern() and not is_MACOS:
-            return  # the modern design keeps the app icon; the recording overlay shows the level
+        if active and not is_MACOS:
+            return  # the tray keeps the app icon; the recording overlay shows the level
         if active:
             self._recording.latest_audio_level = 0.0
             self._update_recording_icon()
@@ -185,19 +182,18 @@ class TrayController(QObject):
             self.tray_icon.setIcon(icon)
 
     def set_tooltip(self, text: str) -> None:
-        """Tooltip of the tray icon (also refreshes the modern menu header's hotkey)."""
+        """Tooltip of the tray icon (also refreshes the menu header's hotkey)."""
         self._tooltip = text
         if self.tray_icon is not None:
             self.tray_icon.setToolTip(text)
         self._update_header()
 
     def _menu_icon_color(self) -> str:
-        """Tint of the modern menu's line icons in the active theme."""
-        colors = self._settings.theme_palette()
-        return colors.get("menu_icon", colors["muted"])
+        """Tint of the menu's line icons in the active theme."""
+        return self._settings.theme_palette()["menu_icon"]
 
     def _update_header(self) -> None:
-        """Modern design: the menu header shows the current recording hotkey."""
+        """The menu header shows the current recording hotkey."""
         if self._header_status is not None:
             self._header_status.setText(pretty_hotkey(self._ctx.config.get("hotkey", "")))
 
@@ -231,34 +227,27 @@ class TrayController(QObject):
                 self._idle_icon = app_icon()
             if self._idle_icon.isNull():
                 self._idle_icon = standard_icon
-        elif self._settings.is_modern():
-            # The modern design always shows the microphone tile, also while recording.
+        else:
+            # The microphone tile, also while recording.
             self._idle_icon = tray_icon()
             if self._idle_icon.isNull():
                 self._idle_icon = standard_icon
-        else:
-            self._idle_icon = standard_icon
         self.tray_icon.setIcon(self._idle_icon)
         self.tray_icon.setToolTip(self._tooltip)  # a rebuild (language, theme) must keep it
 
         # QSystemTrayIcon.setContextMenu() does not take ownership: the menu needs a parent and
         # a Python reference, otherwise it is collected and its actions never fire.
-        modern = self._settings.is_modern()
-        tray_menu = BadgeTrayMenu(window, self._settings.theme_palette, modern=modern)
+        tray_menu = BadgeTrayMenu(window, self._settings.theme_palette)
         self.tray_menu = tray_menu
         tr = self._ctx.tr
-        sp = QStyle.StandardPixmap
-        self._header_status = None
-        if modern:
-            self._header_status = tray_menu.add_header(app_icon(), "WhisperTyper", "", __version__)
-            self._update_header()
-            tray_menu.addSeparator()
+        self._header_status = tray_menu.add_header(app_icon(), "WhisperTyper", "", __version__)
+        self._update_header()
+        tray_menu.addSeparator()
 
-        def add(pixmap: QStyle.StandardPixmap, label_key: str, key: str, handler: Callable[[], None]) -> QAction:
-            # BadgeTrayMenu paints <key> as a badge and triggers the action when it is pressed.
+        def add(label_key: str, key: str, handler: Callable[[], None]) -> QAction:
+            # BadgeTrayMenu paints <key> as a hint and triggers the action when it is pressed.
             # Letters are fixed in code so they stay unique regardless of the UI language.
-            icon = (line_icon(_MODERN_ICONS[label_key], self._menu_icon_color()) if modern
-                    else style.standardIcon(pixmap))
+            icon = line_icon(_ENTRY_ICONS[label_key], self._menu_icon_color())
             action = tray_menu.addAction(icon, tr(label_key))
             assert action is not None
             tray_menu.register_badge(key, action)
@@ -267,38 +256,35 @@ class TrayController(QObject):
 
         # A saved setting may have changed what the menu offers.
         tray_menu.aboutToShow.connect(self.refresh_actions)
-        add(sp.SP_FileDialogDetailedView, "tray_settings_action", "k", self._settings.show_window)
-        self.open_config_action = add(sp.SP_FileIcon, "menu_file_open_config", "o", self._files.open_config_file)
-        self.transformations_action = add(sp.SP_FileDialogListView, "tray_edit_transformations_action", "t",
-                                          self._settings.show_transformations)
-        self.autostart_action = self._add_autostart_switch(tray_menu, modern) if autostart.supported() else None
+        add("tray_settings_action", "k", self._settings.show_window)
+        self.open_config_action = add("menu_file_open_config", "o", self._files.open_config_file)
+        self.transformations_action = add("tray_edit_transformations_action", "t", self._settings.show_transformations)
+        self.autostart_action = self._add_autostart_switch(tray_menu) if autostart.supported() else None
         tray_menu.addSeparator()
-        add(sp.SP_FileDialogContentsView, "tray_copy_action", "c", self._pipeline.copy_last_transcription)
-        self.retranscribe_action = add(sp.SP_BrowserReload, "tray_retranscribe_action", "r",
-                                       self.retranscribe_last_recording)
-        add(sp.SP_DialogOpenButton, "tray_transcribe_file_action", "f", self.transcribe_audio_files)
-        self.play_action = add(sp.SP_MediaPlay, "tray_play_action", "p", self._files.play_latest_recording)
-        self.mark_bad_action = add(sp.SP_MessageBoxWarning, "tray_mark_bad_action", "b", self.mark_last_recording_bad)
+        add("tray_copy_action", "c", self._pipeline.copy_last_transcription)
+        self.retranscribe_action = add("tray_retranscribe_action", "r", self.retranscribe_last_recording)
+        add("tray_transcribe_file_action", "f", self.transcribe_audio_files)
+        self.play_action = add("tray_play_action", "p", self._files.play_latest_recording)
+        self.mark_bad_action = add("tray_mark_bad_action", "b", self.mark_last_recording_bad)
         # Discards the running recording (no transcription, no clipboard change, the stored
         # "last recording" stays). Enabled only while recording.
-        self.cancel_action = add(sp.SP_DialogCancelButton, "tray_cancel_action", "x", self._recording.cancel)
+        self.cancel_action = add("tray_cancel_action", "x", self._recording.cancel)
         self.cancel_action.setEnabled(self._recording.is_recording)
-        self._build_local_menu(tray_menu, modern)
+        self._build_local_menu(tray_menu)
         tray_menu.addSeparator()
-        self.open_log_action = add(sp.SP_FileDialogInfoView, "tray_log_action", "l", self._files.open_log_file)
-        self.github_action = add(sp.SP_DriveNetIcon, "menu_help_github", "g", self._files.open_github_link)
+        self.open_log_action = add("tray_log_action", "l", self._files.open_log_file)
+        self.github_action = add("menu_help_github", "g", self._files.open_github_link)
         tray_menu.addSeparator()
         # Self-update from git is only meaningful for a source checkout.
         self.update_action = None
         if self.updater.root:
-            self.update_action = add(sp.SP_ArrowDown, "tray_update_action", "u", self.check_for_updates)
-            tray_menu.update_action = self.update_action
+            self.update_action = add("tray_update_action", "u", self.check_for_updates)
             # A rebuild must not lose an already-detected update.
             self._apply_update_indicator()
-        add(sp.SP_MessageBoxInformation, "tray_about_action", "a", lambda: show_about(self._window, self._ctx.tr))
+        add("tray_about_action", "a", lambda: show_about(self._window, self._ctx.tr))
         tray_menu.addSeparator()
-        add(sp.SP_BrowserReload, "tray_restart_action", "n", self._restart)
-        add(sp.SP_DialogCloseButton, "tray_quit_action", "q", self._quit)
+        add("tray_restart_action", "n", self._restart)
+        add("tray_quit_action", "q", self._quit)
 
         # macOS opens a context menu natively on every click, on top of the popup from
         # _on_activated, which stacked two menus; there the popup alone handles both clicks.
@@ -312,7 +298,7 @@ class TrayController(QObject):
 
     def _expert_mode_shown(self) -> bool:
         """Whether the menu offers its expert tools (config file, log, GitHub, marking a recording)."""
-        return expert_mode_shown(self._ctx.config, self._settings.is_modern())
+        return expert_mode_shown(self._ctx.config)
 
     def refresh_actions(self) -> None:
         """Offer the actions the settings allow, usable only when their files exist."""
@@ -331,15 +317,13 @@ class TrayController(QObject):
         self._refresh_local_menu()
 
     # --- Start at login --------------------------------------------------------------------
-    def _add_autostart_switch(self, tray_menu: BadgeTrayMenu, modern: bool) -> QAction:
+    def _add_autostart_switch(self, tray_menu: BadgeTrayMenu) -> QAction:
         """The "Start with Windows" switch; its state is set from the registry in ``refresh_actions``.
 
-        The modern design marks "on" with a check icon (a checkable action would draw Qt's own
-        mark over the styled icon column); the classic design uses a plain checkable entry.
+        "On" shows a check icon: a checkable action would draw Qt's own mark over the styled icon column.
         """
         action = tray_menu.addAction(self._ctx.tr("tray_autostart_action"))
         assert action is not None
-        action.setCheckable(not modern)
         tray_menu.register_badge("w", action)
         action.triggered.connect(lambda _checked=False: self.toggle_autostart())
         return action
@@ -350,10 +334,7 @@ class TrayController(QObject):
         if action is None:
             return
         enabled = autostart.is_enabled()
-        if action.isCheckable():
-            action.setChecked(enabled)
-        else:
-            action.setIcon(line_icon(_SWITCH_ON_ICON, self._menu_icon_color()) if enabled else QIcon())
+        action.setIcon(line_icon(_SWITCH_ON_ICON, self._menu_icon_color()) if enabled else QIcon())
 
     def toggle_autostart(self) -> None:
         """Switch the start at login; a failure is logged and shown in a balloon."""
@@ -371,17 +352,16 @@ class TrayController(QObject):
         self._refresh_autostart_switch()
 
     # --- Local transcription submenu ---------------------------------------------------
-    def _build_local_menu(self, tray_menu: BadgeTrayMenu, modern: bool) -> None:
+    def _build_local_menu(self, tray_menu: BadgeTrayMenu) -> None:
         """Status and actions of the local engine; shown only while it is enabled."""
         self._local_menu, self._local_actions = None, {}
         engine = self._local_engine
         if engine is None or not LOCAL_ENGINE_SUPPORTED:
             return
         tr = self._ctx.tr
-        menu = BadgeTrayMenu(self._window, self._settings.theme_palette, modern=modern)
+        menu = BadgeTrayMenu(self._window, self._settings.theme_palette)
         menu.setTitle(tr("tray_local_menu"))
-        if modern:
-            menu.setIcon(line_icon("chip", self._menu_icon_color()))
+        menu.setIcon(line_icon("chip", self._menu_icon_color()))
         status = menu.addAction("")
         assert status is not None
         status.setEnabled(False)
@@ -395,7 +375,7 @@ class TrayController(QObject):
             ("log", "local_log_button", "log", self._files.open_engine_log_file),
             ("settings", "tray_local_settings", "gear", self._settings.show_local_engine),
         ):
-            action = menu.addAction(line_icon(icon, self._menu_icon_color()) if modern else QIcon(), tr(label_key))
+            action = menu.addAction(line_icon(icon, self._menu_icon_color()), tr(label_key))
             assert action is not None
             action.triggered.connect(lambda _checked=False, handler=handler: handler())
             actions[key] = action
@@ -663,15 +643,11 @@ class TrayController(QObject):
             self._restart()
 
     def _apply_update_indicator(self) -> None:
-        """Reflect the updater's availability on the tray entry label and its green dot."""
+        """Reflect the updater's availability on the tray entry: its label, and its icon in the accent colour."""
         if self.update_action is None or self.tray_menu is None:
             return
         latest = self.updater.latest
-        available = latest is not None
         self.update_action.setText(self._ctx.tr("tray_update_available_action", version=latest.version)
                                    if latest is not None else self._ctx.tr("tray_update_action"))
-        if self._header_status is not None:
-            colors = self._settings.theme_palette()
-            self.update_action.setIcon(line_icon("download", colors["accent"] if available else self._menu_icon_color()))
-        self.tray_menu.update_available = available
-        self.tray_menu.update()
+        color = self._settings.theme_palette()["accent"] if latest is not None else self._menu_icon_color()
+        self.update_action.setIcon(line_icon(_ENTRY_ICONS["tray_update_action"], color))

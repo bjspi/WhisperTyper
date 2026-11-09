@@ -1,4 +1,4 @@
-"""Cross-platform Qt stylesheet (light/dark, teal accent) for the settings window.
+"""Cross-platform Qt stylesheet (light/dark, blue accent) for the settings window.
 
 Single responsibility: produce the application QSS for a light or dark palette and
 detect the OS colour scheme. No app state.
@@ -12,14 +12,15 @@ from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import QComboBox, QListView, QStyledItemDelegate, QWidget
 
-LIGHT: Dict[str, str] = {
+#: The floating overlays (recording palette, rephrase buttons, balloons): teal accent.
+OVERLAY_LIGHT: Dict[str, str] = {
     "bg": "#f5f8fa", "panel": "#ffffff", "panel2": "#eef3f6", "text": "#16212b",
     "muted": "#5a6b78", "border": "#d6dfe5", "group_border": "#9aa9b4", "field": "#ffffff", "field_border": "#cfd9e0",
     "accent": "#0e8aa8", "accent_hover": "#0b7690", "accent_press": "#095c74",
     "on_accent": "#ffffff", "warn": "#cf6a3f", "danger": "#e5484d", "hover": "#eef3f6",
 }
 
-DARK: Dict[str, str] = {
+OVERLAY_DARK: Dict[str, str] = {
     "bg": "#0e1620", "panel": "#16212c", "panel2": "#1b2733", "text": "#dce6ee",
     "muted": "#8598a5", "border": "#273744", "group_border": "#627382", "field": "#121c26", "field_border": "#2c3d4a",
     "accent": "#35c0dd", "accent_hover": "#4fcbe4", "accent_press": "#2aa6c1",
@@ -27,8 +28,8 @@ DARK: Dict[str, str] = {
 }
 
 
-#: The modern design: soft grey canvas, white cards, one blue accent.
-MODERN_LIGHT: Dict[str, str] = {
+#: The settings window, tray menu and dialogs: soft grey canvas, white cards, one blue accent.
+LIGHT: Dict[str, str] = {
     "bg": "#f3f5f8", "panel": "#ffffff", "panel2": "#f1f4f8", "text": "#1f2329",
     "muted": "#6b727c", "border": "#e3e7ed", "group_border": "#e3e7ed", "field": "#ffffff", "field_border": "#cfd5dd",
     "accent": "#2f7de1", "accent_hover": "#2a72cf", "accent_press": "#2565b8",
@@ -39,7 +40,7 @@ MODERN_LIGHT: Dict[str, str] = {
     "divider": "#eef1f4",
 }
 
-MODERN_DARK: Dict[str, str] = {
+DARK: Dict[str, str] = {
     "bg": "#1b1d21", "panel": "#25282d", "panel2": "#2c3036", "text": "#e6e8eb",
     "muted": "#9aa1ab", "border": "#33373e", "group_border": "#33373e", "field": "#1f2226", "field_border": "#40454d",
     "accent": "#4c94ef", "accent_hover": "#5ea0f2", "accent_press": "#3d84de",
@@ -61,11 +62,14 @@ def set_style_state(widget: Any, name: str, value: Any) -> None:
     style.polish(widget)
 
 
-def palette(dark: bool, modern: bool = False) -> Dict[str, str]:
-    """Return the colour palette for the requested mode and design."""
-    if modern:
-        return MODERN_DARK if dark else MODERN_LIGHT
+def palette(dark: bool) -> Dict[str, str]:
+    """The colour palette of the settings window, tray menu and dialogs in light or dark mode."""
     return DARK if dark else LIGHT
+
+
+def overlay_palette(dark: bool) -> Dict[str, str]:
+    """The colour palette of the floating overlays in light or dark mode."""
+    return OVERLAY_DARK if dark else OVERLAY_LIGHT
 
 
 def sign_icon(color: str, plus: bool, size: int = 16) -> QIcon:
@@ -119,11 +123,6 @@ QWidget { background-color: %(bg)s; color: %(text)s; font-size: 13px; }
 QLabel, QFrame, QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }
 QScrollArea { border: none; }
 
-QMenuBar { background: transparent; border: none; padding: 2px 4px; }
-QMenuBar::item { background: transparent; padding: 5px 10px; border-radius: 6px; }
-QMenuBar::item:selected { background: %(hover)s; }
-/* An open menu: its menu-bar entry and the popup frame share the accent colour, so they read as one. */
-QMenuBar::item:pressed { background: %(accent)s; color: %(on_accent)s; }
 QMenu { background: %(panel)s; border: 1px solid %(accent)s; border-radius: 4px; padding: 5px; }
 QMenu::item { padding: 8px 40px 8px 15px; border-radius: 6px; }
 QMenu::icon { left: 12px; }
@@ -286,18 +285,14 @@ QScrollBar::handle:horizontal:hover { background: %(muted)s; }
 QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 
-#brandHeader { background: %(panel)s; border: 1px solid %(border)s; border-radius: 12px; }
-#brandTitle { font-size: 15px; font-weight: 700; color: %(text)s; background: transparent; }
-#brandSub { color: %(muted)s; background: transparent; }
 #hotkeyBadge {
     background: %(panel2)s; border: 1px solid %(border)s; border-radius: 10px;
     padding: 3px 12px; color: %(accent)s; font-weight: 600;
 }
-QPushButton#brandPlayButton { border-radius: 10px; padding: 3px 12px; }
 """
 
 
-#: Added on top of ``_QSS`` in the modern design: sidebar navigation, page headers, cards and quiet menus.
+#: Added on top of ``_QSS``: sidebar navigation, page headers, cards and quiet menus.
 _MODERN_QSS = """
 QWidget { font-size: 10pt; }
 QFrame#sidebar { background: %(sidebar)s; border: none; border-right: 1px solid %(sidebar_border)s; }
@@ -387,18 +382,11 @@ QScrollBar::handle:vertical, QScrollBar::handle:horizontal { border-radius: 3px;
 
 
 def _switch_svg(track: str, knob: str, on: bool, opacity: float = 1.0) -> str:
-    """SVG string for an on/off switch (34x20) that replaces the checkbox square in the modern design."""
+    """SVG string for an on/off switch (34x20) that replaces the checkbox square."""
     knob_x = 24 if on else 10
     return (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 20' opacity='{opacity}'>"
             f"<rect x='0.5' y='1' width='33' height='18' rx='9' fill='{track}'/>"
             f"<circle cx='{knob_x}' cy='10' r='6.5' fill='{knob}'/></svg>")
-
-
-def _check_svg(color: str) -> str:
-    """SVG string for the checkbox checkmark in the given stroke colour."""
-    return (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
-            f"<path fill='none' stroke='{color}' stroke-width='2.4' stroke-linecap='round' "
-            f"stroke-linejoin='round' d='M3.5 8.5l3 3 6-7'/></svg>")
 
 
 def _arrow_svg(color: str, up: bool) -> str:
@@ -480,28 +468,24 @@ def round_combo_popups(root: QWidget) -> None:
         popup.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
 
-def write_icon_qss(dark: bool, cache_dir: str, modern: bool = False) -> str:
-    """Write themed checkmark/arrow SVGs into cache_dir and return QSS referencing them.
+def write_icon_qss(dark: bool, cache_dir: str) -> str:
+    """Write themed switch/arrow SVGs into cache_dir and return QSS referencing them.
 
     Qt renders QSS ``image:`` from SVG *files* but not from ``data:`` URIs for spinbox
     sub-controls, so the icons are written to disk and referenced by path.
     """
     import os
     os.makedirs(cache_dir, exist_ok=True)
-    c = palette(dark, modern)
-    suffix = ("m" if modern else "") + ("d" if dark else "l")
+    c = palette(dark)
+    suffix = "d" if dark else "l"
     assets = {
-        "check": _check_svg(c["on_accent"]),
         "up": _arrow_svg(c["accent"], True),
         "down": _arrow_svg(c["accent"], False),
+        "switch_off": _switch_svg(c["switch_off"], "#ffffff", False),
+        "switch_on": _switch_svg(c["accent"], "#ffffff", True),
+        "switch_off_disabled": _switch_svg(c["switch_off"], "#ffffff", False, 0.45),
+        "switch_on_disabled": _switch_svg(c["accent"], "#ffffff", True, 0.45),
     }
-    if modern:
-        assets.update({
-            "switch_off": _switch_svg(c["switch_off"], "#ffffff", False),
-            "switch_on": _switch_svg(c["accent"], "#ffffff", True),
-            "switch_off_disabled": _switch_svg(c["switch_off"], "#ffffff", False, 0.45),
-            "switch_on_disabled": _switch_svg(c["accent"], "#ffffff", True, 0.45),
-        })
     paths: Dict[str, str] = {}
     for name, svg in assets.items():
         fp = os.path.join(cache_dir, f"{name}_{suffix}.svg")
@@ -516,15 +500,11 @@ def write_icon_qss(dark: bool, cache_dir: str, modern: bool = False) -> str:
             with open(fp, "w", encoding="utf-8") as fh:
                 fh.write(svg)
         paths[name] = fp.replace("\\", "/")
-    if modern:
-        checkbox_qss = f"""
+    checkbox_qss = f"""
 QCheckBox::indicator {{ image: url({paths['switch_off']}); }}
 QCheckBox::indicator:checked {{ image: url({paths['switch_on']}); }}
 QCheckBox::indicator:disabled {{ image: url({paths['switch_off_disabled']}); }}
 QCheckBox::indicator:checked:disabled {{ image: url({paths['switch_on_disabled']}); }}"""
-    else:
-        checkbox_qss = f"""
-QCheckBox::indicator:checked {{ image: url({paths['check']}); }}"""
     return checkbox_qss + f"""
 QComboBox::down-arrow {{ image: url({paths['down']}); width: 16px; height: 16px; }}
 QSpinBox, QDoubleSpinBox {{ padding-right: 26px; }}
@@ -555,17 +535,15 @@ QToolTip {
 """
 
 
-def tooltip_stylesheet(dark: bool, modern: bool = False) -> str:
+def tooltip_stylesheet(dark: bool) -> str:
     """Tooltip QSS for the whole application.
 
     Set on the QApplication, not the window: Qt reuses an open tooltip when the pointer moves to
     the next widget and then drops the window's stylesheet, so its padding would vanish.
     """
-    return _TOOLTIP_QSS % palette(dark, modern)
+    return _TOOLTIP_QSS % palette(dark)
 
 
-def build_stylesheet(dark: bool, modern: bool = False) -> str:
+def build_stylesheet(dark: bool) -> str:
     """Build the base application QSS for light or dark mode (icons added by write_icon_qss)."""
-    if modern:
-        return (_QSS + _MODERN_QSS) % palette(dark, modern=True)
-    return _QSS % palette(dark)
+    return (_QSS + _MODERN_QSS) % palette(dark)

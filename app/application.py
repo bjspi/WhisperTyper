@@ -103,9 +103,8 @@ class WhisperTyperApp(QObject):
         self.settings.saved.connect(self._on_settings_saved)
         self.settings.hotkeys_changed.connect(self.hotkeys.restart)
         self.settings.language_changed.connect(self._on_language_changed)
-        # The modern tray menu draws its icons in the theme's colours.
+        # The tray menu draws its icons in the theme's colours.
         self.settings.appearance_changed.connect(self.tray.build)
-        self.settings.restart_requested.connect(self.restart_app)
         self.settings.system_integration_changed.connect(lambda: self.system_integration.apply(report=True))
         # A local transcription loads the engine while the user still speaks (on demand, after an idle unload).
         self.recording.state_changed.connect(self._on_recording_state_changed)

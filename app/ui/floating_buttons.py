@@ -75,7 +75,7 @@ class _PromptCard(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         if dark is None:
             dark = theme.is_dark_mode(QApplication.instance())
-        pal = theme.palette(dark)
+        pal = theme.overlay_palette(dark)
         danger = pal["danger"]
         danger_tint = "rgba(255, 90, 82, 0.18)" if dark else "rgba(229, 72, 77, 0.12)"
         self._danger_color = danger
@@ -596,7 +596,7 @@ class RecordingPromptOverlay(_PromptCard):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         card_layout, dark = self._build_card("recordingPromptCard", dark)
         self._dark = dark
-        self._icon_color = theme.palette(dark)["muted"]
+        self._icon_color = theme.overlay_palette(dark)["muted"]
 
         top = self._build_header(on_pause, on_restart, on_cancel, level_feed)
         self._build_device_line(top, device_name, devices, on_device_selected)
@@ -723,7 +723,7 @@ class RecordingPromptOverlay(_PromptCard):
         # The sign takes the chip's text and background colours, and the accent's once selected.
         none_button = self._add_chip("", checkable=True)
         none_button.setToolTip(self._texts.none_text)
-        pal = theme.palette(self._dark)
+        pal = theme.overlay_palette(self._dark)
         ratio = self.devicePixelRatioF()
         none_icon = _svg_icon(theme.no_rephrase_svg(pal["text"], pal["panel2"]), 16, ratio)
         none_icon.addPixmap(_svg_pixmap(theme.no_rephrase_svg(pal["on_accent"], pal["accent"]), 16, ratio),

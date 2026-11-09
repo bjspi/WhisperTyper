@@ -105,9 +105,9 @@ component's constructor documents its dependencies and tests can build it in iso
 | `TextOutput` | SendInput / clipboard paste, delayed clipboard restore, selection reading | return values |
 | `HotkeyController` | pynput / Win32 listeners, bindings, "Set hotkey" capture | `action_triggered(action, detected_ns)` |
 | `PostRephraseController` | floating prompt palette for selected text | direct calls |
-| `TrayController` | tray icon, menu, level meter, git updater | — |
+| `TrayController` | tray icon, menu, level meter (macOS), git updater | — |
 | `MacPermissions` | one-time permission dialogs, startup prompts | — |
-| `SettingsWindow` | the form, theme, translations | `saved`, `hotkeys_changed`, `language_changed`, `appearance_changed`, `restart_requested` |
+| `SettingsWindow` | the form, theme, translations | `saved`, `hotkeys_changed`, `language_changed`, `appearance_changed`, `system_integration_changed` |
 | `run_onboarding` (`app/ui/onboarding.py`, rules in `app/core/onboarding.py`) | first-start guide, run before the windows are built; a new installation only | — |
 | `WarmupScheduler` / `WorkerThreads` | warm HTTP pool timer / QThread registry | — |
 
@@ -116,23 +116,21 @@ The settings window is one widget whose controls come from `main_window.ui`. Its
 slices of that single widget on top of `SettingsWindowBase`, which declares every control
 so each page is type-checked on its own; they hold no state of their own.
 
-The design (`modern_design`, default on) is chosen at startup. The classic design shows the
-tabs of the .ui file. The modern one (`modern_chrome`, `modern_rows`, `modern_prompts`) wraps
-the same widgets in a sidebar, splits the long tabs into smaller pages and rebuilds the cards
-as rows (title and description left, control right); rows follow their control's visibility
-and enabled state, so the pages' logic and the bindings work unchanged in both designs.
+The chrome (`modern_chrome`, `modern_rows`, `modern_prompts`) wraps the tabs of the .ui file
+in a sidebar (the tab bar stays hidden), splits the long tabs into smaller pages and rebuilds
+the cards as rows (title and description left, control right); rows follow their control's
+visibility and enabled state, so the pages' logic and the bindings work unchanged.
 
-The settings search (`search`, matching in `app/core/settings_search.py`) is part of the modern
-sidebar; the classic design has none. Its index needs no upkeep: at each keystroke it collects
+The settings search (`search`, matching in `app/core/settings_search.py`) is part of the
+sidebar. Its index needs no upkeep: at each keystroke it collects
 every page and the captioned `SettingRow`s on it (`SettingRow.search_texts`; status lines and
 rows whose control is hidden are left out). Opening a match selects the page, unfolds its
 section, switches expert mode on if the row is hidden with it, scrolls the row into view and
 lights it up for a moment (the `searchHit` style state).
 
-Expert mode (`expert_mode`, a switch in the modern sidebar) only decides what is on screen: rows
+Expert mode (`expert_mode`, a switch in the sidebar) only decides what is on screen: rows
 marked `expert=True` and the expert pages hide, and a card without a visible row hides with them.
-Hidden settings keep their values and stay in effect, and the classic design always shows
-everything. The tray menu follows it too: config file, log, GitHub, marking a recording and the
+Hidden settings keep their values and stay in effect. The tray menu follows it too: config file, log, GitHub, marking a recording and the
 local engine's maintenance entries are expert tools (`app/core/expert_mode.py`). It is unrelated to the `expert` block of config.json, which has no GUI at all.
 
 **The recording hot path is a chain of direct calls on the GUI thread:** the queued hotkey

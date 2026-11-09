@@ -1,4 +1,4 @@
-"""Modern design: settings cards as rows - title and description left, the control right.
+"""Settings cards as rows - title and description left, the control right.
 
 The rows reuse the window's existing widgets (loaded from the .ui file or built by the pages), so
 bindings, signals and tests keep working; only their layout changes. A row hides with its control

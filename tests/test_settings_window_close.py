@@ -14,6 +14,7 @@ from app.audio.store import RecordingStore  # noqa: E402
 from app.context import AppContext  # noqa: E402
 from app.core.config_store import ConfigStore  # noqa: E402
 from app.core.hotkeys import normalize_hotkey_string  # noqa: E402
+from app.ui.settings.modern_chrome import CHROME_WIDTH  # noqa: E402
 from app.ui.settings.window import SettingsWindow  # noqa: E402
 
 PROFILES = [{"id": "g1", "name": "Groq one", "provider": "groq", "key": "gsk-test-one-0000"}]
@@ -57,8 +58,8 @@ def test_closing_without_save_drops_prompt_edits_and_leaves_the_file_alone(make_
     assert window.config["post_rephrasing_entries"] != saved_entries  # mirrored live for the palettes
     window.close()
     after = on_disk(path)
-    # The stored width leaves out the modern sidebar, so both designs open with equally wide pages.
-    assert after["window_width"] == window.width() - window.design_extra_width()
+    # The stored width leaves out the sidebar: it is the width of the pages.
+    assert after["window_width"] == window.width() - CHROME_WIDTH
     assert after["window_height"] == window.height()
     assert {k: v for k, v in after.items() if k not in ("window_width", "window_height")} == \
         {k: v for k, v in before.items() if k not in ("window_width", "window_height")}

@@ -1,7 +1,6 @@
-"""Modern design of the settings window: sidebar navigation, page header, footer bar and smaller pages.
+"""Chrome of the settings window: sidebar navigation, page header, footer bar and smaller pages.
 
-The design is chosen at startup (switching it takes a restart). The classic design keeps the tabbed
-window of the .ui file; the modern one wraps the same pages in the chrome built here.
+It wraps the pages of the .ui file's tab widget, whose tab bar stays hidden: the sidebar navigates.
 """
 from __future__ import annotations
 
@@ -9,7 +8,7 @@ import logging
 from typing import Callable, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import QSize, Qt, QTimer
-from PyQt6.QtGui import QIcon, QKeySequence, QShortcut
+from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -44,10 +43,10 @@ from app.ui.tray_icons import app_icon
 _SIDEBAR_WIDTH = 210
 _BRAND_ICON_SIZE = 34
 _NAV_ICON_SIZE = 18
-#: Margins around the page header and the pages in the modern design.
+#: Margins around the page header and the pages.
 _PAGE_MARGINS = (20, 18, 20, 6)
-#: The modern window is this much wider, so its pages get the classic window's width.
-_EXTRA_WIDTH = _SIDEBAR_WIDTH + _PAGE_MARGINS[0] + _PAGE_MARGINS[2]
+#: How much wider than its pages the window is; the stored window width leaves it out.
+CHROME_WIDTH = _SIDEBAR_WIDTH + _PAGE_MARGINS[0] + _PAGE_MARGINS[2]
 _FOOTER_MARGINS = (24, 12, 24, 12)
 #: Space left above and below the window when it grows to fit its pages (title bar, taskbar).
 _SCREEN_HEADROOM = 60
@@ -60,17 +59,10 @@ _REVEAL_MARGIN = 24
 
 
 class ModernChrome(SettingsWindowBase):
-    """Build the modern chrome around the pages and switch between it and the classic tabs."""
-
-    _brand_header: QWidget
-    _brand_row: QHBoxLayout
-    _brand_hotkey_badge: QLabel
-    brand_play_button: QPushButton
-    _modern: bool = False
-    _design_arranged: bool = False
+    """Build the chrome around the pages: sidebar, page header and footer bar."""
 
     def _install_modern_chrome(self) -> None:
-        """Wrap the window's content in a column beside a sidebar (hidden in the classic design)."""
+        """Wrap the window's content in a column beside a sidebar; the tab bar gives way to the sidebar."""
         column = QWidget(self)
         self._column_layout = QVBoxLayout(column)
         self._column_layout.setSpacing(self.main_layout.spacing())
@@ -105,6 +97,17 @@ class ModernChrome(SettingsWindowBase):
         body.addWidget(column, 1)
         self.main_layout.addLayout(body)
         self.tabs.currentChanged.connect(self._on_page_changed)
+        tab_bar = self.tabs.tabBar()
+        if tab_bar is not None:
+            tab_bar.hide()
+        self.setMinimumWidth(WINDOW_MIN_WIDTH + CHROME_WIDTH)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
+        self._column_layout.setContentsMargins(0, 0, 0, 0)
+        self._column_layout.setSpacing(0)
+        self._page_area.setContentsMargins(*_PAGE_MARGINS)
+        self._page_area.setSpacing(6)
+        self.footer_row.setContentsMargins(*_FOOTER_MARGINS)
 
     def _build_page_header(self) -> QWidget:
         """Title and one-line explanation of the current page."""
@@ -155,8 +158,7 @@ class ModernChrome(SettingsWindowBase):
         self._search = SettingsSearch(self._searchable, self.translator.tr, self._sidebar)
         self._search.active_changed.connect(lambda active: self._nav.setVisible(not active))
         self._search.chosen.connect(self._open_setting)
-        if self._modern:  # the classic design has no sidebar, so nothing to search with
-            QShortcut(QKeySequence.StandardKey.Find, self, self._search.focus)
+        QShortcut(QKeySequence.StandardKey.Find, self, self._search.focus)
         layout.addWidget(self._search.field)
         layout.addSpacing(4)
 
@@ -170,11 +172,13 @@ class ModernChrome(SettingsWindowBase):
         layout.addWidget(self._nav, 1)
         layout.addWidget(self._search.results, 1)  # replaces the pages while a search is typed
 
-        # The hotkey badge and the play button move here while the modern design is active.
         layout.addWidget(self._build_expert_switch())
-        self._sidebar_badge = QHBoxLayout()
-        self._sidebar_badge.addStretch(1)
-        layout.addLayout(self._sidebar_badge)
+        self._hotkey_badge = QLabel("", self._sidebar)
+        self._hotkey_badge.setObjectName("hotkeyBadge")
+        badge_row = QHBoxLayout()
+        badge_row.addWidget(self._hotkey_badge)
+        badge_row.addStretch(1)
+        layout.addLayout(badge_row)
         self._more_menu = RoundedMenu(self)
         for action in (self.open_config_action, self.open_log_file_action, None, self.about_action,
                        self.github_action, None, self.exit_action):
@@ -190,16 +194,21 @@ class ModernChrome(SettingsWindowBase):
         self._more_button.setMenu(self._more_menu)
         self._more_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._more_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self._sidebar_tools = QHBoxLayout()
-        self._sidebar_tools.setSpacing(4)
-        self._sidebar_tools.addWidget(self._more_button, 1)
-        layout.addLayout(self._sidebar_tools)
+        # Plays the last recording in the app (the tray's entry opens it in the default player).
+        self.play_button = QPushButton(self._sidebar)
+        self.play_button.setObjectName("sidebarButton")
+        self.play_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+        tools = QHBoxLayout()
+        tools.setSpacing(4)
+        tools.addWidget(self._more_button, 1)
+        tools.addWidget(self.play_button)
+        layout.addLayout(tools)
         return self._sidebar
 
     def _build_expert_switch(self) -> SettingRow:
         """The sidebar's switch between all settings and only the common ones."""
         self.expert_mode_checkbox = QCheckBox(self._sidebar)
-        self.expert_mode_checkbox.setChecked(expert_mode_shown(self.config, modern_design=True))
+        self.expert_mode_checkbox.setChecked(expert_mode_shown(self.config))
         self.expert_mode_checkbox.toggled.connect(self._on_expert_mode_toggled)
         self._expert_switch_row = SettingRow(None, (self.expert_mode_checkbox,), checkbox=self.expert_mode_checkbox,
                                              describe=False)
@@ -209,12 +218,12 @@ class ModernChrome(SettingsWindowBase):
         return self._expert_switch_row
 
     # --- Expert mode --------------------------------------------------------------------
-    #: Pages only shown in expert mode; empty in the classic design, which always shows everything.
+    #: Pages only shown in expert mode (set when the pages are built).
     _expert_pages: Tuple[QWidget, ...] = ()
 
     def _expert_settings_shown(self) -> bool:
-        """Whether expert settings are on screen (the classic design has no switch and hides nothing)."""
-        return expert_mode_shown(self.config, self._modern)
+        """Whether expert settings are on screen."""
+        return expert_mode_shown(self.config)
 
     def _on_expert_mode_toggled(self, checked: bool) -> None:
         """Persist the choice and apply it at once, like the colour theme (the tray menu follows when it opens)."""
@@ -272,12 +281,11 @@ class ModernChrome(SettingsWindowBase):
         self._more_button.setText(tr("sidebar_more_button"))
         self._expert_switch_row.sync_texts()
         self._search.retranslate()
-        if self._rows:
-            self.basics_group.setTitle(tr("basics_group_title").replace("&", "&&"))  # no mnemonic
-            self.ffmpeg_group.setTitle(tr("ffmpeg_section"))
-            self._retranslate_modern_prompts_page()
-            for row in self._rows:
-                row.sync_texts()
+        self.basics_group.setTitle(tr("basics_group_title").replace("&", "&&"))  # no mnemonic
+        self.ffmpeg_group.setTitle(tr("ffmpeg_section"))
+        self._retranslate_modern_prompts_page()
+        for row in self._rows:
+            row.sync_texts()
 
     # --- Settings search ----------------------------------------------------------------
     def _searchable(self) -> List[SettingEntry]:
@@ -315,8 +323,8 @@ class ModernChrome(SettingsWindowBase):
         # After the page's layout, so the row's position is known.
         QTimer.singleShot(0, lambda: _reveal(target))
 
-    # --- Pages of the modern design ----------------------------------------------------
-    #: (page, icon, title key, subtitle key) in sidebar order; empty in the classic design.
+    # --- Pages ---------------------------------------------------------------------------
+    #: (page, icon, title key, subtitle key) in sidebar order; empty until the pages are built.
     _nav_pages: List[Tuple[QWidget, str, str, str]] = []
 
     def _build_modern_pages(self) -> None:
@@ -346,7 +354,7 @@ class ModernChrome(SettingsWindowBase):
             self._nav.addItem(QListWidgetItem())
         self._expert_pages = (self._replacements_tab, advanced)
         self._nav.setCurrentRow(self.tabs.currentIndex())
-        self._apply_design_icons(True, self.theme_palette())
+        self._apply_chrome_icons(self.theme_palette())
 
     def _scroll_page(self, widgets: List[QWidget]) -> QWidget:
         """A page that scrolls ``widgets`` with the margins and spacing of the pages from the .ui file."""
@@ -369,8 +377,6 @@ class ModernChrome(SettingsWindowBase):
 
     def fit_height_to_pages(self) -> None:
         """Grow the window so the tallest page shows without scrolling (up to the screen's height)."""
-        if not self._modern:
-            return
         self.ensurePolished()
         # The local transcription page is long and rarely visited: it scrolls instead of growing the window.
         skipped = [self._local_engine_tab, *(() if self._expert_settings_shown() else self._expert_pages)]
@@ -394,7 +400,7 @@ class ModernChrome(SettingsWindowBase):
         """
         if page is None:
             return 0
-        width = self.width() - self.design_extra_width()
+        width = self.width() - CHROME_WIDTH
         height = page.sizeHint().height()
         for area in page.findChildren(QScrollArea):
             content = area.widget()
@@ -412,7 +418,7 @@ class ModernChrome(SettingsWindowBase):
     _retranslate_modern_prompts_page: Callable[[], None]
 
     def _row(self, title: Optional[QLabel], *controls: object, **options: object) -> SettingRow:
-        """A row of the modern card layout (see ``SettingRow``)."""
+        """A row of the card layout (see ``SettingRow``)."""
         row = SettingRow(title, controls, **options)  # type: ignore[arg-type]
         self._rows.append(row)
         return row
@@ -422,7 +428,7 @@ class ModernChrome(SettingsWindowBase):
         return self._row(None, checkbox, checkbox=checkbox, **options)
 
     def _build_modern_rows(self) -> None:
-        """Rebuild the cards of the API providers and General pages as rows (modern design, at startup)."""
+        """Rebuild the cards of the .ui file's pages as rows (at startup)."""
         self._rows = []
         row, switch = self._row, self._switch
         for group, prefix_widgets, sections, extra in (
@@ -502,7 +508,6 @@ class ModernChrome(SettingsWindowBase):
         self._rebuild(self.basics_group, [
             row(self.ui_language_label, self.ui_language_selector),
             row(self.color_theme_label, self.color_theme_selector),
-            switch(self.modern_design_checkbox, expert=True),
         ])
         self.proxy_url_input.setMaximumWidth(240)
         self._rebuild(self.misc_group, [
@@ -541,71 +546,20 @@ class ModernChrome(SettingsWindowBase):
                 child.hide()
         return body
 
-    # --- Switching designs --------------------------------------------------------------
-    def _apply_design(self, modern: bool, colors: Dict[str, str]) -> None:
-        """Arrange the chrome for the design once; later calls (theme changes) only recolour the icons."""
-        if not self._design_arranged:
-            self._design_arranged = True
-            self._modern = modern
-            self._arrange_design(modern)
-        self._apply_design_icons(modern, colors)
-
-    def _arrange_design(self, modern: bool) -> None:
-        """Show the modern chrome or the classic menu bar, branding header and tab bar."""
-        self.setMinimumWidth(WINDOW_MIN_WIDTH + self.design_extra_width())
-        self._sidebar.setVisible(modern)
-        self._page_header.setVisible(modern)
-        self.menu_bar.setVisible(not modern)
-        self._brand_header.setVisible(not modern)
-        tab_bar = self.tabs.tabBar()
-        if tab_bar is not None:
-            tab_bar.setVisible(not modern)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
-        self.main_layout.setSpacing(0)
-        if not modern:
-            # The classic window kept its content 5 px above the bottom edge.
-            self._column_layout.setContentsMargins(0, 0, 0, 5)
-            self._page_area.setContentsMargins(0, 0, 0, 0)
-            return
-        self._column_layout.setContentsMargins(0, 0, 0, 0)
-        self._column_layout.setSpacing(0)
-        self._page_area.setContentsMargins(*_PAGE_MARGINS)
-        self._page_area.setSpacing(6)
-        self.footer_row.setContentsMargins(*_FOOTER_MARGINS)
-        # The hotkey badge and the play button move from the hidden branding header into the sidebar.
-        self._sidebar_badge.insertWidget(0, self._brand_hotkey_badge)
-        self._sidebar_tools.addWidget(self.brand_play_button)
-        self.brand_play_button.setObjectName("sidebarButton")
-
-    def is_modern(self) -> bool:
-        """Whether the window shows the modern design."""
-        return self._modern
-
-    def design_extra_width(self) -> int:
-        """How much wider than its pages the window is in the current design (the stored width excludes it)."""
-        return _EXTRA_WIDTH if self._modern else 0
-
-    def _apply_design_icons(self, modern: bool, colors: Dict[str, str]) -> None:
-        """Line icons in the theme's colours for the sidebar and its menu; none in the classic menu bar."""
-        muted, selected = colors["muted"], colors.get("nav_selected", colors["accent"])
+    # --- Colours ------------------------------------------------------------------------
+    def _apply_chrome_icons(self, colors: Dict[str, str]) -> None:
+        """Line icons in the theme's colours for the sidebar and its menu."""
+        muted, menu_icon = colors["muted"], colors["menu_icon"]
         for page, name, _title, _subtitle in self._nav_pages:
             item = self._nav.item(self.tabs.indexOf(page))
             if item is not None:
-                item.setIcon(line_icon(name, muted, selected))
-        menu_icon = colors.get("menu_icon", muted)
+                item.setIcon(line_icon(name, muted, colors["nav_selected"]))
         for action, name in ((self.open_config_action, "file"), (self.open_log_file_action, "log"),
                              (self.about_action, "info"), (self.github_action, "code"),
                              (self.exit_action, "quit")):
-            action.setIcon(line_icon(name, menu_icon) if modern else QIcon())
+            action.setIcon(line_icon(name, menu_icon))
         self._more_button.setIcon(line_icon("more", menu_icon))
         self._search.set_icon_color(muted)
-
-    def _playback_icon(self, active: bool) -> Optional[QIcon]:
-        """Modern design: the play/stop line icon of the sidebar button (None in the classic design)."""
-        if not self._modern:
-            return None
-        colors = self.theme_palette()
-        return line_icon("stop" if active else "play", colors.get("menu_icon", colors["muted"]))
 
 
 def _group_title(row: QWidget) -> str:

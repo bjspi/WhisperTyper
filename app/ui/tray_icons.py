@@ -27,7 +27,7 @@ def app_icon() -> QIcon:
 
 
 def tray_icon() -> QIcon:
-    """The modern design's tray icon: the blue microphone tile of the app icon (null if not bundled)."""
+    """The tray icon: the blue microphone tile of the app icon (null if not bundled)."""
     icon_path = resource_path("resources", "tray_icon.png")
     return QIcon(icon_path) if os.path.exists(icon_path) else QIcon()
 

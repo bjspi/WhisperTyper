@@ -1,4 +1,4 @@
-"""Tinted line icons (``resources/icons``) and rounded Windows 11 popup menus for the modern design."""
+"""Tinted line icons (``resources/icons``) and rounded Windows 11 popup menus."""
 from __future__ import annotations
 
 from functools import lru_cache

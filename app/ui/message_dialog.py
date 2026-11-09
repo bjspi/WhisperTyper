@@ -1,8 +1,8 @@
 """Message dialogs in the look of the settings window: icon badge, heading, text, optional details, button bar.
 
 Replaces the stock message box, whose big system icon, flat text and equal-weight buttons look out of
-place next to the modern settings. The colours come from the parent's theme (``theme_palette()``), so
-the dialog follows light/dark and the chosen design.
+place next to the settings. The colours come from the parent's theme (``theme_palette()``), so
+the dialog follows light/dark.
 """
 from __future__ import annotations
 
@@ -94,20 +94,19 @@ QProgressBar#messageProgress::chunk { background: %(accent)s; border-radius: 3px
 
 
 def _colors(parent: Optional[QWidget]) -> Dict[str, str]:
-    """The parent window's theme, or the modern one following the system's light/dark mode."""
+    """The parent window's theme, or the one following the system's light/dark mode."""
     palette = getattr(parent, "theme_palette", None)
     if callable(palette):
         try:
             return dict(palette())
         except Exception:
             pass
-    return theme.palette(theme.is_dark_mode(QApplication.instance()), True)
+    return theme.palette(theme.is_dark_mode(QApplication.instance()))
 
 
 def _stylesheet(colors: Dict[str, str], badge: str) -> str:
-    """The dialog's stylesheet; the classic palettes lack a few modern keys, which fall back."""
+    """The dialog's stylesheet in ``colors``, with a tint of the ``badge`` colour behind the icon."""
     values = dict(colors)
-    values.setdefault("heading", colors["text"])
     tint = QColor(colors[badge])
     tint.setAlpha(36)
     values["badge_bg"] = f"rgba({tint.red()}, {tint.green()}, {tint.blue()}, {tint.alpha()})"

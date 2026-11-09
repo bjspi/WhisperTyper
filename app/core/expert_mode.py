@@ -11,6 +11,6 @@ from typing import Any, Mapping
 EXPERT_MODE_KEY = "expert_mode"
 
 
-def expert_mode_shown(config: Mapping[str, Any], modern_design: bool) -> bool:
-    """Whether expert settings and tools are shown; the classic design has no switch and shows everything."""
-    return not modern_design or bool(config.get(EXPERT_MODE_KEY, True))
+def expert_mode_shown(config: Mapping[str, Any]) -> bool:
+    """Whether expert settings and tools are shown (on unless the switch was turned off)."""
+    return bool(config.get(EXPERT_MODE_KEY, True))

@@ -122,6 +122,11 @@ class TestMigrations:
         assert changed is True
         assert "generic_rephrase_enabled" not in config and "generic_rephrase_prompt" not in config
 
+    def test_the_removed_design_switch_is_dropped(self, store: ConfigStore):
+        write_config(store, {"modern_design": False})
+        config, changed = store.load()
+        assert changed is True and "modern_design" not in config
+
     def test_liveprompt_settings_become_the_first_prompt_entry(self, store: ConfigStore):
         write_config(store, {
             "ui_language": "en",
