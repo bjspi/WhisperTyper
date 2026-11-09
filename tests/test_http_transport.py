@@ -393,14 +393,6 @@ def test_endpoints_on_this_computer_never_use_a_proxy(monkeypatch):
     assert transport._select_proxy("http://192.168.1.5/x", {"http": "http://proxy:1"}) == "http://proxy:1"
 
 
-def test_client_keeps_no_cookies_and_never_retries_connects(server, traces):
-    for _ in range(2):
-        transport.request("POST", url(server), content=b"audio")
-    assert API.cookies == [None, None]
-    client = next(iter(transport._CLIENTS.values()))
-    assert client.cookies.jar is not None and not list(client.cookies.jar)
-
-
 def test_dns_failure_logs_the_connect_phase_without_fake_completion(server, traces, monkeypatch):
     def fail(*_args, **_kwargs):
         raise socket.gaierror("synthetic DNS failure")

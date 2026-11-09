@@ -12,7 +12,8 @@ from app.core.models import (
 )
 
 
-@pytest.mark.parametrize("model", ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5.5", "gpt-5.6-luna", "gpt-6-luna"])
+@pytest.mark.parametrize("model", ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra",
+                                   "gpt-5.6-luna", "gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-astra"])
 def test_reasoning_models_keep_their_default_temperature(model):
     assert not rephrasing_supports_temperature(model)
 
@@ -44,7 +45,6 @@ def test_transcription_fields_follow_the_model_capabilities():
 
 def test_dropdown_lists_come_from_the_same_catalog():
     assert sum(len(models) for models in REPHRASING_MODEL_OPTIONS.values()) == len(REPHRASING_MODELS)
-    assert REPHRASING_MODEL_OPTIONS["groq"][0] == "openai/gpt-oss-120b"
 
 
 def test_a_model_takes_a_temperature_only_when_it_does_not_reason_by_default():

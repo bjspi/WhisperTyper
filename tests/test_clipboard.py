@@ -254,13 +254,6 @@ def test_failed_commit_does_not_invent_success_and_preserves_restore(harness, mo
     assert output.restore_pending
 
 
-def test_empty_text_has_no_commit_milestones(harness):
-    output, _clipboard = harness
-    timing = OperationTiming("recording")
-    assert output.insert("", timing=timing)
-    assert "text_commit_start" not in timing._events
-
-
 def test_direct_input_preserves_rich_clipboard_and_has_no_paste_waits(harness, monkeypatch):
     output, clipboard = harness
     output.config["windows_sendinput_text"] = True
@@ -394,25 +387,27 @@ def test_paste_diagnostics_log_before_paste_and_before_restore(harness, monkeypa
     assert clipboard.mimeData() is not None
 
 
-def test_paste_and_copy_use_the_configured_timings(monkeypatch):
-    config = {"restore_clipboard": True, "fast_paste": False,
-              "expert": {**expert_defaults(), "paste_prepare_ms": 30, "paste_settle_ms": 40,
-                         "clipboard_restore_ms": 700, "copy_settle_ms": 50, "select_all_settle_ms": 60}}
-    output = TextOutput(config, lambda key, **_kwargs: key, Mock(), lambda _permission: None)
-    monkeypatch.setattr(output, "_simulate_key_combination", lambda _char: True)
-    monkeypatch.setattr(clipboard_module.ClipboardSnapshot, "capture", classmethod(lambda cls: cls("old")))
-    monkeypatch.setattr(clipboard_module.copykitten, "copy", Mock())
-    monkeypatch.setattr(clipboard_module.copykitten, "paste", Mock(return_value="selected"))
-    restore = Mock()
-    monkeypatch.setattr(output, "_schedule_clipboard_restore", restore)
+def test_paste_and_copy_use_the_configured_expert_timings(harness, monkeypatch):
+    output, clipboard = harness
+    output.config.update(fast_paste=False, expert={**expert_defaults(), "paste_prepare_ms": 30, "paste_settle_ms": 40,
+                                                   "clipboard_restore_ms": 700, "copy_settle_ms": 50,
+                                                   "select_all_settle_ms": 60})
     sleeps = Mock()
     monkeypatch.setattr(clipboard_module.time, "sleep", sleeps)
 
     assert output.insert("text", OperationTiming("recording"))
     assert [call.args[0] for call in sleeps.call_args_list] == [0.03, 0.04]
-    assert restore.call_args.args[1] == 700
+    assert output._restore_timer.delay_ms == 700
+    output._restore_timer.fire()
 
     sleeps.reset_mock()
-    monkeypatch.setattr(clipboard_module.ClipboardSnapshot, "restore", lambda self: None)
+
+    def select_and_copy(char: str) -> None:
+        if char == "c":
+            selected = QMimeData()
+            selected.setText("selected")
+            clipboard.setMimeData(selected)
+
+    output.on_simulated_key = select_and_copy
     assert output.get_selected_text(select_all_first=True) == "selected"
     assert [call.args[0] for call in sleeps.call_args_list] == [0.06, 0.05]

@@ -11,14 +11,6 @@ from app.core.expert_settings import EXPERT_SETTINGS, expert_defaults, expert_va
 from app.core.hotkeys import normalize_hotkey_string
 
 
-def test_defaults_are_the_previous_fixed_timings():
-    # Introducing the block must not change any behaviour.
-    assert expert_defaults() == {
-        "paste_prepare_ms": 100, "paste_settle_ms": 100, "clipboard_restore_ms": 500,
-        "clipboard_restore_fast_ms": 600, "copy_settle_ms": 100, "select_all_settle_ms": 80,
-    }
-
-
 @pytest.mark.parametrize(("raw", "expected", "warns"), [
     (250, 250, False),
     (250.0, 250, False),

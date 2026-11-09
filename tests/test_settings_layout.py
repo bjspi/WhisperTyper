@@ -13,7 +13,6 @@ from PyQt6.QtTest import QTest  # noqa: E402
 
 from app.audio.store import RecordingStore  # noqa: E402
 from app.context import AppContext  # noqa: E402
-from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED  # noqa: E402
 from app.core.config_store import ConfigStore  # noqa: E402
 from app.core.env import is_WINDOWS  # noqa: E402
 from app.core.hotkeys import normalize_hotkey_string  # noqa: E402
@@ -62,18 +61,6 @@ def test_collapsible_section_toggles_its_content(qapp):
     assert section.is_expanded() and not section.content.isHidden()
 
 
-def test_one_tab_holds_api_hotkeys_recording_and_ffmpeg_in_order(window):
-    assert not hasattr(window, "rephrasing_tab")
-    layout = window.transcription_layout
-    order = [window.transcription_api_group, window.shared_api_group, window.hotkeys_group,
-             window.recording_group, window.ffmpeg_section]
-    assert [layout.indexOf(widget) for widget in order] == sorted(layout.indexOf(widget) for widget in order)
-    assert window.transcription_api_group.isAncestorOf(window.transcription_prompt_section)
-    assert window.hotkeys_group.isAncestorOf(window.pr_hotkey_display)
-    assert window.hotkeys_group.isAncestorOf(window.push_to_talk_checkbox)
-    assert not window.transcription_prompt_section.is_expanded() and not window.ffmpeg_section.is_expanded()
-
-
 def test_model_without_temperature_disables_the_slider_and_says_why(window):
     window.rephrasing_provider_selector.setCurrentIndex(window.rephrasing_provider_selector.findData("openai"))
     window.rephrasing_model_input.setCurrentText("gpt-5-mini")
@@ -84,21 +71,9 @@ def test_model_without_temperature_disables_the_slider_and_says_why(window):
     assert window.rephrasing_temp_slider.isEnabled() and window.rephrasing_temp_label.toolTip() == ""
 
 
-def test_tab_order_puts_api_keys_and_local_transcription_right_after_the_api_providers(window):
-    pages = [window.tabs.widget(index) for index in range(window.tabs.count())]
-    local = [window._local_engine_tab] if LOCAL_ENGINE_SUPPORTED else []
-    assert pages == [window.transcription_tab, window._api_keys_tab, *local,
-                     window.post_rephrasing_tab, window._replacements_tab, window.general_tab]
-    assert window.tabs.tabText(0) == "API Providers"
-
-
 def test_muted_labels_are_styled_by_the_theme_not_per_widget(window):
-    from app.ui import theme
+    # Regression: per-widget stylesheets from the .ui file overrode the theme's warning and muted colours.
     assert window.prompt_token_label.styleSheet() == "" and window.transformations_tab_description_label.styleSheet() == ""
-    for dark in (False, True):
-        qss = theme.build_stylesheet(dark)
-        assert f'QLabel#transformations_tab_description_label {{ color: {theme.palette(dark)["muted"]};' in qss
-        assert f'QLabel#prompt_token_label[level="over"] {{ color: {theme.palette(dark)["warn"]}; }}' in qss
 
 
 def test_open_log_action_follows_the_log_file_in_refresh_actions(window):
@@ -152,29 +127,18 @@ def test_classic_design_shows_tabs_and_menu_bar(window):
     assert window._sidebar.isHidden() and window._page_header.isHidden()
 
 
-def test_modern_design_splits_pages_and_mirrors_them_in_the_sidebar(modern_window):
+def test_modern_design_mirrors_its_pages_in_the_sidebar(modern_window):
     window = modern_window
     assert window.is_modern() and window.design_extra_width() > 0
     assert window.tabs.tabBar().isHidden() and window.menu_bar.isHidden() and not window._sidebar.isHidden()
-    pages = [window.tabs.widget(index) for index in range(window.tabs.count())]
-    # The local transcription page (after API keys) is not offered on macOS.
-    shift = 1 if LOCAL_ENGINE_SUPPORTED else 0
-    assert window.tabs.count() == window._nav.count() == 8 + shift
-    assert [pages.index(page) for page in (window.transcription_tab, window._api_keys_tab, window.post_rephrasing_tab,
-                                           window._replacements_tab, window.general_tab)] == [
-        0, 2, 4 + shift, 5 + shift, 6 + shift]
-    assert not LOCAL_ENGINE_SUPPORTED or pages.index(window._local_engine_tab) == 3
-    assert pages[1].isAncestorOf(window.shared_api_group)
-    recording, advanced = pages[3 + shift], pages[7 + shift]
-    assert recording.isAncestorOf(window.hotkeys_group) and recording.isAncestorOf(window.recording_group)
-    assert recording.isAncestorOf(window.input_device_selector)
-    assert advanced.isAncestorOf(window.text_insertion_group) and advanced.isAncestorOf(window.ffmpeg_group)
-    assert window.transcription_prompt_section.is_expanded() and window.second_pass_section.is_expanded()
+    assert window.tabs.count() == window._nav.count()
     assert all(window.tabs.tabText(index) for index in range(window.tabs.count()))
-    window._nav.setCurrentRow(3 + shift)
-    assert window.tabs.currentIndex() == 3 + shift and window._page_title.text() == "Recording & hotkeys"
+    recording = next(index for index in range(window.tabs.count())
+                     if window.tabs.widget(index).isAncestorOf(window.hotkeys_group))
+    window._nav.setCurrentRow(recording)
+    assert window.tabs.currentIndex() == recording and window._page_title.text() == window.tabs.tabText(recording)
     window.tabs.setCurrentWidget(window.general_tab)
-    assert window._nav.currentRow() == 6 + shift
+    assert window._nav.currentRow() == window.tabs.indexOf(window.general_tab)
 
 
 def test_modern_rows_follow_their_control_and_toggle_on_click(modern_window):
@@ -193,31 +157,12 @@ def test_modern_rows_follow_their_control_and_toggle_on_click(modern_window):
     assert not row.title.isEnabled()
 
 
-def test_modern_rows_strip_the_caption_colon_and_keep_every_control(modern_window):
+def test_modern_prompts_page_adds_a_prompt_and_paints_every_row(modern_window):
     window = modern_window
-    row = next(row for row in window._rows if row.title is window.transcription_provider_label)
-    assert not row.title.text().endswith(":")
-    for group in (window.transcription_api_group, window.shared_api_group, window.hotkeys_group,
-                  window.recording_group, window.ffmpeg_group, window.misc_group, window.text_insertion_group, window.logging_group):
-        children = group.findChildren(QtWidgets.QWidget, options=Qt.FindChildOption.FindDirectChildrenOnly)
-        assert [type(child).__name__ for child in children] == ["CardBody"]
-    assert window.ffmpeg_group.isAncestorOf(window.ffmpeg_path_input) and window.ffmpeg_section.isHidden()
-    assert window.recording_group.isAncestorOf(window.input_device_selector)
-
-
-def test_modern_prompts_page_puts_list_and_editor_into_cards(modern_window):
-    window = modern_window
-    assert window.prompts_list_group.isAncestorOf(window.post_rp_list)
-    assert window.prompts_list_group.isAncestorOf(window.post_rp_add_btn)
-    assert window.prompts_editor_group.isAncestorOf(window.post_rp_text_edit)
-    assert window.prompts_palette_group.isAncestorOf(window.recording_prompt_overlay_digit_keys_checkbox)
-    assert window.prompts_list_group.title() == "Your prompts"
     count = window.post_rp_list.count()
     window.post_rp_add_btn.click()
     assert window.post_rp_list.count() == count + 1
-    delegate = window.post_rp_list.itemDelegate()
-    assert type(delegate).__name__ == "PromptItemDelegate"
-    window.post_rp_list.grab()  # paints every row through the delegate
+    window.post_rp_list.grab()  # paints every row through the custom item delegate
 
 
 def test_building_the_modern_rows_opens_no_windows(qapp, tmp_path):

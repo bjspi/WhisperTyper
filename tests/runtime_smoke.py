@@ -995,7 +995,7 @@ def main() -> int:
         with open(path, "rb") as recording:
             original = recording.read()
         wt.pipeline.last_transcription = ""
-        with patch("app.controllers.transcription.resolve_ffmpeg", side_effect=AssertionError("No FFmpeg for recordings")):
+        with patch("app.services.transcription_requests.resolve_ffmpeg", side_effect=AssertionError("No FFmpeg for recordings")):
             wt.pipeline.start(path, output_mode="clipboard")
 
         def done() -> None:

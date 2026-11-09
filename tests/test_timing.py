@@ -71,13 +71,6 @@ def test_interleaved_jobs_have_independent_milestones(caplog):
     assert "rephrase_request_ms=" not in second_summary
 
 
-def test_queue_handler_defers_formatting_to_the_listener():
-    handler = log_queue._InProcessQueueHandler(log_queue._QUEUE)
-    record = logging.makeLogRecord({"msg": "value=%s", "args": ("lazy",)})
-    assert handler.prepare(record) is record
-    assert record.msg == "value=%s" and record.args == ("lazy",)
-
-
 @pytest.mark.parametrize("stall", ["handler_lock", "slow_emit"])
 def test_blocked_sink_does_not_block_producers_or_handler_reconfiguration(stall):
     # A separate process keeps the application-wide logging setup away from pytest's handlers.

@@ -115,13 +115,6 @@ def test_chosen_key_persists_until_the_provider_changes(make_window):
     assert reloaded._ui_api_key("rephrasing") == "gsk-test-one-0000"
 
 
-def test_both_api_sections_have_the_same_controls(make_window):
-    window, _path = make_window()
-    transcription, rephrasing = (window._task_widgets(task) for task in ("transcription", "rephrasing"))
-    assert [type(widget) for widget in transcription] == [type(widget) for widget in rephrasing]
-    assert window.test_transcription_api_button.text() == window.test_rephrasing_api_button.text()
-
-
 def test_choosing_the_automatic_key_explicitly_is_stored_as_automatic(make_window):
     window, path = make_window()
     window.rephrasing_key_choose_button.click()

@@ -9,23 +9,12 @@ from app.services import ffmpeg
 
 
 class TestResolveFfmpeg:
-    def test_configured_binary_path_wins(self, tmp_path: Path):
+    @pytest.mark.parametrize("setting", ["{exe}", "{folder}", '"{exe}"'], ids=["binary", "folder", "quoted"])
+    def test_configured_path_is_found(self, tmp_path: Path, setting: str):
         exe = tmp_path / ("ffmpeg.exe" if ffmpeg.is_WINDOWS else "ffmpeg")
         exe.write_bytes(b"binary")
         exe.chmod(0o755)
-        assert ffmpeg.resolve_ffmpeg(str(exe)) == str(exe)
-
-    def test_configured_directory_is_expanded(self, tmp_path: Path):
-        exe = tmp_path / ("ffmpeg.exe" if ffmpeg.is_WINDOWS else "ffmpeg")
-        exe.write_bytes(b"binary")
-        exe.chmod(0o755)
-        assert ffmpeg.resolve_ffmpeg(str(tmp_path)) == str(exe)
-
-    def test_quotes_are_stripped(self, tmp_path: Path):
-        exe = tmp_path / ("ffmpeg.exe" if ffmpeg.is_WINDOWS else "ffmpeg")
-        exe.write_bytes(b"binary")
-        exe.chmod(0o755)
-        assert ffmpeg.resolve_ffmpeg(f'"{exe}"') == str(exe)
+        assert ffmpeg.resolve_ffmpeg(setting.format(exe=exe, folder=tmp_path)) == str(exe)
 
 
 class TestPrepareUpload:

@@ -10,8 +10,6 @@ from app.core.paths import resource_path
 from app.core.prompts import (
     DEFAULT_TRANSCRIPTION_PROMPTS,
     MAX_TRANSFORMATIONS,
-    _default_prompt_for,
-    _is_known_default_prompt,
     auto_apply_prompt,
     captioned_transformations,
     default_transcription_prompt,
@@ -57,18 +55,6 @@ class TestTranslationManager:
                 assert not missing and not extra, (
                     f"{lang}.json key mismatch — missing: {sorted(missing)}, extra: {sorted(extra)}"
                 )
-
-
-class TestDefaultPrompts:
-    def test_known_language(self):
-        assert _default_prompt_for(DEFAULT_TRANSCRIPTION_PROMPTS, "de") == DEFAULT_TRANSCRIPTION_PROMPTS["de"].strip()
-
-    def test_unknown_language_falls_back_to_english(self):
-        assert _default_prompt_for(DEFAULT_TRANSCRIPTION_PROMPTS, "xx") == DEFAULT_TRANSCRIPTION_PROMPTS["en"].strip()
-
-    def test_default_detection_across_languages(self):
-        assert _is_known_default_prompt(DEFAULT_TRANSCRIPTION_PROMPTS, DEFAULT_TRANSCRIPTION_PROMPTS["fr"])
-        assert not _is_known_default_prompt(DEFAULT_TRANSCRIPTION_PROMPTS, "my custom prompt")
 
 
 class TestRecordingPromptEntries:
@@ -162,6 +148,7 @@ class TestDefaultTranscriptionPrompt:
     def test_auto_detect_or_unknown_language_uses_ui_language(self):
         assert default_transcription_prompt("", "fr") == DEFAULT_TRANSCRIPTION_PROMPTS["fr"].strip()
         assert default_transcription_prompt("it", "de") == DEFAULT_TRANSCRIPTION_PROMPTS["de"].strip()
+        assert default_transcription_prompt("", "xx") == DEFAULT_TRANSCRIPTION_PROMPTS["en"].strip()
 
 
 class TestPreviousTranscriptionPrompts:

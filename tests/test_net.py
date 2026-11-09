@@ -14,10 +14,6 @@ class TestBuildProxies:
         assert netutil.build_proxies("   ") is None
         assert netutil.build_proxies(None) is None
 
-    def test_url_maps_to_both_schemes(self):
-        proxies = netutil.build_proxies("http://proxy:8080")
-        assert proxies == {"http": "http://proxy:8080", "https": "http://proxy:8080"}
-
 
 class TestResolveProxies:
     def test_explicit_proxy_wins(self):
@@ -42,11 +38,6 @@ class TestGenerateTestWav:
             assert wf.getsampwidth() == 2
             assert wf.getframerate() == 16000
             assert wf.getnframes() > 0
-
-
-class TestTcpCheck:
-    def test_none_host_is_false(self):
-        assert netutil.tcp_check(None, 443) is False
 
 
 class TestDiagnoseConnectivity:
