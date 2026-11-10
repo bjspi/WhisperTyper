@@ -2,13 +2,18 @@
 
 Each entry shows its accelerator letter as a quiet hint at its right edge; pressing the letter
 while the menu is open triggers the entry.
+
+Clicks on the menu right after it opens are ignored: the menu opens upwards from the tray,
+so its last entry (Quit) sits under the pointer, and a touchpad tap that lands just after
+the right-click would trigger it by accident.
 """
 from __future__ import annotations
 
+import time
 from typing import Callable, Dict, Optional
 
 from PyQt6.QtCore import QRect, QRectF, Qt
-from PyQt6.QtGui import QAction, QColor, QIcon, QKeyEvent, QPainter, QPaintEvent, QShowEvent
+from PyQt6.QtGui import QAction, QColor, QIcon, QKeyEvent, QMouseEvent, QPainter, QPaintEvent, QShowEvent
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMenu, QVBoxLayout, QWidget, QWidgetAction
 
 from app.ui.line_icons import round_corners
@@ -16,6 +21,8 @@ from app.ui.line_icons import round_corners
 #: Gap between the accelerator hint and the item's right edge, and the header logo size.
 _HINT_MARGIN = 14
 _HEADER_ICON_SIZE = 30
+#: How long after opening a click on an entry is ignored, in seconds.
+CLICK_GUARD_S = 0.4
 
 
 class BadgeTrayMenu(QMenu):
@@ -34,6 +41,7 @@ class BadgeTrayMenu(QMenu):
         self._palette = palette
         self.setObjectName("tray")
         self._badge_keys: Dict[str, QAction] = {}
+        self._opened_at = 0.0
 
     def register_badge(self, key: str, action: QAction) -> None:
         """Map a lowercase accelerator letter to the action it triggers and stamp it for paint."""
@@ -79,14 +87,34 @@ class BadgeTrayMenu(QMenu):
         return state
 
     def showEvent(self, event: Optional[QShowEvent]) -> None:  # noqa: N802 - Qt API
-        """Windows 11 rounded corners and shadow."""
+        """Windows 11 rounded corners and shadow; starts the click guard."""
         super().showEvent(event)
+        self._opened_at = time.monotonic()
         round_corners(self)
 
+    def mousePressEvent(self, event: Optional[QMouseEvent]) -> None:  # noqa: N802 - Qt API
+        """Ignore a click on an entry that comes too soon after opening."""
+        if not self._too_early(event):
+            super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: Optional[QMouseEvent]) -> None:  # noqa: N802 - Qt API
+        """Ignore a release on an entry that comes too soon after opening."""
+        if not self._too_early(event):
+            super().mouseReleaseEvent(event)
+
+    def _too_early(self, event: Optional[QMouseEvent]) -> bool:
+        """A click inside the menu within the guard time; outside clicks still close it."""
+        if event is None or not self.rect().contains(event.position().toPoint()):
+            return False
+        return time.monotonic() - self._opened_at < CLICK_GUARD_S
+
     def keyPressEvent(self, event: Optional[QKeyEvent]) -> None:  # noqa: N802 - Qt API
-        """Trigger the action whose accelerator letter was pressed."""
+        """Trigger the action whose accelerator letter was pressed; a submenu's letter opens it."""
         if event is not None:
             action = self._badge_keys.get((event.text() or "").lower())
+            if action is not None and action.isEnabled() and action.menu() is not None:
+                self.setActiveAction(action)
+                return
             if action is not None and action.isEnabled():
                 self.close()
                 action.trigger()
