@@ -337,17 +337,35 @@ def test_unusable_engine_fails_the_request_with_its_reason(tmp_path):
         transcribe(request, OperationTiming(), lambda key, **kw: key, on_compressing=Mock(), on_transcribing=Mock())
 
 
-def test_waiting_for_a_downloading_engine_fails_at_once(monkeypatch):
+def _engine_wait_request(wait_s):
+    from app.services.transcription import TranscriptionRequest
+
+    return TranscriptionRequest(api_key="", api_endpoint="http://127.0.0.1:1/v1/audio/transcriptions",
+                                audio_path="a.wav", prompt="", model=LOCAL_TRANSCRIPTION_MODEL, language="de",
+                                temperature=0, local_engine_wait_s=wait_s)
+
+
+def test_a_recording_waits_while_the_engine_checks_its_model_files(monkeypatch):
+    """Regression: right after switching to Local, the start's file check ("downloading") failed the recording."""
     from app.services import transcription
-    from app.services.transcription import TranscriptionError, TranscriptionRequest
+
+    answers = iter(["downloading", "downloading", "loading", "ready"])
+    monkeypatch.setattr(transcription, "request", lambda *_a, **_kw: Mock(
+        status_code=200, json=lambda: {"status": next(answers)}))
+    monkeypatch.setattr(transcription.time, "sleep", lambda _s: None)
+    loading = Mock()
+    assert transcription._wait_for_local_engine(_engine_wait_request(30), lambda key, **kw: key, loading)
+    loading.assert_called_once()  # the spinner says the model is loading, once
+
+
+def test_a_download_still_running_at_the_deadline_fails_with_its_hint(monkeypatch):
+    from app.services import transcription
+    from app.services.transcription import TranscriptionError
 
     monkeypatch.setattr(transcription, "request", lambda *_a, **_kw: Mock(status_code=200,
                                                                           json=lambda: {"status": "downloading"}))
-    request = TranscriptionRequest(api_key="", api_endpoint="http://127.0.0.1:1/v1/audio/transcriptions",
-                                   audio_path="a.wav", prompt="", model=LOCAL_TRANSCRIPTION_MODEL, language="de",
-                                   temperature=0, local_engine_wait_s=30)
     with pytest.raises(TranscriptionError, match="local_engine_downloading_error"):
-        transcription._wait_for_local_engine(request, lambda key, **kw: key)
+        transcription._wait_for_local_engine(_engine_wait_request(0), lambda key, **kw: key)
 
 
 # --- Settings page ----------------------------------------------------------------------

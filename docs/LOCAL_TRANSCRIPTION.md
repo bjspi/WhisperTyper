@@ -15,6 +15,10 @@ default, and available on Windows and Linux (switched off on macOS).
 3. The model is downloaded from Hugging Face the first time the engine loads (0.5–3 GB). The
    status line shows the progress.
 
+A recording made while the engine still starts, checks its model files or loads the model waits
+for it (up to two minutes): the spinner says the local model is loading, then switches to
+"Transcribing…". Only a download still running after that fails, with a hint to its progress.
+
 By hand: `pip install -e ".[local]"`, plus `.[local-nvidia]` for NVIDIA or `.[local-intel]` for Intel GPUs/NPUs.
 
 ## Devices and backends

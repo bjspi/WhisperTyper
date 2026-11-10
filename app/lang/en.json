@@ -426,6 +426,7 @@
   "local_engine_unusable_error": "Local transcription is not possible: {reason}",
   "local_engine_not_ready_error": "The local engine is not ready (status: {status}). See the engine log (Settings → Local transcription).",
   "local_engine_downloading_error": "The local model is still downloading. Please wait until it is done (progress in Settings → Local transcription).",
+  "local_engine_loading_message": "Loading the local model… the recording is transcribed right after.",
   "local_status_off": "Not loaded",
   "local_status_off_idle": "Unloaded after idle – loads with the next recording",
   "local_status_starting": "Starting…",

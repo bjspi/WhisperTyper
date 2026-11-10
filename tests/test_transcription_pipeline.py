@@ -44,6 +44,7 @@ class FakeWorker(QObject):
     error = pyqtSignal(str, str)
     transcribing = pyqtSignal()
     compressing = pyqtSignal(str)
+    engine_loading = pyqtSignal()
     diagnostics = pyqtSignal(object)
 
     def __init__(self, request, timing=None, tr=None):

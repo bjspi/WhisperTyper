@@ -144,6 +144,7 @@ class TranscriptionPipeline:
             worker.finished.connect(lambda text, path=audio_path: self._remember_outcome(path, transcription=text))
             worker.error.connect(lambda message, path: self._remember_outcome(path, error=message))
         worker.compressing.connect(self._on_compression_phase_started)
+        worker.engine_loading.connect(self._on_engine_loading)
         worker.transcribing.connect(lambda language=lang_code: self._on_transcription_phase_started(language))
         # Bind this request's output mode into the result handlers so a concurrently started
         # request (with a different mode) cannot redirect this one's delivery.
@@ -230,6 +231,11 @@ class TranscriptionPipeline:
     def _on_compression_phase_started(self, filename: str) -> None:
         """Show a distinct 'compressing…' spinner while an oversized file is downsampled."""
         self._notifier.show(self._batch_progress_prefix() + self._ctx.tr("compressing_audio_message", filename=filename),
+                            0, spinner=True)
+
+    def _on_engine_loading(self) -> None:
+        """Say why the recording waits: the local engine is still loading its model."""
+        self._notifier.show(self._batch_progress_prefix() + self._ctx.tr("local_engine_loading_message"),
                             0, spinner=True)
 
     def _transcription_progress_message(self, lang_code: str) -> str:

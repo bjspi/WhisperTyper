@@ -426,6 +426,7 @@
   "local_engine_unusable_error": "Lokale Transkription nicht möglich: {reason}",
   "local_engine_not_ready_error": "Die lokale Engine ist nicht bereit (Status: {status}). Details im Engine-Log (Einstellungen → Lokale Transkription).",
   "local_engine_downloading_error": "Das lokale Modell wird noch heruntergeladen. Bitte warten, bis es fertig ist (Fortschritt unter Einstellungen → Lokale Transkription).",
+  "local_engine_loading_message": "Lokales Modell wird geladen… danach wird die Aufnahme transkribiert.",
   "local_status_off": "Nicht geladen",
   "local_status_off_idle": "Nach Leerlauf entladen – lädt bei der nächsten Aufnahme",
   "local_status_starting": "Startet…",

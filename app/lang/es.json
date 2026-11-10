@@ -426,6 +426,7 @@
   "local_engine_unusable_error": "La transcripción local no es posible: {reason}",
   "local_engine_not_ready_error": "El motor local no está listo (estado: {status}). Consulta el registro del motor (Ajustes → Transcripción local).",
   "local_engine_downloading_error": "El modelo local aún se está descargando. Espera a que termine (progreso en Ajustes → Transcripción local).",
+  "local_engine_loading_message": "Cargando el modelo local… la grabación se transcribe justo después.",
   "local_status_off": "No cargado",
   "local_status_off_idle": "Descargado por inactividad: se carga con la próxima grabación",
   "local_status_starting": "Iniciando…",

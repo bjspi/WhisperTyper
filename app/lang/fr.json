@@ -426,6 +426,7 @@
   "local_engine_unusable_error": "Transcription locale impossible : {reason}",
   "local_engine_not_ready_error": "Le moteur local n'est pas prêt (état : {status}). Voir le journal du moteur (Paramètres → Transcription locale).",
   "local_engine_downloading_error": "Le modèle local est encore en téléchargement. Merci d'attendre la fin (progression dans Paramètres → Transcription locale).",
+  "local_engine_loading_message": "Chargement du modèle local… l'enregistrement sera transcrit juste après.",
   "local_status_off": "Non chargé",
   "local_status_off_idle": "Déchargé après inactivité – se charge au prochain enregistrement",
   "local_status_starting": "Démarrage…",

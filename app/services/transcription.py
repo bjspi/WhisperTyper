@@ -142,8 +142,12 @@ _Outcome = Tuple[Optional[Tuple[str, Optional[Dict[str, Any]]]], Optional[Except
 
 def transcribe(req: TranscriptionRequest, timing: OperationTiming, tr: Translate, *,
                on_compressing: Callable[[str], None], on_transcribing: Callable[[], None],
-               on_diagnostics: Optional[Callable[[Dict[str, Any]], None]] = None) -> str:
+               on_diagnostics: Optional[Callable[[Dict[str, Any]], None]] = None,
+               on_engine_loading: Optional[Callable[[], None]] = None) -> str:
     """Upload ``req.audio_path`` and return the transcription text.
+
+    ``on_engine_loading`` is called once if the local engine is not ready yet (model loading);
+    ``on_transcribing`` follows once it is.
 
     With ``req.diagnostics``, the response's confidence details are logged. ``req.second_pass``
     adds a second transcription (see there). The details of the returned text go to
@@ -161,7 +165,8 @@ def transcribe(req: TranscriptionRequest, timing: OperationTiming, tr: Translate
                       else _prepare_file(req, on_compressing))
         if req.local_engine_wait_s > 0:
             with timing.span("local_engine_wait"):
-                _wait_for_local_engine(req, tr)
+                if _wait_for_local_engine(req, tr, on_engine_loading):
+                    on_transcribing()
         # The parallel second transcription may still be sending the file after a confident first
         # result returns, so the temporary upload is removed by whichever request finishes last.
         temp = _TempUpload(upload.temp, readers=2 if req.second_pass == "always" else 1)
@@ -189,15 +194,20 @@ def transcribe(req: TranscriptionRequest, timing: OperationTiming, tr: Translate
     return text
 
 
-def _wait_for_local_engine(req: TranscriptionRequest, tr: Translate) -> None:
-    """Block until the local engine reports "ready"; a download or a timeout is a user-facing error.
+def _wait_for_local_engine(req: TranscriptionRequest, tr: Translate,
+                           on_loading: Optional[Callable[[], None]] = None) -> bool:
+    """Block until the local engine reports "ready"; still not ready at the deadline is a user-facing error.
 
-    The engine may have been started for this very recording (on demand, after an idle unload),
-    so connection errors count as "still starting".
+    The engine may have been started for this very recording (on demand, after an idle unload,
+    or just selected as the provider), so connection errors count as "still starting". A
+    "downloading" engine is waited for as well: at each start it checks its model files, which
+    takes seconds when they are complete; only a download still running at the deadline fails.
+    ``on_loading`` is called when the first answer is not "ready". Returns whether it had to wait.
     """
     health_url = req.api_endpoint.split("/v1/", 1)[0] + "/health"
     deadline = time.monotonic() + req.local_engine_wait_s
     status = "starting"
+    waited = False
     while True:
         try:
             response = request("GET", health_url, stage="local_engine_health", timeout=(2.0, 5.0))
@@ -206,8 +216,11 @@ def _wait_for_local_engine(req: TranscriptionRequest, tr: Translate) -> None:
         except (httpx.HTTPError, ValueError):
             status = "starting"
         if status == "ready":
-            return
-        if status == "downloading":
+            return waited
+        if not waited and on_loading is not None:
+            on_loading()
+        waited = True
+        if time.monotonic() >= deadline and status == "downloading":
             raise TranscriptionError(tr("local_engine_downloading_error"))
         if time.monotonic() >= deadline:
             raise TranscriptionError(tr("local_engine_not_ready_error", status=status))
