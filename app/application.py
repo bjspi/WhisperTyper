@@ -106,6 +106,7 @@ class WhisperTyperApp(QObject):
         # The tray menu draws its icons in the theme's colours.
         self.settings.appearance_changed.connect(self.tray.build)
         self.settings.system_integration_changed.connect(lambda: self.system_integration.apply(report=True))
+        self.settings.transcription_provider_switched.connect(self._on_transcription_provider_switched)
         # A local transcription loads the engine while the user still speaks (on demand, after an idle unload).
         self.recording.state_changed.connect(self._on_recording_state_changed)
 
@@ -162,6 +163,11 @@ class WhisperTyperApp(QObject):
                 recording.toggle(detected_ns=detected_ns)
         elif action == "post_rephrase":
             self.post_rephrase.trigger()
+
+    def _on_transcription_provider_switched(self) -> None:
+        """The tray switched the provider: warm up its connection and start or stop the local engine."""
+        self.warmup.schedule(activate=True)
+        self.local_engine.apply_config()
 
     def _on_settings_saved(self) -> None:
         """Apply a saved form to the running components."""

@@ -10,6 +10,8 @@ QtWidgets = pytest.importorskip("PyQt6.QtWidgets")
 
 from app.audio.store import RecordingStore  # noqa: E402
 from app.context import AppContext  # noqa: E402
+from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED  # noqa: E402
+from app.core.api_keys import LOCAL_ENDPOINT  # noqa: E402
 from app.core.config_store import ConfigStore  # noqa: E402
 from app.core.hotkeys import normalize_hotkey_string  # noqa: E402
 from app.ui.settings.window import SettingsWindow  # noqa: E402
@@ -153,3 +155,34 @@ def test_connection_test_runs_off_the_gui_thread_and_ignores_clicks_meanwhile(ma
     assert not tester.busy and button.isEnabled() and button.text() == caption
     assert message_box.inform.call_count == 1
     assert message_box.inform.call_args.args[1] == window.translator.tr("conn_test_title")
+
+
+def test_a_tray_provider_switch_saves_only_the_switch_and_keeps_the_chosen_custom_key(make_window):
+    window, path = make_window(transcription_custom_url=CUSTOM_URL, transcription_key_profile_id="c1")
+    switched = Mock()
+    window.transcription_provider_switched.connect(switched)
+    window.prompt_input.setPlainText("an unsaved prompt edit")
+    window.select_transcription_provider("custom")
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["api_endpoint"] == CUSTOM_URL
+    assert saved.get("prompt") != "an unsaved prompt edit"
+    # The form follows, so a later Save keeps the switch and the custom server's key.
+    assert window.api_endpoint_input.text() == CUSTOM_URL
+    assert window._ui_api_key("transcription") == "custom-test-key"
+    switched.assert_called_once()
+
+
+@pytest.mark.skipif(not LOCAL_ENGINE_SUPPORTED, reason="no local engine on this platform")
+def test_a_tray_switch_to_local_turns_the_engine_on_and_saves_that(make_window):
+    window, path = make_window(local_engine_enabled=False)
+    with patch.object(window._local_engine_tab, "_ensure_packages", return_value=True):
+        assert window.select_transcription_provider("local")
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["api_endpoint"] == LOCAL_ENDPOINT and saved["local_engine_enabled"] is True
+
+
+def test_a_declined_engine_install_keeps_the_provider(make_window):
+    window, path = make_window(local_engine_enabled=False)
+    with patch.object(window._local_engine_tab, "_ensure_packages", return_value=False):
+        assert not window.select_transcription_provider("local")
+    assert json.loads(path.read_text(encoding="utf-8"))["api_endpoint"].startswith("https://api.groq.com/")

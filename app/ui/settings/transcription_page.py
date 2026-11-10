@@ -6,7 +6,7 @@ import threading
 from typing import Optional
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy
+from PyQt6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy
 
 from app.core.api_keys import LOCAL_PROVIDER, provider_for_url
 from app.core.models import (
@@ -63,6 +63,8 @@ class TranscriptionPage(SettingsWindowBase):
         self.transcription_prompt_section.content_layout.addLayout(prompt_footer)
         self.transcription_api_layout.addWidget(self.transcription_prompt_section)
         self._build_second_pass_section()
+        # Expert switch below the provider: offer the provider in a tray submenu.
+        self.transcription_tray_checkbox = QCheckBox(self)
         # Provider | model | temperature rows: columns start at the top, and the slider is as tall as
         # the dropdowns, so all three labels and controls line up.
         for row, combo, slider, columns in (

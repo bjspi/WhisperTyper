@@ -58,6 +58,8 @@ class SettingsWindowBase(QWidget):
     appearance_changed = pyqtSignal()
     #: The terminal command or the Start menu entry was switched (saved already; to be applied now).
     system_integration_changed = pyqtSignal()
+    #: The tray menu switched the transcription provider (saved already; to be applied now).
+    transcription_provider_switched = pyqtSignal()
 
     ctx: AppContext
     config: Dict[str, Any]
@@ -105,6 +107,7 @@ class SettingsWindowBase(QWidget):
     api_endpoint_input: QLineEdit
     transcription_provider_label: QLabel
     transcription_provider_selector: QComboBox
+    transcription_tray_checkbox: QCheckBox
     test_transcription_api_button: QPushButton
     transcription_key_status_label: QLabel
     transcription_key_choose_button: QPushButton

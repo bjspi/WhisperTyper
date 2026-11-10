@@ -17,7 +17,14 @@ from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED, UNAVAILABLE, Lo
 from app.controllers.recording import RecordingController
 from app.controllers.system_integration import tray_command
 from app.controllers.transcription import TranscriptionPipeline
-from app.core.api_keys import rephrasing_enabled, transcription_configured
+from app.core.api_keys import (
+    LOCAL_PROVIDER,
+    PROVIDER_NAMES,
+    provider_for_url,
+    rephrasing_enabled,
+    transcription_configured,
+    transcription_provider_ready,
+)
 from app.core.audio_formats import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, requires_ffmpeg
 from app.core.constants import APP_DATA_DIR
 from app.core.env import is_MACOS
@@ -37,6 +44,7 @@ from app.ui.durations import BALLOON_INFO_MS, BALLOON_SHORT_MS, BALLOON_WARNING_
 from app.ui.line_icons import line_icon
 from app.ui.local_engine_tab import status_text
 from app.ui.package_install import install_requirements
+from app.ui.settings.api_page import provider_label
 from app.ui.tray_icons import app_icon, recording_level_icon, tray_icon
 from app.ui.tray_menu import BadgeTrayMenu
 
@@ -62,6 +70,8 @@ _ENTRY_ICONS = {
 }
 #: The line icon that marks a switch as on (off shows none, the text stays aligned).
 _SWITCH_ON_ICON = "check"
+#: The line icon of the transcription provider submenu.
+_PROVIDER_MENU_ICON = "globe"
 
 
 class SettingsWindowLike(Protocol):
@@ -78,6 +88,9 @@ class SettingsWindowLike(Protocol):
 
     def show_local_engine(self) -> None:
         """Open the settings window on the local transcription page."""
+
+    def select_transcription_provider(self, provider: str) -> bool:
+        """Switch transcription to ``provider`` and save that switch; False when it did not happen."""
 
 
 def _offer(action: QAction, shown: bool, usable: bool = True) -> None:
@@ -258,13 +271,14 @@ class TrayController(QObject):
         tray_menu.aboutToShow.connect(self.refresh_actions)
         add("tray_settings_action", "k", self._settings.show_window)
         self.open_config_action = add("menu_file_open_config", "o", self._files.open_config_file)
-        self.transformations_action = add("tray_edit_transformations_action", "t", self._settings.show_transformations)
+        self.transformations_action = add("tray_edit_transformations_action", "p", self._settings.show_transformations)
+        self._build_provider_menu(tray_menu)
         self.autostart_action = self._add_autostart_switch(tray_menu) if autostart.supported() else None
         tray_menu.addSeparator()
         add("tray_copy_action", "c", self._pipeline.copy_last_transcription)
         self.retranscribe_action = add("tray_retranscribe_action", "r", self.retranscribe_last_recording)
         add("tray_transcribe_file_action", "f", self.transcribe_audio_files)
-        self.play_action = add("tray_play_action", "p", self._files.play_latest_recording)
+        self.play_action = add("tray_play_action", "m", self._files.play_latest_recording)
         self.mark_bad_action = add("tray_mark_bad_action", "b", self.mark_last_recording_bad)
         # Discards the running recording (no transcription, no clipboard change, the stored
         # "last recording" stays). Enabled only while recording.
@@ -314,6 +328,7 @@ class TrayController(QObject):
         _offer(self.github_action, expert)
         _offer(self.transformations_action, rephrasing_enabled(self._ctx.config))
         self._refresh_autostart_switch()
+        self._refresh_provider_menu()
         self._refresh_local_menu()
 
     # --- Start at login --------------------------------------------------------------------
@@ -351,6 +366,52 @@ class TrayController(QObject):
             logging.info("autostart_toggled enabled=%s", enable)
         self._refresh_autostart_switch()
 
+    # --- Transcription provider submenu -------------------------------------------------
+    def _build_provider_menu(self, tray_menu: BadgeTrayMenu) -> None:
+        """The submenu that switches the transcription provider; its entries follow the settings."""
+        menu = BadgeTrayMenu(self._window, self._settings.theme_palette)
+        menu.setTitle(self._ctx.tr("tray_transcription_menu"))
+        menu.setIcon(line_icon(_PROVIDER_MENU_ICON, self._menu_icon_color()))
+        self._provider_menu = menu
+        action = tray_menu.addMenu(menu)
+        assert action is not None
+        tray_menu.register_badge("t", action)
+        self._provider_menu_action = action
+
+    def _refresh_provider_menu(self) -> None:
+        """List the providers transcription can switch to; shown only in expert mode when switched on."""
+        config = self._ctx.config
+        shown = self._expert_mode_shown() and bool(config.get("tray_transcription_providers", False))
+        _offer(self._provider_menu_action, shown)
+        menu = self._provider_menu
+        menu.clear()
+        if not shown:
+            return
+        current = provider_for_url(config.get("api_endpoint", ""))
+        for provider in self._provider_candidates():
+            label = provider_label(self._ctx.tr, provider)
+            ready = provider == current or transcription_provider_ready(config, provider)
+            if not ready:
+                label = self._ctx.tr("tray_transcription_not_ready", provider=label)
+            icon = line_icon(_SWITCH_ON_ICON, self._menu_icon_color()) if provider == current else QIcon()
+            action = menu.addAction(icon, label)
+            assert action is not None
+            action.setEnabled(ready)  # a missing key or URL would leave transcription unable to send
+            action.triggered.connect(lambda _checked=False, provider=provider: self._switch_provider(provider))
+
+    def _provider_candidates(self) -> Tuple[str, ...]:
+        """The providers of the settings' transcription selector."""
+        return (*PROVIDER_NAMES, LOCAL_PROVIDER) if LOCAL_ENGINE_SUPPORTED else tuple(PROVIDER_NAMES)
+
+    def _switch_provider(self, provider: str) -> None:
+        """Transcribe with ``provider`` from now on; the settings form follows."""
+        if provider == provider_for_url(self._ctx.config.get("api_endpoint", "")):
+            return
+        if not self._settings.select_transcription_provider(provider):
+            return
+        self._ctx.notifier.show(self._ctx.tr("tray_transcription_switched_message",
+                                             provider=provider_label(self._ctx.tr, provider)), BALLOON_SHORT_MS)
+
     # --- Local transcription submenu ---------------------------------------------------
     def _build_local_menu(self, tray_menu: BadgeTrayMenu) -> None:
         """Status and actions of the local engine; shown only while it is enabled."""
@@ -384,6 +445,8 @@ class TrayController(QObject):
         tray_menu.addSeparator()
         menu_action = tray_menu.addMenu(menu)
         assert menu_action is not None
+        # Its letter takes the submenu arrow's place (the tray menu shows no arrows).
+        tray_menu.register_badge("e", menu_action)
         self._local_menu_action = menu_action
 
     def _refresh_local_menu(self) -> None:
@@ -393,7 +456,7 @@ class TrayController(QObject):
             return
         tr = self._ctx.tr
         status: EngineStatus = engine.status
-        self._local_menu_action.setVisible(engine.enabled())
+        _offer(self._local_menu_action, engine.enabled())
         self._local_actions["status"].setText(status_text(self._ctx.translator, status, engine.devices or []))
         running = status.state not in (OFF, UNAVAILABLE)
         self._local_actions["load"].setText(tr("local_unload_button" if running else "local_load_button"))

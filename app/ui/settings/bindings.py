@@ -53,6 +53,7 @@ _KINDS: Dict[str, Tuple[Callable[[Any, Any], None], Callable[[Any], Any]]] = {
 BINDINGS: Tuple[Binding, ...] = (
     # Transcription
     Binding("api_endpoint_input", "api_endpoint", "text"),
+    Binding("transcription_tray_checkbox", "tray_transcription_providers", "check"),
     Binding("transcription_temp_slider", "transcription_temperature", "temperature",
             companions=("transcription_temp_label",)),
     Binding("ffmpeg_path_input", "ffmpeg_path", "stripped"),

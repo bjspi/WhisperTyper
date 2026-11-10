@@ -131,7 +131,7 @@ lights it up for a moment (the `searchHit` style state).
 Expert mode (`expert_mode`, a switch in the sidebar) only decides what is on screen: rows
 marked `expert=True` and the expert pages hide, and a card without a visible row hides with them.
 Hidden settings keep their values and stay in effect. The tray menu follows it too: config file, log, GitHub, marking a recording and the
-local engine's maintenance entries are expert tools (`app/core/expert_mode.py`). It is unrelated to the `expert` block of config.json, which has no GUI at all.
+local engine's maintenance entries are expert tools (`app/core/expert_mode.py`), and so is the *Transcription provider* submenu, offered with the expert switch `tray_transcription_providers`. It lists the providers of the settings' selector, those without key or URL greyed out (`transcription_provider_ready`; choosing Local turns the engine on), and switches through the settings form (`ApiPage.select_transcription_provider`), so the form never holds a stale provider; only `api_endpoint` and `model` are saved. Tray menus ignore clicks for 0.4 s after opening (`BadgeTrayMenu`): the menu opens upwards with Quit under the pointer, where a stray touchpad tap would land. It is unrelated to the `expert` block of config.json, which has no GUI at all.
 
 **The recording hot path is a chain of direct calls on the GUI thread:** the queued hotkey
 signal reaches `RecordingController`, which stops capture (retaining the in-flight block),

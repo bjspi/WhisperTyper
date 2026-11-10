@@ -105,6 +105,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "play_sounds": True,
     # Opacity (percent) of the recording palette and the floating rephrase buttons.
     "recording_overlay_opacity": 100,
+    # Expert setting: the tray menu offers a submenu to switch the transcription provider.
+    "tray_transcription_providers": False,
     "transcription_hedging": False,
     # Seconds without a response after the upload before the second attempt starts (plus 0.5 s per MB).
     # Endpoints on this computer (localhost, 127.0.0.1) are never hedged.

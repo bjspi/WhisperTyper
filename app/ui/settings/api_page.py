@@ -6,7 +6,8 @@ provider shows the URL field and the key selector.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple
+import logging
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 
 from PyQt6.QtCore import QSignalBlocker, Qt
 from PyQt6.QtWidgets import QComboBox, QLabel, QLineEdit, QPushButton, QWidget
@@ -45,6 +46,15 @@ from app.ui.settings.widgets import show_temperature_support
 from app.ui.theme import set_style_state
 
 API_TASKS = ("transcription", "rephrasing")
+
+
+def provider_label(tr: Callable[[str], str], provider: str) -> str:
+    """Display name of a provider; only the generic 'Custom', 'Local' and 'Off' entries are translated."""
+    if provider == LOCAL_PROVIDER:
+        return tr("provider_local")
+    if provider == REPHRASING_OFF:
+        return tr("provider_off")
+    return tr("api_key_custom_provider") if provider == "custom" else PROVIDER_NAMES[provider]
 
 
 class _TaskWidgets(NamedTuple):
@@ -128,12 +138,8 @@ class ApiPage(SettingsWindowBase):
         return TRANSCRIPTION_PROVIDERS if LOCAL_ENGINE_SUPPORTED else tuple(PROVIDER_NAMES)
 
     def _provider_label(self, provider: str) -> str:
-        """Display name of a provider; only the generic 'Custom', 'Local' and 'Off' entries are translated."""
-        if provider == LOCAL_PROVIDER:
-            return self.translator.tr("provider_local")
-        if provider == REPHRASING_OFF:
-            return self.translator.tr("provider_off")
-        return self.translator.tr("api_key_custom_provider") if provider == "custom" else PROVIDER_NAMES[provider]
+        """Display name of a provider in the current UI language."""
+        return provider_label(self.translator.tr, provider)
 
     def _retranslate_api_settings(self) -> None:
         """Re-label the translated provider entry, the key selectors and the key status."""
@@ -163,6 +169,32 @@ class ApiPage(SettingsWindowBase):
             self._on_endpoint_edited(task)  # same text emits no signal, but the controls must follow
         else:
             widgets.endpoint.setText(url)
+
+    def select_transcription_provider(self, provider: str) -> bool:
+        """Switch transcription to ``provider`` (from the tray menu) and save only this switch.
+
+        The form follows as if the provider had been picked in its selector (URL, matching model;
+        "Local" turns the engine on, installing its packages if needed), so a later Save keeps the
+        switch; the form's other unsaved edits stay unsaved. False when the switch did not happen
+        (the package installation was declined).
+        """
+        widgets = self._task_widgets("transcription")
+        widgets.provider.setCurrentIndex(widgets.provider.findData(provider))
+        if provider_for_url(widgets.endpoint.text()) != provider:
+            return False
+        # The switch resets the key selector to the automatic choice; keep a saved explicit one that fits.
+        saved_key = self.config[TASK_KEY_FIELDS["transcription"][1]]
+        widgets.key_profile.setCurrentIndex(max(0, widgets.key_profile.findData(saved_key)))
+        self.config["api_endpoint"] = widgets.endpoint.text()
+        self.config[widgets.model_field] = widgets.model.currentText().strip()
+        keys = ["api_endpoint", widgets.model_field]
+        if provider == LOCAL_PROVIDER:
+            self.config["local_engine_enabled"] = True  # without it the engine would not start
+            keys.append("local_engine_enabled")
+        self.ctx.save_config_keys(*keys)
+        logging.info("transcription_provider_switched provider=%s model=%s", provider, self.config[widgets.model_field])
+        self.transcription_provider_switched.emit()
+        return True
 
     def _on_endpoint_edited(self, task: str) -> None:
         """Remember a custom URL and re-filter models and keys for the endpoint's provider."""

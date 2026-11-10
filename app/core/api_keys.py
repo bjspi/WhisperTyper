@@ -98,6 +98,23 @@ def transcription_configured(config: Mapping[str, Any]) -> bool:
     return bool(str(config.get("api_endpoint", "")).strip() and resolve_key_profile(config, "transcription"))
 
 
+def transcription_endpoint_for(config: Mapping[str, Any], provider: str) -> str:
+    """The transcription endpoint switching to ``provider`` selects: official URL or the user's own one."""
+    if provider == "custom":
+        return str(config.get(TASK_CUSTOM_URL_FIELDS["transcription"], ""))
+    return provider_endpoint(provider, "transcription")
+
+
+def transcription_provider_ready(config: Mapping[str, Any], provider: str) -> bool:
+    """Switching transcription to ``provider`` could send right away: its endpoint and key are set up.
+
+    The local engine needs neither; switching to it turns the engine on.
+    """
+    if provider == LOCAL_PROVIDER:
+        return True
+    return transcription_configured({**config, "api_endpoint": transcription_endpoint_for(config, provider)})
+
+
 def rephrasing_enabled(config: Mapping[str, Any]) -> bool:
     """The user has not switched rephrasing off (prompts, LivePrompt and the rephrase hotkey)."""
     return config.get("rephrasing_enabled", True) is not False

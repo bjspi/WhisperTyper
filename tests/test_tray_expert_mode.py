@@ -11,6 +11,7 @@ QtWidgets = pytest.importorskip("PyQt6.QtWidgets")
 from app.audio.store import RecordingStore  # noqa: E402
 from app.context import AppContext  # noqa: E402
 from app.controllers import tray as tray_module  # noqa: E402
+from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED  # noqa: E402
 from app.core.config_store import ConfigStore  # noqa: E402
 from app.core.expert_mode import expert_mode_shown  # noqa: E402
 from app.core.hotkeys import normalize_hotkey_string  # noqa: E402
@@ -24,10 +25,10 @@ def qapp():
     return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 
-def _make_tray(tmp_path, monkeypatch, *, expert_mode):
+def _make_tray(tmp_path, monkeypatch, *, expert_mode, **config):
     """A built tray for the given expert mode; the updater never asks GitHub."""
     path = tmp_path / "config.json"
-    path.write_text(json.dumps({"ui_language": "en", "expert_mode": expert_mode}), encoding="utf-8")
+    path.write_text(json.dumps({"ui_language": "en", "expert_mode": expert_mode, **config}), encoding="utf-8")
     ctx = AppContext(ConfigStore(str(path), normalize_hotkey_string), RecordingStore(str(tmp_path)))
     monkeypatch.setattr(tray_module, "GitUpdater", lambda _parent: MagicMock(root=None))
     settings = Mock(theme_palette=lambda: theme.palette(False))
@@ -61,3 +62,29 @@ def test_the_menu_follows_expert_mode_when_it_opens(qapp, tmp_path, monkeypatch)
 def test_expert_mode_defaults_to_shown():
     assert expert_mode_shown({})
     assert not expert_mode_shown({"expert_mode": False})
+
+
+def _provider_entries(controller):
+    controller.tray_menu.aboutToShow.emit()
+    return {action.text(): action for action in controller._provider_menu.actions()}
+
+
+def test_the_provider_submenu_switches_between_the_ready_providers_in_expert_mode(qapp, tmp_path, monkeypatch):
+    controller = _make_tray(
+        tmp_path, monkeypatch, expert_mode=True, tray_transcription_providers=True,
+        api_endpoint="https://api.groq.com/openai/v1/audio/transcriptions",
+        transcription_custom_url="http://127.0.0.1:9/v1/audio/transcriptions", transcription_key_profile_id="c1",
+        api_key_profiles=[{"id": "g1", "name": "Groq", "provider": "groq", "key": "gsk-test-0000"},
+                          {"id": "c1", "name": "Server", "provider": "custom", "key": "custom-test-key"}])
+    entries = _provider_entries(controller)
+    assert controller._provider_menu_action.isVisible()
+    # The selector's providers; one without a key is greyed out, Local turns its engine on when chosen.
+    expected = {"Groq", "Custom", "OpenAI (not set up)"} | ({"Local (this PC)"} if LOCAL_ENGINE_SUPPORTED else set())
+    assert set(entries) == expected
+    assert not entries["OpenAI (not set up)"].isEnabled() and entries["Custom"].isEnabled()
+    entries["Custom"].trigger()
+    controller._settings.select_transcription_provider.assert_called_once_with("custom")
+
+    controller._ctx.config["expert_mode"] = False
+    _provider_entries(controller)
+    assert not controller._provider_menu_action.isVisible() and not controller._provider_menu_action.isEnabled()

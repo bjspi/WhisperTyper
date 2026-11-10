@@ -431,7 +431,7 @@ class ModernChrome(SettingsWindowBase):
         """Rebuild the cards of the .ui file's pages as rows (at startup)."""
         self._rows = []
         row, switch = self._row, self._switch
-        for group, prefix_widgets, sections, extra in (
+        for group, prefix_widgets, sections, extra, tray_switch in (
             (self.transcription_api_group,
              (self.transcription_provider_label, self.transcription_provider_selector, self.model_label,
               self.model_dropdown, self.transcription_temp_label_title, self.transcription_temp_slider,
@@ -439,21 +439,24 @@ class ModernChrome(SettingsWindowBase):
               self.transcription_key_profile_selector, self.transcription_key_status_label,
               self.transcription_key_choose_button, self.transcription_key_add_button,
               self.test_transcription_api_button),
-             (self.transcription_prompt_section, self.second_pass_section), (self.transcription_local_setup_button,)),
+             (self.transcription_prompt_section, self.second_pass_section), (self.transcription_local_setup_button,),
+             self.transcription_tray_checkbox),
             (self.shared_api_group,
              (self.rephrasing_provider_label, self.rephrasing_provider_selector, self.rephrasing_model_label,
               self.rephrasing_model_input, self.rephrasing_temp_label_title, self.rephrasing_temp_slider,
               self.rephrasing_temp_label, self.rephrasing_api_url_label, self.rephrasing_api_url_input,
               self.rephrasing_api_key_label, self.rephrasing_key_profile_selector, self.rephrasing_key_status_label,
               self.rephrasing_key_choose_button, self.rephrasing_key_add_button, self.test_rephrasing_api_button),
-             (), ()),
+             (), (), None),
         ):
             (provider_label, provider, model_label, model, temp_label, temp_slider, temp_value, url_label, url,
              key_label, key, status, choose, add, test) = prefix_widgets
             temp_value.setFixedWidth(34)
             temp_value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self._rebuild(group, [
-                row(provider_label, provider), row(model_label, model),
+                row(provider_label, provider),
+                *((switch(tray_switch, expert=True),) if tray_switch is not None else ()),
+                row(model_label, model),
                 row(temp_label, temp_slider, temp_value, follow=temp_slider, expert=True),
                 row(url_label, url), row(key_label, key),
                 row(status, choose, add, *extra, test, follow=status, plain_title=True),

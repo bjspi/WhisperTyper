@@ -370,6 +370,7 @@ QMenu::item:disabled { color: %(muted)s; }
 QMenu::separator { height: 1px; background: %(border)s; margin: 4px 10px; }
 QMenu#tray { padding: 6px; }
 QMenu#tray::item { padding: 7px 40px 7px 18px; border-radius: 6px; }
+QMenu#tray::right-arrow { image: none; width: 0px; }
 QWidget#trayHeader { background: transparent; }
 QLabel#trayTitle { font-weight: 600; color: %(heading)s; }
 QLabel#trayStatus { color: %(muted)s; }

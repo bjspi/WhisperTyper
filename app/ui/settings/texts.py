@@ -57,6 +57,7 @@ TEXTS: Tuple[Text, ...] = (
                       "transcription_key_choose_button", "transcription_key_add_button",
                       "transcription_temp_label_title", "transcription_temp_slider",
                       "test_transcription_api_button", "test_connection_tooltip"),
+    _check("transcription_tray_checkbox", "transcription_tray_checkbox", "transcription_tray_tooltip"),
     _field("ffmpeg_label", "ffmpeg_tooltip", "ffmpeg_label", "ffmpeg_path_input"),
     Text("ffmpeg_browse_button", "ffmpeg_browse_button"),
     Text("restore_default_prompt_button", "restore_default_prompt_button", "restore_default_prompt_tooltip",
