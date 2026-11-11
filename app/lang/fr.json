@@ -256,6 +256,7 @@
   "command_on_path_tooltip": "Place whispertyper (avec l'icône) dans ~/.local/bin, dans le PATH : transcrire et reformuler depuis tout nouveau terminal.",
   "start_menu_entry_checkbox": "Entrée dans le menu Démarrer / la liste des applications",
   "start_menu_entry_tooltip": "WhisperTyper avec son icône dans le menu Démarrer (recherche Windows) ou la liste d'apps Linux.",
+  "start_at_login_checkbox": "Autostart : lancer avec Windows",
   "start_at_login_tooltip": "Lance WhisperTyper à l'ouverture de session Windows ; le même interrupteur que dans le menu de la zone de notification.",
   "system_integration_failed_message": "Intégration au système non mise à jour : {error}",
   "tray_autostart_failed_message": "Lancement avec Windows non modifié : {error}",

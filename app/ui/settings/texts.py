@@ -154,7 +154,7 @@ TEXTS: Tuple[Text, ...] = (
     Text("system_integration_group_title", "system_integration_group"),
     _check("command_on_path_checkbox", "command_on_path_checkbox", "command_on_path_tooltip"),
     _check("start_menu_entry_checkbox", "start_menu_entry_checkbox", "start_menu_entry_tooltip"),
-    _check("start_at_login_checkbox", "tray_autostart_action", "start_at_login_tooltip"),
+    _check("start_at_login_checkbox", "start_at_login_checkbox", "start_at_login_tooltip"),
     Text("text_insertion_group_title", "text_insertion_group"),
     Text("logging_group_title", "logging_group"),
     _check("alt_clipboard_lib_checkbox", "alt_clipboard_lib_checkbox", "alt_clipboard_lib_tooltip", rich=True),

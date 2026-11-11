@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -156,3 +157,11 @@ def test_the_settings_switch_shares_the_registry_with_the_tray(qapp, tmp_path, m
     window.refresh_start_at_login_switch()
     assert not switch.isChecked()
     assert "start_at_login" not in json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_the_settings_search_finds_the_switch_by_autostart():
+    from app.core.i18n import UI_LANGUAGES
+
+    for language in UI_LANGUAGES:
+        texts = json.loads((Path(__file__).parents[1] / "app" / "lang" / f"{language}.json").read_text(encoding="utf-8"))
+        assert "autostart" in texts["start_at_login_checkbox"].casefold(), language
