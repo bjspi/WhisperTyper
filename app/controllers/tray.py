@@ -15,7 +15,7 @@ from app.context import AppContext
 from app.controllers.file_actions import FileActions
 from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED, UNAVAILABLE, LocalEngineController
 from app.controllers.recording import RecordingController
-from app.controllers.system_integration import tray_command
+from app.controllers.system_integration import switch_start_at_login
 from app.controllers.transcription import TranscriptionPipeline
 from app.core.api_keys import (
     LOCAL_PROVIDER,
@@ -352,18 +352,8 @@ class TrayController(QObject):
         action.setIcon(line_icon(_SWITCH_ON_ICON, self._menu_icon_color()) if enabled else QIcon())
 
     def toggle_autostart(self) -> None:
-        """Switch the start at login; a failure is logged and shown in a balloon."""
-        enable = not autostart.is_enabled()
-        try:
-            if enable:
-                autostart.enable(tray_command())
-            else:
-                autostart.disable()
-        except OSError as error:
-            logging.error("autostart_toggle_failed enable=%s error=%s", enable, error)
-            self._ctx.notifier.show(self._ctx.tr("tray_autostart_failed_message", error=error), BALLOON_WARNING_MS)
-        else:
-            logging.info("autostart_toggled enabled=%s", enable)
+        """Switch the start at login (as the settings page does); a failure is shown in a balloon."""
+        switch_start_at_login(self._ctx, not autostart.is_enabled())
         self._refresh_autostart_switch()
 
     # --- Transcription provider submenu -------------------------------------------------

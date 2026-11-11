@@ -253,10 +253,12 @@ sequenceDiagram
   `core/icon_file.py`), followed by a `#!` line and a zipped `__main__.py` that runs this
   installation's `run.py`. A launcher is rewritten only when its bytes change, and launchers
   of another installation are never touched. Frozen builds get no command.
-- **Start with Windows.** The tray switch (`W`) writes the `WhisperTyper` value of the
-  user's Run key (`platform/autostart.py`); the registry is its only state, read whenever
-  the menu opens. `SystemIntegration` points an enabled entry at this installation at every
-  start. Tests replace the registry access with a dict (`run_key` in `tests/conftest.py`).
+- **Start with Windows.** The tray switch (`W`) and the settings switch both call
+  `switch_start_at_login`, which writes the `WhisperTyper` value of the user's Run key
+  (`platform/autostart.py`); the registry is its only state, read whenever the menu or the
+  settings window opens. A new installation (`onboarding_done` still false) turns it on, in
+  `install-integration` and at the first start; afterwards `SystemIntegration` only points an
+  enabled entry at this installation at every start. Tests replace the registry access with a dict (`run_key` in `tests/conftest.py`).
 - **Privacy in logs.** Transcripts and prompts are redacted in log output by default
   (`app/core/redaction.py`); only the first few characters survive.
 

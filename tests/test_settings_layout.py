@@ -207,8 +207,10 @@ def test_expert_mode_off_hides_rows_cards_and_pages_in_the_sidebar(qapp, tmp_pat
     gain_row = next(row for row in window._rows if row.follow is window.gain_input)
     play_sounds_row = next(row for row in window._rows if row.follow is window.play_sounds_checkbox)
     assert gain_row.isHidden() and not play_sounds_row.isHidden()
-    # Every row of these cards is an expert row, so the card goes with its title.
-    assert window.prompts_palette_group.isHidden() and window.system_integration_group.isHidden()
+    # Every row of this card is an expert row, so the card goes with its title.
+    assert window.prompts_palette_group.isHidden()
+    # Only the start at login (Windows) stays of the system integration.
+    assert window.system_integration_group.isHidden() is not is_WINDOWS
     assert not window.recording_group.isHidden() and not window.misc_group.isHidden()
     assert window.second_pass_section.isHidden()
     assert window._local_engine_tab.server_group.isHidden() and not window._local_engine_tab.engine_group.isHidden()

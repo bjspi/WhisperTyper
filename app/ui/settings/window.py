@@ -399,6 +399,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
     def show_window(self) -> None:
         """Bring the window reliably to the foreground and log its geometry."""
         t0 = time.perf_counter()
+        self.refresh_start_at_login_switch()
         try:
             if self.isMinimized():
                 self.showNormal()

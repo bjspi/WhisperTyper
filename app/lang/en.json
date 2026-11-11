@@ -256,6 +256,7 @@
   "command_on_path_tooltip": "Puts whispertyper (with the app icon) into ~/.local/bin on your PATH: transcribe and rephrase from any new terminal.",
   "start_menu_entry_checkbox": "Entry in the Start menu / app list",
   "start_menu_entry_tooltip": "WhisperTyper with its icon in the Start menu (Windows search) or the Linux app list.",
+  "start_at_login_tooltip": "Starts WhisperTyper when you sign in to Windows; the same switch as in the tray menu.",
   "system_integration_failed_message": "System integration not updated: {error}",
   "tray_autostart_failed_message": "Start with Windows not changed: {error}",
   "macos_input_monitoring_title": "Input Monitoring Permission Required",

@@ -26,7 +26,7 @@ from app.controllers.local_engine import LOCAL_ENGINE_SUPPORTED, LocalEngineCont
 from app.controllers.permissions import MacPermissions
 from app.controllers.post_rephrase import PostRephraseController
 from app.controllers.recording import RecordingController
-from app.controllers.system_integration import SystemIntegration
+from app.controllers.system_integration import SystemIntegration, is_new_installation
 from app.controllers.text_output import TextOutput
 from app.controllers.transcription import TranscriptionPipeline
 from app.controllers.tray import TrayController
@@ -62,7 +62,9 @@ class WhisperTyperApp(QObject):
         for warning in self.ctx.config_warnings:
             logging.warning(warning)
         # Before the windows exist, so they are built from the choices made here.
-        if not config.get("onboarding_done", True):
+        # Read before the guide marks it done: a new installation starts at login by default.
+        new_installation = is_new_installation(config)
+        if new_installation:
             run_onboarding(self.ctx, local_supported=LOCAL_ENGINE_SUPPORTED)
         set_ip_family(config.get("network_ip_family", "auto"))
 
@@ -114,7 +116,7 @@ class WhisperTyperApp(QObject):
         logging.info(f"Application started. Press '{config['hotkey']}' to start/stop recording.")
         self.ctx.notifier.show(self.ctx.tr("tray_started_message"), BALLOON_SHORT_MS)
 
-        self.system_integration.apply()
+        self.system_integration.apply(new_installation=new_installation)
 
         if self.recording.keep_mic_hot():
             self.recording.start_background_capture()

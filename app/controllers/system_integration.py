@@ -1,8 +1,10 @@
 """How WhisperTyper sits in the system: the ``whispertyper`` terminal command and the Start menu entry.
 
 Both follow their settings (on by default): applied at every start, which also installs them
-after a fresh install or a moved environment, and again when a switch is toggled. An enabled
-start at login (the tray switch; the registry is its only state) is pointed at this installation too. The work runs
+after a fresh install or a moved environment, and again when a switch is toggled. The start at
+login has no setting: the registry is its only state, switched from the tray menu and the settings
+page through :func:`switch_start_at_login`. A new installation turns it on; afterwards an enabled
+entry is only pointed at this installation. The work runs
 on a background thread (the Start menu link is written through PowerShell); the icon is rendered
 on the GUI thread first, because it needs Qt.
 """
@@ -43,10 +45,12 @@ _ICO_PATH = Path(APP_DATA_DIR) / "whispertyper.ico"
 
 @dataclass(frozen=True)
 class _Wanted:
-    """The two switches, snapshotted on the GUI thread."""
+    """The two switches, snapshotted on the GUI thread, and whether this is a new installation."""
 
     command: bool
     start_menu: bool
+    #: Turns the start at login on (the default of a new installation) instead of only refreshing it.
+    new_installation: bool = False
 
 
 class SystemIntegration:
@@ -57,15 +61,16 @@ class SystemIntegration:
         self._ctx = ctx
         self._lock = threading.Lock()
 
-    def apply(self, report: bool = False) -> None:
+    def apply(self, report: bool = False, new_installation: bool = False) -> None:
         """Install or remove both as configured, in the background.
 
         ``report`` shows failures in a balloon (a toggle); at startup they are only logged.
+        ``new_installation`` also turns the start at login on (first start of a new installation).
         """
         if os.environ.get(SKIP_ENV):
             logging.info("System integration skipped (%s).", SKIP_ENV)
             return
-        wanted = _wanted_by(self._ctx.config)
+        wanted = _wanted_by(self._ctx.config, new_installation)
         icon = render_icon() if wanted.command or wanted.start_menu else []
         threading.Thread(target=self._apply, args=(wanted, icon, report), name="system-integration",
                          daemon=True).start()
@@ -83,7 +88,7 @@ class SystemIntegration:
         """Bring both in line with ``wanted``; returns the problems."""
         results = (SystemIntegration._apply_command(wanted.command, icon),
                    SystemIntegration._apply_start_menu(wanted.start_menu, icon),
-                   SystemIntegration._refresh_autostart())
+                   SystemIntegration._refresh_autostart(wanted.new_installation))
         return [problem for problem in results if problem]
 
     @staticmethod
@@ -121,12 +126,15 @@ class SystemIntegration:
         return ""
 
     @staticmethod
-    def _refresh_autostart() -> str:
-        """Point an enabled start at login at this installation; returns the problem, or ""."""
+    def _refresh_autostart(new_installation: bool) -> str:
+        """Point an enabled start at login at this installation (turn it on for a new one); returns the problem, or ""."""
         if not autostart.supported():
             return ""
         try:
-            if autostart.refresh(tray_command()):
+            if new_installation and not autostart.is_enabled():
+                autostart.enable(tray_command())
+                logging.info("Start at login turned on for the new installation: %s", tray_command())
+            elif autostart.refresh(tray_command()):
                 logging.info("Start at login now runs %s", tray_command())
         except OSError as error:
             logging.warning("Start at login not updated: %s", error)
@@ -134,16 +142,39 @@ class SystemIntegration:
         return ""
 
 
-def _wanted_by(config: Mapping[str, Any]) -> _Wanted:
+def _wanted_by(config: Mapping[str, Any], new_installation: bool) -> _Wanted:
     """What the settings ask for, as far as this installation supports it."""
     return _Wanted(command=bool(config.get(COMMAND_KEY, True)) and command_shim.supported(),
-                   start_menu=bool(config.get(START_MENU_KEY, True)) and start_menu.supported())
+                   start_menu=bool(config.get(START_MENU_KEY, True)) and start_menu.supported(),
+                   new_installation=new_installation)
+
+
+def is_new_installation(config: Mapping[str, Any]) -> bool:
+    """Whether the first-start guide has not been finished yet (the config of a new installation)."""
+    return not config.get("onboarding_done", True)
 
 
 def apply_now(config: Mapping[str, Any]) -> List[str]:
-    """Install or remove both as configured and wait for it (installer, no app running); returns the problems."""
-    wanted = _wanted_by(config)
+    """Install or remove both as configured and wait for it (installer, no app running); returns the problems.
+
+    A new installation also gets the start at login.
+    """
+    wanted = _wanted_by(config, is_new_installation(config))
     return SystemIntegration._apply_both(wanted, render_icon() if wanted.command or wanted.start_menu else [])
+
+
+def switch_start_at_login(ctx: AppContext, enable: bool) -> None:
+    """Turn the start at login on or off (tray menu and settings page); a failure is logged and shown in a balloon."""
+    try:
+        if enable:
+            autostart.enable(tray_command())
+        else:
+            autostart.disable()
+    except OSError as error:
+        logging.error("autostart_toggle_failed enable=%s error=%s", enable, error)
+        ctx.notifier.show(ctx.tr("tray_autostart_failed_message", error=error), BALLOON_WARNING_MS)
+    else:
+        logging.info("autostart_toggled enabled=%s", enable)
 
 
 def tray_command() -> List[str]:

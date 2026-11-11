@@ -257,6 +257,7 @@ class SettingsWindowBase(QWidget):
     system_integration_group: QGroupBox
     command_on_path_checkbox: QCheckBox
     start_menu_entry_checkbox: QCheckBox
+    start_at_login_checkbox: QCheckBox
     misc_group: QGroupBox
     misc_layout: QVBoxLayout
     text_insertion_group: QGroupBox

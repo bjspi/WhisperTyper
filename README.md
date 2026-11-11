@@ -228,8 +228,8 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1    # Windows; -NoStart on
     ```bash
     pythonw run.py
     ```
-    To start it at every login, switch on **Start with Windows** in the tray menu
-    (or press `W` while the menu is open). For a double-clickable launcher, drop this
+    A new installation starts at every login; switch **Start with Windows** in the tray
+    menu (or press `W` while the menu is open) or in the settings to change that. For a double-clickable launcher, drop this
     one-liner into a `start_hidden.cmd` next to `run.py`:
     ```bat
     start "WhisperTyper" /B pythonw.exe "%~dp0run.py" %*

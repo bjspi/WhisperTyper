@@ -524,6 +524,7 @@ class ModernChrome(SettingsWindowBase):
         ])
         self._rebuild(self.system_integration_group, [
             switch(self.command_on_path_checkbox, expert=True), switch(self.start_menu_entry_checkbox, expert=True),
+            switch(self.start_at_login_checkbox),
         ])
         self._rebuild(self.text_insertion_group, [
             switch(self.windows_sendinput_text_checkbox), switch(self.windows_sendinput_fallback_checkbox),

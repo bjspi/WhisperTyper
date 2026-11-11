@@ -6,10 +6,10 @@ from typing import List, Tuple
 from PyQt6.QtCore import QSignalBlocker
 from PyQt6.QtWidgets import QBoxLayout, QCheckBox, QGroupBox, QHBoxLayout, QLabel, QLayout, QSpinBox, QVBoxLayout, QWidget
 
-from app.controllers.system_integration import COMMAND_KEY, START_MENU_KEY
+from app.controllers.system_integration import COMMAND_KEY, START_MENU_KEY, switch_start_at_login
 from app.core.env import is_WINDOWS
 from app.core.i18n import UI_LANGUAGES
-from app.platform import command_shim, start_menu
+from app.platform import autostart, command_shim, start_menu
 from app.ui.about_dialog import show_about
 from app.ui.durations import BALLOON_MAX_MS
 from app.ui.settings.base import SettingsWindowBase
@@ -77,7 +77,10 @@ class GeneralPage(SettingsWindowBase):
         self._build_system_integration_group()
 
     def _build_system_integration_group(self) -> None:
-        """The terminal command and Start menu switches; they apply at once and only where supported."""
+        """The terminal command, Start menu and start at login switches; they apply at once and only where supported.
+
+        The start at login has no config key: like the tray switch it reads and writes the registry.
+        """
         self.system_integration_group = QGroupBox(self.misc_group.parentWidget())
         layout = QVBoxLayout(self.system_integration_group)
         self.command_on_path_checkbox = QCheckBox(self.system_integration_group)
@@ -86,7 +89,12 @@ class GeneralPage(SettingsWindowBase):
             checkbox.setChecked(bool(self.config.get(key, True)))
             checkbox.setVisible(supported)
             layout.addWidget(checkbox)
-        self.system_integration_group.setVisible(command_shim.supported() or start_menu.supported())
+        self.start_at_login_checkbox = QCheckBox(self.system_integration_group)
+        self.start_at_login_checkbox.setVisible(autostart.supported())
+        layout.addWidget(self.start_at_login_checkbox)
+        self.refresh_start_at_login_switch()
+        self.system_integration_group.setVisible(
+            command_shim.supported() or start_menu.supported() or autostart.supported())
         self.general_layout.insertWidget(self.general_layout.indexOf(self.misc_group), self.system_integration_group)
 
     def _system_integration_switches(self) -> List[Tuple[QCheckBox, str, bool]]:
@@ -101,6 +109,7 @@ class GeneralPage(SettingsWindowBase):
         self.color_theme_selector.currentIndexChanged.connect(self._on_color_theme_changed)
         for checkbox, key, _supported in self._system_integration_switches():
             checkbox.toggled.connect(lambda checked, config_key=key: self._on_system_integration_toggled(config_key, checked))
+        self.start_at_login_checkbox.toggled.connect(self._on_start_at_login_toggled)
         self.input_device_selector.currentIndexChanged.connect(self._on_input_device_changed)
         # The clipboard fallback only matters while direct Unicode input is enabled.
         self.windows_sendinput_fallback_checkbox.setEnabled(is_WINDOWS and self.windows_sendinput_text_checkbox.isChecked())
@@ -127,6 +136,17 @@ class GeneralPage(SettingsWindowBase):
         self.config[key] = checked
         self.ctx.save_config_keys(key)
         self.system_integration_changed.emit()
+
+    def refresh_start_at_login_switch(self) -> None:
+        """Show whether WhisperTyper starts at login, as the registry says right now (the tray may have changed it)."""
+        if autostart.supported():
+            with QSignalBlocker(self.start_at_login_checkbox):
+                self.start_at_login_checkbox.setChecked(autostart.is_enabled())
+
+    def _on_start_at_login_toggled(self, checked: bool) -> None:
+        """Turn the start at login on or off now, as the tray switch does."""
+        switch_start_at_login(self.ctx, checked)
+        self.refresh_start_at_login_switch()  # a failure leaves the registry, and so the switch, unchanged
 
     def populate_input_devices(self) -> None:
         """Fill the input-device dropdown with the system default + available microphones."""

@@ -52,13 +52,14 @@ def tray(qapp, tmp_path, monkeypatch):
 
     from app.audio.store import RecordingStore
     from app.context import AppContext
+    from app.controllers import system_integration
     from app.controllers import tray as tray_module
     from app.core.config_store import ConfigStore
     from app.core.hotkeys import normalize_hotkey_string
     from app.ui import theme
 
     monkeypatch.setattr(autostart, "supported", lambda: True)
-    monkeypatch.setattr(tray_module, "tray_command", lambda: COMMAND)
+    monkeypatch.setattr(system_integration, "tray_command", lambda: COMMAND)
     monkeypatch.setattr(tray_module, "GitUpdater", lambda _parent: MagicMock(root=None))
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"ui_language": "en"}), encoding="utf-8")
@@ -108,3 +109,50 @@ def test_a_failed_switch_is_reported(tray, monkeypatch):
     _press_w(tray)
     message = tray._ctx.notifier.show.call_args.args[0]
     assert "access denied" in message
+
+
+@pytest.fixture
+def integration(monkeypatch):
+    """apply_now with only the start at login left to do."""
+    system_integration = pytest.importorskip("app.controllers.system_integration")  # needs Qt
+    monkeypatch.setattr(autostart, "supported", lambda: True)
+    monkeypatch.setattr(system_integration, "tray_command", lambda: COMMAND)
+    monkeypatch.setattr(system_integration.command_shim, "supported", lambda: False)
+    monkeypatch.setattr(system_integration.start_menu, "supported", lambda: False)
+    return system_integration
+
+
+def test_a_new_installation_starts_at_login(integration, run_key):
+    assert integration.apply_now({"onboarding_done": False}) == []
+    assert run_key == {"WhisperTyper": COMMAND_LINE}
+
+
+def test_an_existing_installation_keeps_its_choice(integration, run_key):
+    assert integration.apply_now({"onboarding_done": True}) == []
+    assert run_key == {}
+
+
+@pytest.mark.usefixtures("delete_windows_after_test")
+def test_the_settings_switch_shares_the_registry_with_the_tray(qapp, tmp_path, monkeypatch, run_key):
+    from app.audio.store import RecordingStore
+    from app.context import AppContext
+    from app.controllers import system_integration
+    from app.core.config_store import ConfigStore
+    from app.core.hotkeys import normalize_hotkey_string
+    from app.ui.settings.window import SettingsWindow
+
+    monkeypatch.setattr(autostart, "supported", lambda: True)
+    monkeypatch.setattr(system_integration, "tray_command", lambda: COMMAND)
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"ui_language": "en"}), encoding="utf-8")
+    ctx = AppContext(ConfigStore(str(path), normalize_hotkey_string), RecordingStore(str(tmp_path)))
+    window = SettingsWindow(ctx, recording=Mock(selectable_input_devices=Mock(return_value=[])), hotkeys=Mock(),
+                            files=Mock(log_file_exists=Mock(return_value=False)), quit_app=Mock())
+    switch = window.start_at_login_checkbox
+    assert not switch.isChecked()
+    switch.setChecked(True)
+    assert run_key == {"WhisperTyper": COMMAND_LINE}
+    run_key.clear()  # switched off in the tray menu meanwhile
+    window.refresh_start_at_login_switch()
+    assert not switch.isChecked()
+    assert "start_at_login" not in json.loads(path.read_text(encoding="utf-8"))
