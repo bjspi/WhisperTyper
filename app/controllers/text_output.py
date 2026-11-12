@@ -30,6 +30,8 @@ class TextOutput(QObject):
         self._notify = notify
         self._warn_permission = warn_permission
         self._pending_restore: Optional[ClipboardSnapshot] = None
+        #: The text this app put on the clipboard for the paste the pending restore belongs to.
+        self._pasted_text: Optional[str] = None
         # (operation id, clipboard sequence after writing, pasted text) awaiting the late diagnostics probe.
         self._pending_diagnostics: Optional[tuple[str, int, str]] = None
         self._restore_timer: Any = QTimer(self)
@@ -43,14 +45,22 @@ class TextOutput(QObject):
 
     def _capture_clipboard_state(self) -> ClipboardSnapshot:
         """Snapshot the user's clipboard before a temporary copy/paste."""
-        if self._pending_restore:
+        if self._pending_restore and self._clipboard_still_ours():
             # A paste-triggered restore is still pending: the clipboard holds the app's temporary
             # text, so the pending snapshot is the user's real content.
             logging.debug("Using pending clipboard restore snapshot as the current clipboard baseline.")
             return self._pending_restore
+        self._pending_restore = None
         return ClipboardSnapshot.capture()
 
-    def _schedule_clipboard_restore(self, snapshot: ClipboardSnapshot, delay_ms: int) -> None:
+    def _clipboard_still_ours(self) -> bool:
+        """Whether the clipboard still holds the pasted text, i.e. nobody copied or cut since."""
+        try:
+            return copykitten.paste() == self._pasted_text
+        except Exception:
+            return True  # unreadable: keep the previous behavior and restore
+
+    def _schedule_clipboard_restore(self, snapshot: ClipboardSnapshot, pasted_text: str, delay_ms: int) -> None:
         """
         Delay restoration until the target application has consumed the paste event.
 
@@ -59,7 +69,7 @@ class TextOutput(QObject):
         simulation returns, so restoring synchronously can replace the temporary text
         before the target reads it.
         """
-        self._pending_restore = snapshot
+        self._pending_restore, self._pasted_text = snapshot, pasted_text
         self._restore_timer.stop()
         self._restore_timer.start(max(0, delay_ms))
         logging.debug("Scheduled clipboard restore %sms after paste.", delay_ms)
@@ -75,6 +85,10 @@ class TextOutput(QObject):
         snapshot, self._pending_restore = self._pending_restore, None
         self._log_paste_outcome()
         if not snapshot:
+            return
+        if not self._clipboard_still_ours():
+            # The user copied or cut something after the paste: that content wins.
+            logging.info("Clipboard changed after the paste; the previous content is not restored.")
             return
         try:
             snapshot.restore()
@@ -252,6 +266,6 @@ class TextOutput(QObject):
                 try:
                     # Fast paste skips the 100 ms waits, so its restore defaults a little later.
                     restore_key = "clipboard_restore_fast_ms" if fast_paste else "clipboard_restore_ms"
-                    self._schedule_clipboard_restore(snapshot, expert_value(self._config, restore_key))
+                    self._schedule_clipboard_restore(snapshot, text, expert_value(self._config, restore_key))
                 except Exception as e:
                     logging.error(f"Failed to restore clipboard after insertion: {e}")

@@ -411,3 +411,41 @@ def test_paste_and_copy_use_the_configured_expert_timings(harness, monkeypatch):
     output.on_simulated_key = select_and_copy
     assert output.get_selected_text(select_all_first=True) == "selected"
     assert [call.args[0] for call in sleeps.call_args_list] == [0.06, 0.05]
+
+
+def _set_text(clipboard: FakeClipboard, text: str) -> None:
+    mime_data = QMimeData()
+    mime_data.setText(text)
+    clipboard.setMimeData(mime_data)
+
+
+def test_restore_keeps_text_the_user_cut_after_the_paste(harness: tuple[ClipboardHarness, FakeClipboard]) -> None:
+    """Regression: the delayed restore replaced text cut right after dictation, its only copy."""
+    output, clipboard = harness
+    _set_text(clipboard, "original clipboard")
+    output.insert("dictated text")
+    _set_text(clipboard, "freshly cut text")
+    output._restore_timer.fire()
+    assert clipboard.mimeData().text() == "freshly cut text"
+    assert not output.restore_pending
+
+
+def test_second_insert_takes_the_users_new_clipboard_as_its_baseline(
+    harness: tuple[ClipboardHarness, FakeClipboard],
+) -> None:
+    output, clipboard = harness
+    _set_text(clipboard, "original clipboard")
+    output.insert("first dictation")
+    _set_text(clipboard, "new user clipboard")
+    output.insert("second dictation")
+    output._restore_timer.fire()
+    assert clipboard.mimeData().text() == "new user clipboard"
+
+
+def test_back_to_back_inserts_still_restore_the_original(harness: tuple[ClipboardHarness, FakeClipboard]) -> None:
+    output, clipboard = harness
+    _set_text(clipboard, "original clipboard")
+    output.insert("first dictation")
+    output.insert("second dictation")
+    output._restore_timer.fire()
+    assert clipboard.mimeData().text() == "original clipboard"
