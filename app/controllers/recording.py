@@ -34,7 +34,7 @@ from app.ui.durations import (
     BALLOON_SHORT_MS,
     BALLOON_WARNING_MS,
 )
-from app.ui.floating_buttons import RecordingPromptOverlay, overlay_opacity
+from app.ui.floating_buttons import RecordingPaletteTexts, RecordingPromptOverlay, overlay_opacity
 from app.ui.tooltip import MouseFollowerTooltip
 
 #: Sample rate of uploaded recordings.
@@ -687,30 +687,31 @@ class RecordingController(QObject):
         self._palette_status = None
         self._reset_prompt_choice()
         use_system_position = bool(self._config.get("recording_prompt_overlay_system_position", False))
+        tr = self._ctx.tr
         RecordingPromptOverlay(
             prompts=prompts,
-            status_text=self._ctx.tr("recording_running_message"),
-            none_text=self._ctx.tr("recording_prompt_none"),
             on_selection_changed=self._on_prompt_selected,
             use_system_position=use_system_position,
             system_anchor=self._palette_anchor(),
             dark=theme.resolve_dark(self._config.get("color_theme", "system"), QApplication.instance()),
             on_cancel=self.cancel,
             on_restart=self.restart,
-            cancel_tooltip=self._ctx.tr("recording_cancel_tooltip"),
-            restart_tooltip=self._ctx.tr("recording_restart_tooltip"),
-            move_tooltip=self._ctx.tr("recording_move_tooltip"),
             on_pause=self.toggle_pause,
-            paused_text=self._ctx.tr("recording_paused_message"),
-            pause_tooltip=self._ctx.tr("recording_pause_tooltip"),
-            resume_tooltip=self._ctx.tr("recording_resume_tooltip"),
             digit_keys=bool(self._config.get("recording_prompt_overlay_digit_keys", True)),
             level_feed=self.drain_wave_levels,
             device_name=self.input_device_display_name,
             # The native macOS recorder always uses the system default microphone.
             devices=None if self.mac_recorder.active else self._device_menu_entries,
             on_device_selected=None if self.mac_recorder.active else self.switch_input_device,
-            device_tooltip=self._ctx.tr("recording_device_tooltip"),
+            texts=RecordingPaletteTexts(
+                status_text=tr("recording_running_message"), none_text=tr("recording_prompt_none"),
+                paused_text=tr("recording_paused_message"), cancel_tooltip=tr("recording_cancel_tooltip"),
+                restart_tooltip=tr("recording_restart_tooltip"), move_tooltip=tr("recording_move_tooltip"),
+                pause_tooltip=tr("recording_pause_tooltip"), resume_tooltip=tr("recording_resume_tooltip"),
+                device_tooltip=tr("recording_device_tooltip"),
+                # Kept as a template: the palette fills in each prompt's caption.
+                prompt_tooltip=tr("recording_prompt_tooltip"),
+                instruction_tooltip=tr("recording_instruction_tooltip")),
         )
         overlay = RecordingPromptOverlay._instance
         if overlay is not None:

@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.core.env import is_MACOS, is_WINDOWS
+from app.core.prompts import INSTRUCTION
 from app.platform.macos import frontmost_window_center, make_nonactivating
 from app.platform.windows import hotkey_id_of, register_window_hotkey, unregister_window_hotkey
 from app.ui import theme
@@ -198,14 +199,15 @@ class _PromptCard(QWidget):
         self.adjustSize()
 
     def _elide_long_captions(self, max_chip_width: int) -> None:
-        """Shorten a caption too long for one card line; the full caption becomes its tooltip."""
+        """Shorten a caption too long for one card line; without a tooltip the full caption becomes it."""
         for button in self._prompt_buttons:
             caption = button.text()
             chrome = button.sizeHint().width() - button.fontMetrics().horizontalAdvance(caption)
             elided = button.fontMetrics().elidedText(caption, Qt.TextElideMode.ElideRight, max_chip_width - chrome)
             if elided != caption:
                 button.setText(elided)
-                button.setToolTip(caption)
+                if not button.toolTip():
+                    button.setToolTip(caption)
 
     def _place_near_cursor(self) -> None:
         """Put the card just below-right of the cursor, kept inside the screen."""
@@ -515,6 +517,9 @@ class RecordingPaletteTexts:
     pause_tooltip: str = ""
     resume_tooltip: str = ""
     device_tooltip: str = ""
+    #: Tooltip of a prompt chip; ``{caption}`` becomes the prompt's caption.
+    prompt_tooltip: str = ""
+    instruction_tooltip: str = ""
 
 
 #: First id of the overlay's digit hotkeys (application ids are 0x0000-0xBFFF).
@@ -734,10 +739,19 @@ class RecordingPromptOverlay(_PromptCard):
         preselected = none_button
         for prompt in prompts:
             button = self._add_chip(prompt["caption"], checkable=True)
+            button.setToolTip(self._chip_tooltip(prompt))
             button.clicked.connect(partial(self._select_prompt, prompt, button))
             if prompt.get("auto_apply"):
                 preselected = button
         preselected.setChecked(True)
+
+    def _chip_tooltip(self, prompt: Dict[str, Any]) -> str:
+        """What a chip does: run the instruction, or rephrase with the named prompt template."""
+        if prompt.get("kind") == INSTRUCTION and self._texts.instruction_tooltip:
+            return self._texts.instruction_tooltip
+        template = self._texts.prompt_tooltip
+        caption = str(prompt["caption"]).strip()
+        return template.format(caption=caption) if template else caption
 
     def _finish_placement(self, use_system_position: bool, system_anchor: Optional[QPoint],
                           digit_keys: bool) -> None:

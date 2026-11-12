@@ -9,7 +9,7 @@ QtGui = pytest.importorskip("PyQt6.QtGui")
 QtTest = pytest.importorskip("PyQt6.QtTest")
 
 from app.ui import floating_buttons  # noqa: E402
-from app.ui.floating_buttons import RecordingPromptOverlay  # noqa: E402
+from app.ui.floating_buttons import RecordingPaletteTexts, RecordingPromptOverlay  # noqa: E402
 from app.ui.flow_layout import FlowLayout  # noqa: E402
 
 PROMPTS = [
@@ -226,3 +226,22 @@ def test_hotkey_id_is_read_from_a_native_wm_hotkey_message():
     assert hotkey_id_of(b"windows_generic_MSG", address) == 0xB031
     msg.message = 0x0200  # WM_MOUSEMOVE
     assert hotkey_id_of(b"windows_generic_MSG", address) is None
+
+
+def test_chips_explain_themselves_in_their_tooltips(qapp):
+    texts = RecordingPaletteTexts(none_text="Insert as spoken", prompt_tooltip="Rephrase with “{caption}”",
+                                  instruction_tooltip="Carry out as an instruction")
+    palette = RecordingPromptOverlay(PROMPTS, on_selection_changed=lambda _prompt: None,
+                                     use_system_position=False, texts=texts)
+    tooltips = [button.toolTip() for button in palette._prompt_buttons]
+    assert tooltips == ["Insert as spoken", "Carry out as an instruction", "Rephrase with “Polish”"]
+
+
+def test_an_elided_chip_keeps_its_prompt_tooltip(qapp):
+    caption = "Very long caption " * 20
+    palette = RecordingPromptOverlay([{"caption": caption, "text": "X"}], on_selection_changed=lambda _prompt: None,
+                                     use_system_position=False,
+                                     texts=RecordingPaletteTexts(prompt_tooltip="Rephrase with {caption}"))
+    chip = palette._prompt_buttons[1]
+    assert chip.text() != caption.strip()
+    assert chip.toolTip() == "Rephrase with " + caption.strip()
