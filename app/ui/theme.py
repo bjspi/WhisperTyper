@@ -430,18 +430,21 @@ def play_svg(color: str) -> str:
             f"</g></svg>")
 
 
-def no_rephrase_svg(color: str, background: str) -> str:
-    """SVG string for a crossed-out prompt window ``>_`` (no rephrasing prompt) in the given stroke colour.
+def dictate_as_is_svg(color: str, arrow: str) -> str:
+    """SVG string for microphone -> document (insert the transcript as spoken); 28x16.
 
-    The slash is cut free from the sign by a gap in ``background``, the colour behind the icon.
+    Drawn after ``resources/icons/dictate_as_is.png`` so it takes the theme's colours.
     """
-    return (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
+    return (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 16'>"
+            f"<rect x='3' y='1.5' width='4' height='8' rx='2' fill='{color}'/>"
             f"<g fill='none' stroke='{color}' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'>"
-            f"<rect x='1.75' y='2.75' width='12.5' height='10.5' rx='2'/>"
-            f"<path d='M3.75 5.5l2 1.75-2 1.75M9 10.25h2.5'/>"
-            f"<path d='M14.25 1.75L1.75 14.25' stroke='{background}' stroke-width='3'/>"
-            f"<path d='M14.25 1.75L1.75 14.25'/>"
-            f"</g></svg>")
+            f"<path d='M1.25 7.25a3.75 3.75 0 0 0 7.5 0M5 11v2.75M2.75 14h4.5'/>"
+            f"<path d='M17.5 1.75h5l3.25 3.25v8.25a1 1 0 0 1-1 1h-7.25a1 1 0 0 1-1-1v-10.5a1 1 0 0 1 1-1z'/>"
+            f"<path d='M22.5 1.75v3.25h3.25M18.75 8.5h4.5M18.75 11h4.5'/>"
+            f"</g>"
+            f"<path d='M10.5 8h3.75M12.5 6l2 2-2 2' fill='none' stroke='{arrow}' stroke-width='1.75' "
+            f"stroke-linecap='round' stroke-linejoin='round'/>"
+            f"</svg>")
 
 
 def move_svg(color: str) -> str:
