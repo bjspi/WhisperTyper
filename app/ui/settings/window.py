@@ -238,7 +238,8 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
                 self.ui_language_selector.setCurrentIndex(max(0, self.ui_language_selector.findData(language)))
             self.change_language(language)
         entries = self._live_snapshot["post_rephrasing_entries"]
-        if self.config.get("post_rephrasing_entries") != entries:
+        # Compare the editor too: typing in an existing prompt is not mirrored into the config.
+        if self._transformations.entries() != entries:
             self._transformations.load(copy.deepcopy(entries))  # emits ``changed``, which mirrors them back
 
     def refresh_actions(self) -> None:

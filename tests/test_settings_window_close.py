@@ -68,6 +68,18 @@ def test_closing_without_save_drops_prompt_edits_and_leaves_the_file_alone(make_
     assert all("Unsaved caption" != entry.get("caption") for entry in window._transformations.entries())
 
 
+def test_closing_without_save_drops_edits_to_an_existing_prompt(make_window):
+    """Regression: typing in an existing prompt survived Close and was stored by the next Save."""
+    window, path = make_window()
+    saved_caption = window.config["post_rephrasing_entries"][0]["caption"]
+    window.post_rp_list.setCurrentRow(0)
+    window.post_rp_caption_edit.setText("Unsaved caption")
+    window.close()
+    with patch.object(window, "_collect_validation_warnings", return_value=[]):
+        window.save_settings()
+    assert on_disk(path)["post_rephrasing_entries"][0]["caption"] == saved_caption
+
+
 def test_closing_without_save_restores_the_ui_language(make_window):
     window, path = make_window()
     window.ui_language_selector.setCurrentIndex(window.ui_language_selector.findData("de"))
@@ -89,6 +101,15 @@ def test_save_makes_the_edits_the_new_baseline_for_a_later_close(make_window):
     captions = [entry["caption"] for entry in on_disk(path)["post_rephrasing_entries"]]
     assert "Kept caption" in captions
     assert "Kept caption" in [entry["caption"] for entry in window.config["post_rephrasing_entries"]]
+
+
+def test_save_keeps_detect_language(make_window):
+    """Regression: Save stored "en" for the "Detect language" entry, whose code is ""."""
+    window, path = make_window(input_language="de")
+    window.language_input.setCurrentIndex(window.language_input.findData(""))
+    with patch.object(window, "_collect_validation_warnings", return_value=[]):
+        window.save_settings()
+    assert on_disk(path)["input_language"] == ""
 
 
 def test_ffmpeg_probe_runs_once_in_the_background_and_retranslates_from_its_cache(make_window, qapp):

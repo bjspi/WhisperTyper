@@ -147,7 +147,9 @@ class RecordingPage(SettingsWindowBase):
 
     def _save_recording_controls(self) -> None:
         """Store the values that need conversion or validation."""
-        self.config["input_language"] = self.language_input.currentData() or "en"
+        # "" is the valid "detect language" entry; only a missing selection falls back to English.
+        language = self.language_input.currentData()
+        self.config["input_language"] = "en" if language is None else language
         try:
             self.config["gain_db"] = float(self.gain_input.text() or 0)
         except (ValueError, TypeError):
