@@ -69,7 +69,7 @@ def probe_version(exe: Optional[str]) -> Optional[str]:
     try:
         result = subprocess.run(
             [exe, "-version"],
-            capture_output=True, text=True, timeout=10, **no_window_kwargs(),
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10, **no_window_kwargs(),
         )
     except (OSError, subprocess.SubprocessError) as e:
         logging.debug(f"ffmpeg version probe failed for {exe!r}: {e}")
@@ -94,7 +94,7 @@ def probe_duration(exe: str, src_path: str) -> Optional[float]:
     try:
         result = subprocess.run(
             [exe, "-i", src_path],
-            capture_output=True, text=True, timeout=60, **no_window_kwargs(),
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, **no_window_kwargs(),
         )
     except (OSError, subprocess.SubprocessError) as e:
         logging.debug(f"ffmpeg duration probe failed for {src_path!r}: {e}")
@@ -129,7 +129,7 @@ def _encode_audio(exe: str, src_path: str, dst_path: str, bitrate_kbps: int) -> 
     )
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=600, **no_window_kwargs(),
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600, **no_window_kwargs(),
         )
     except (OSError, subprocess.SubprocessError) as e:
         raise RuntimeError(f"ffmpeg could not be run: {e}")

@@ -36,3 +36,19 @@ class TestPrepareUpload:
                 None, str(src), transcode_source=False,
                 max_bytes=1024, min_bitrate_kbps=80,
             )
+
+
+def test_duration_probe_reads_ffmpeg_output_whatever_the_file_name(tmp_path: Path):
+    """Regression: ffmpeg prints the path in UTF-8; decoding it as cp1252 lost the duration ("ā" is 0xC4 0x81)."""
+    import wave
+
+    exe = ffmpeg.resolve_ffmpeg()
+    if not exe:
+        pytest.skip("ffmpeg is not installed")
+    path = tmp_path / "Interview mit Rā.wav"
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16000)
+        wav.writeframes(b"\x00\x00" * 16000)
+    assert ffmpeg.probe_duration(exe, str(path)) == pytest.approx(1.0, abs=0.05)
