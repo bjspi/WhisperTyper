@@ -22,6 +22,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.local_engine.backends import Backend, create_backend
 from app.local_engine.catalog import (
+    PARENT_PID_ENV,
     SETTINGS_ENV,
     EngineSettings,
     mark_model_complete,
@@ -36,6 +37,8 @@ except ImportError:  # pragma: no cover - the supervisor checks the packages bef
     UploadFile = None  # type: ignore[assignment,misc]
 
 log = logging.getLogger("whispertyper.engine")
+#: Seconds between checks whether the app that started the engine still runs.
+PARENT_CHECK_INTERVAL_S = 5.0
 
 
 def _folder_size(path: Path) -> int:
@@ -320,13 +323,40 @@ def setup_logging(settings: EngineSettings) -> None:
     logging.getLogger("huggingface_hub.utils._http").setLevel(logging.ERROR)
 
 
+def wait_for_parent_exit(pid: int, interval_s: float = PARENT_CHECK_INTERVAL_S) -> None:
+    """Return once the process ``pid`` has ended (``is_running`` also notices a reused PID)."""
+    import psutil
+
+    try:
+        parent = psutil.Process(pid)
+    except psutil.Error:
+        return
+    while parent.is_running():
+        time.sleep(interval_s)
+
+
+def watch_parent(pid: int) -> None:
+    """End the engine once the app that started it is gone.
+
+    The safety net for every way the app can end without stopping the engine (crash, task kill, a
+    restart path that skipped the shutdown); otherwise the engine would hold its model in memory.
+    """
+    wait_for_parent_exit(pid)
+    log.warning("The app that started the engine (PID %d) is gone: the engine stops", pid)
+    logging.shutdown()
+    os._exit(0)
+
+
 def main() -> int:
-    """Run the engine until the supervisor stops the process."""
+    """Run the engine until the supervisor stops the process or the app is gone."""
     settings = EngineSettings.from_json(os.environ[SETTINGS_ENV])
     setup_logging(settings)
     log.info("Engine starting (PID %d) on %s:%d, device %s, model %s", os.getpid(), settings.host, settings.port,
              settings.device, settings.model)
     log_environment(settings)
+    parent_pid = os.environ.get(PARENT_PID_ENV, "")
+    if parent_pid.isdigit():  # absent when started by hand for debugging
+        threading.Thread(target=watch_parent, args=(int(parent_pid),), name="parent-watch", daemon=True).start()
     import uvicorn
 
     engine = Engine(settings)

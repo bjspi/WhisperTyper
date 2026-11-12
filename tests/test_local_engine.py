@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import os
 import time
 from pathlib import Path
 from unittest.mock import Mock
@@ -184,6 +185,58 @@ def test_engine_processes_are_recognized_by_their_module():
     assert not supervisor.is_engine_process(["python.exe", "-m", "whisperserver.server"])
 
 
+class _FakeProc:
+    """Just enough of ``psutil.Process`` for the orphan scan."""
+
+    def __init__(self, pid, ppid, created, cmdline=("pythonw.exe", "-m", "app.local_engine.server")):
+        self.pid, self._ppid, self._created = pid, ppid, created
+        self.info = {"cmdline": list(cmdline)}
+
+    def ppid(self):
+        return self._ppid
+
+    def create_time(self):
+        return self._created
+
+
+def test_engines_without_their_app_count_as_orphans(monkeypatch):
+    psutil = pytest.importorskip("psutil")
+    app = _FakeProc(10, 1, created=100.0, cmdline=["pythonw.exe", "run.py"])
+    reused_pid = _FakeProc(30, 1, created=500.0, cmdline=["notepad.exe"])
+    processes = {10: app, 30: reused_pid}
+    engines = [
+        _FakeProc(11, 10, created=200.0),  # its app runs
+        _FakeProc(21, 20, created=200.0),  # its app is gone
+        _FakeProc(31, 30, created=200.0),  # its app is gone, the PID belongs to a newer process now
+    ]
+
+    def process(pid):
+        if pid not in processes:
+            raise psutil.NoSuchProcess(pid)
+        return processes[pid]
+
+    monkeypatch.setattr(psutil, "process_iter", lambda _attrs: [app, reused_pid, *engines])
+    monkeypatch.setattr(psutil, "Process", process)
+    assert supervisor.orphaned_engines() == [21, 31]
+
+
+def test_engine_learns_which_app_started_it():
+    from app.local_engine.catalog import PARENT_PID_ENV
+
+    assert supervisor._child_environment(_settings())[PARENT_PID_ENV] == str(os.getpid())
+
+
+def test_parent_watch_returns_once_the_app_is_gone(monkeypatch):
+    psutil = pytest.importorskip("psutil")
+    from app.local_engine import server
+
+    checks = iter([True, True, False])
+    monkeypatch.setattr(psutil, "Process", lambda _pid: Mock(is_running=lambda: next(checks)))
+    server.wait_for_parent_exit(1234, interval_s=0)
+    with pytest.raises(StopIteration):
+        next(checks)
+
+
 @pytest.fixture
 def fake_process(monkeypatch):
     """A supervisor whose engine process is simulated; ``health`` is what /health answers."""
@@ -278,6 +331,8 @@ def controller(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "LOCAL_ENGINE_SUPPORTED", True)  # macOS: the engine is off there by default
     monkeypatch.setattr(module.availability, "engine_installed", lambda: True)
     monkeypatch.setattr(module.availability, "backend_ready", lambda _backend: True)
+    module.swept = []
+    monkeypatch.setattr(module, "stop_orphaned_engines", lambda: module.swept.append(True))
     return engine, ctx.config, module
 
 
@@ -288,6 +343,18 @@ def test_disabled_engine_never_starts(controller):
     engine.ensure_running()
     engine._supervisor.set_target.assert_not_called()
     assert engine.problem() == "local_engine_disabled"
+
+
+def test_switching_the_engine_off_unloads_it_and_stops_leftovers(controller):
+    engine, config, module = controller
+    engine._supervisor.wanted = True
+    config.update(local_engine_enabled=False, api_endpoint=LOCAL_ENDPOINT)
+    engine.apply_config()
+    engine._supervisor.set_target.assert_called_once_with(None)
+    deadline = time.monotonic() + 2
+    while not module.swept and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert module.swept
 
 
 def test_enabled_but_unused_engine_is_not_loaded(controller):

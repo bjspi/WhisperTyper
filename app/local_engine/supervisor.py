@@ -7,6 +7,7 @@ requests and read :attr:`Supervisor.status`. Self-healing as in a long-running s
 * a tiny inference (``/health?deep=1``) every 15 minutes and right after standby, which catches a
   GPU that hangs or returns garbage after resume.
 * an engine left over by a crashed app (orphan) is stopped; a foreign program on the port is a conflict.
+  The engine also ends itself once the app that started it is gone (see ``server.watch_parent``).
 * idle unload: after the configured time without use the process ends and frees the GPU memory.
 """
 from __future__ import annotations
@@ -23,7 +24,7 @@ import time
 import urllib.request
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from app.local_engine.catalog import SETTINGS_ENV, EngineSettings
+from app.local_engine.catalog import PARENT_PID_ENV, SETTINGS_ENV, EngineSettings
 
 log = logging.getLogger("whispertyper.engine")
 
@@ -93,6 +94,7 @@ def is_engine_process(cmdline: List[str]) -> bool:
 def _child_environment(settings: EngineSettings) -> Dict[str, str]:
     env = dict(os.environ)
     env[SETTINGS_ENV] = settings.to_json()
+    env[PARENT_PID_ENV] = str(os.getpid())
     env["PYTHONPATH"] = os.pathsep.join(filter(None, [PROJECT_ROOT, env.get("PYTHONPATH", "")]))
     # The engine only talks to localhost; Hugging Face downloads still use the system proxy.
     env.setdefault("NO_PROXY", "127.0.0.1,localhost")
@@ -154,6 +156,44 @@ def _port_owner(port: int) -> Tuple[Optional[int], str, bool]:
     except Exception as exc:  # noqa: BLE001 - psutil missing, access denied
         log.debug("Port owner lookup failed: %s", exc)
     return None, "", False
+
+
+def _has_living_parent(proc: Any) -> bool:
+    """The process that started ``proc`` still runs (a newer process that reused its PID does not count)."""
+    import psutil
+
+    try:
+        parent = psutil.Process(proc.ppid())
+        return parent.create_time() <= proc.create_time()
+    except psutil.Error:
+        return False
+
+
+def orphaned_engines() -> List[int]:
+    """PIDs of engine processes whose app instance is gone (crashed, killed, or quit without stopping them).
+
+    Each engine port is chosen per session, so the port check of :meth:`Supervisor.tick` cannot find
+    these; they would hold their model in memory until logoff.
+    """
+    try:
+        import psutil
+    except ImportError:
+        return []
+    orphans = []
+    for proc in psutil.process_iter(["cmdline"]):
+        try:
+            if is_engine_process(proc.info["cmdline"] or []) and not _has_living_parent(proc):
+                orphans.append(proc.pid)
+        except psutil.Error:
+            continue
+    return orphans
+
+
+def stop_orphaned_engines() -> None:
+    """Stop every engine left over by an earlier app instance (blocking: run it off the GUI thread)."""
+    for pid in orphaned_engines():
+        log.info("Stopping an orphaned local engine, PID %d", pid)
+        _stop_tree(pid, Supervisor.stop_timeout_s)
 
 
 class Supervisor:

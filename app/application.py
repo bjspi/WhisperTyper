@@ -124,7 +124,7 @@ class WhisperTyperApp(QObject):
         QTimer.singleShot(0, self.settings.start_aac_bitrate_probe)
         if config.get("local_engine_setup_pending"):
             QTimer.singleShot(0, self.local_engine.setup_in_background)
-        elif self.local_engine.enabled():
+        else:  # also when switched off: stops an engine a previous instance left running
             QTimer.singleShot(0, self.local_engine.apply_config)
 
         if self.permissions.startup_prompts_wanted():
@@ -222,6 +222,8 @@ class WhisperTyperApp(QObject):
             self.recording.apply_settings()
             self.ctx.notifier.show(self.ctx.tr("restart_failed_message"), BALLOON_INFO_MS)
             return
+        # The new instance starts its own engine; this one's would otherwise outlive the app.
+        self.local_engine.shutdown()
         app = QApplication.instance()
         if app is not None:
             app.quit()

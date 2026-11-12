@@ -11,6 +11,7 @@ import importlib
 import json
 import logging
 import sys
+import threading
 from typing import Any, Dict, List, Optional
 
 from PyQt6.QtCore import QObject, QProcess, pyqtSignal
@@ -28,7 +29,15 @@ from app.local_engine.catalog import (
     resolve_device,
     settings_from_config,
 )
-from app.local_engine.supervisor import OFF, PROJECT_ROOT, READY, EngineStatus, Supervisor, free_port
+from app.local_engine.supervisor import (
+    OFF,
+    PROJECT_ROOT,
+    READY,
+    EngineStatus,
+    Supervisor,
+    free_port,
+    stop_orphaned_engines,
+)
 from app.platform import installation
 from app.ui.durations import BALLOON_INFO_MS, BALLOON_MAX_MS, BALLOON_NOTICE_MS
 
@@ -167,6 +176,7 @@ class LocalEngineController(QObject):
                      self.enabled(), local_selected(self._config), self.server_enabled(),
                      self._config.get("local_load_strategy"), self._config.get("local_idle_unload_minutes"),
                      self._config.get("local_device"))
+        self._stop_orphans()
         if not self.needed():
             self._start_after_detection = False
             if self._supervisor.wanted or self._status.state != OFF:
@@ -178,6 +188,15 @@ class LocalEngineController(QObject):
         preload = server or self._config.get("local_load_strategy", "preload") == "preload"
         if preload or self._supervisor.wanted:
             self._start()
+
+    def _stop_orphans(self) -> None:
+        """Stop engines an earlier app instance left running, in the background (the process scan takes a moment).
+
+        Runs with every settings change, so switching local transcription off also frees the memory
+        of such a leftover, not only of the engine this instance runs.
+        """
+        if self.supported():
+            threading.Thread(target=stop_orphaned_engines, name="LocalEngineOrphans", daemon=True).start()
 
     def ensure_running(self) -> None:
         """A local transcription is about to run (recording started): load the engine if it is not."""

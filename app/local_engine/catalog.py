@@ -61,6 +61,8 @@ LOAD_STRATEGIES = ("preload", "on_demand")
 DEFAULT_SERVER_PORT = 9017
 #: The engine process reads its settings (JSON) from this environment variable.
 SETTINGS_ENV = "WHISPERTYPER_ENGINE_SETTINGS"
+#: PID of the app that started the engine; the engine ends itself once that process is gone.
+PARENT_PID_ENV = "WHISPERTYPER_ENGINE_PARENT_PID"
 
 
 def default_models_dir(app_data_dir: str) -> Path:
