@@ -98,7 +98,7 @@ class HeadlessSession:
     def __init__(self, config_file: str = CONFIG_FILE) -> None:
         """Load the configuration with its migrations applied in memory (the file stays untouched)."""
         self.config_file = config_file
-        self.config: Dict[str, Any] = ConfigStore(config_file, normalize_hotkey_string).load()[0]
+        self.config: Dict[str, Any] = ConfigStore(config_file, normalize_hotkey_string).load(read_only=True)[0]
         self._translator = TranslationManager(self.config.get("ui_language", "en"))
         self._keys = GroqKeyRotation()
         self._replacements = _compile_replacements(self.config)
@@ -113,10 +113,14 @@ class HeadlessSession:
     def find_prompt(self, name: str) -> SavedPrompt:
         """The prompt with this number, caption or unique caption start (case and emoji ignored)."""
         prompts = self.prompts()
+        exact = [prompt for prompt in prompts if name.strip() in (str(prompt.number), prompt.caption)]
+        if exact:
+            return exact[0]
+        # Emoji-only captions compare as "": they are found by their exact caption above only.
         wanted = _comparable(name)
-        for prompt in prompts:
-            if name.strip() in (str(prompt.number), prompt.caption) or _comparable(prompt.caption) == wanted:
-                return prompt
+        loose = [prompt for prompt in prompts if wanted and _comparable(prompt.caption) == wanted]
+        if len(loose) == 1:
+            return loose[0]
         candidates = [prompt for prompt in prompts if wanted and _comparable(prompt.caption).startswith(wanted)]
         if len(candidates) == 1:
             return candidates[0]

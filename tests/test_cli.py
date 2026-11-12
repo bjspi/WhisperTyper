@@ -73,6 +73,27 @@ def test_prompts_are_found_by_number_caption_or_unique_start(session, name, capt
     assert session.find_prompt(name).caption == caption
 
 
+def test_an_emoji_caption_finds_its_own_prompt_not_the_first_emoji_one(config_file):
+    """Regression: "🇩🇪" picked an earlier "🇬🇧" prompt, since both compare as an empty caption."""
+    with open(config_file, encoding="utf-8") as file:
+        config = json.load(file)
+    config["post_rephrasing_entries"] = [{"caption": "🇬🇧", "text": "Translate into English."},
+                                         {"caption": "🇩🇪", "text": "Translate into German."}]
+    with open(config_file, "w", encoding="utf-8") as file:
+        json.dump(config, file)
+    assert HeadlessSession(config_file).find_prompt("🇩🇪").text == "Translate into German."
+
+
+def test_a_broken_config_fails_the_command_and_stays_where_it_is(tmp_path, monkeypatch):
+    """Regression: a read-only command renamed a config with a syntax error to *.corrupt-* and succeeded."""
+    path = tmp_path / "config.json"
+    path.write_text('{"ui_language": "en",', encoding="utf-8")
+    monkeypatch.setattr(main_module, "HeadlessSession", lambda: HeadlessSession(str(path)))
+    result = CliRunner().invoke(cli, ["prompts"])
+    assert result.exit_code != 0 and "cannot be used" in result.output
+    assert [entry.name for entry in tmp_path.iterdir()] == ["config.json"]
+
+
 def test_an_unknown_prompt_names_the_choices(session):
     with pytest.raises(HeadlessError, match="Nice mail"):
         session.find_prompt("poem")

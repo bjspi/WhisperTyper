@@ -84,8 +84,11 @@ class ConfigStore:
         #: Problems the last ``load`` repaired; logged once file logging runs.
         self.load_warnings: List[str] = []
 
-    def load(self) -> Tuple[Dict[str, Any], bool]:
+    def load(self, read_only: bool = False) -> Tuple[Dict[str, Any], bool]:
         """Load the config, applying migrations and filling in defaults.
+
+        An unusable file is set aside and replaced by the defaults; ``read_only`` (the CLI)
+        leaves it in place and raises ``ValueError`` instead.
 
         Returns:
             (config, changed): the resolved config dict and whether anything was migrated or
@@ -101,14 +104,20 @@ class ConfigStore:
         except FileNotFoundError:
             loaded_config = _first_start_config()
         except (OSError, ValueError) as e:  # unreadable, invalid JSON or not UTF-8
-            self._set_aside_corrupt_file(str(e))
+            self._reject_unusable_file(str(e), read_only)
             loaded_config = {}
         if not isinstance(loaded_config, dict):
-            self._set_aside_corrupt_file("top-level JSON value is not an object")
+            self._reject_unusable_file("top-level JSON value is not an object", read_only)
             loaded_config = {}
 
         changed = self._migrate(loaded_config)
         return loaded_config, changed
+
+    def _reject_unusable_file(self, reason: str, read_only: bool) -> None:
+        """Raise for a read-only load; otherwise set the file aside so the defaults can take over."""
+        if read_only:
+            raise ValueError(f"{self.config_file} is unusable: {reason}")
+        self._set_aside_corrupt_file(reason)
 
     def _set_aside_corrupt_file(self, reason: str) -> None:
         """Keep an unusable config file under a dated name, so the defaults saved next never erase it."""
