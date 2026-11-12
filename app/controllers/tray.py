@@ -359,7 +359,7 @@ class TrayController(QObject):
     # --- Transcription provider submenu -------------------------------------------------
     def _build_provider_menu(self, tray_menu: BadgeTrayMenu) -> None:
         """The submenu that switches the transcription provider; its entries follow the settings."""
-        menu = BadgeTrayMenu(self._window, self._settings.theme_palette)
+        menu = BadgeTrayMenu(tray_menu, self._settings.theme_palette)  # deleted with the tray menu
         menu.setTitle(self._ctx.tr("tray_transcription_menu"))
         menu.setIcon(line_icon(_PROVIDER_MENU_ICON, self._menu_icon_color()))
         self._provider_menu = menu
@@ -410,7 +410,7 @@ class TrayController(QObject):
         if engine is None or not LOCAL_ENGINE_SUPPORTED:
             return
         tr = self._ctx.tr
-        menu = BadgeTrayMenu(self._window, self._settings.theme_palette)
+        menu = BadgeTrayMenu(tray_menu, self._settings.theme_palette)  # deleted with the tray menu
         menu.setTitle(tr("tray_local_menu"))
         menu.setIcon(line_icon("chip", self._menu_icon_color()))
         status = menu.addAction("")

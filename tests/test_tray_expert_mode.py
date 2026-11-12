@@ -88,3 +88,16 @@ def test_the_provider_submenu_switches_between_the_ready_providers_in_expert_mod
     controller._ctx.config["expert_mode"] = False
     _provider_entries(controller)
     assert not controller._provider_menu_action.isVisible() and not controller._provider_menu_action.isEnabled()
+
+
+def test_rebuilding_the_tray_deletes_the_old_submenus(tmp_path, monkeypatch, qapp):
+    """Regression: submenus belonged to the window, so every language or theme change leaked them."""
+    from PyQt6 import sip
+    from PyQt6.QtCore import QCoreApplication, QEvent
+
+    controller = _make_tray(tmp_path, monkeypatch, expert_mode=False)
+    old_submenu = controller._provider_menu
+    controller.build()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+    assert sip.isdeleted(old_submenu)
+    controller.hide()
