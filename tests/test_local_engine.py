@@ -136,6 +136,35 @@ def test_failed_download_with_complete_files_loads_them_offline(tmp_path, monkey
         engine._download(folder)
 
 
+def test_the_engine_hears_silence_after_the_last_word(tmp_path, monkeypatch):
+    np = pytest.importorskip("numpy")
+    from app.local_engine import server
+    from app.local_engine.speech import SAMPLE_RATE, TRAILING_SILENCE_S
+
+    speech = np.ones(SAMPLE_RATE, dtype=np.float32)
+    monkeypatch.setattr(server, "decode_audio", lambda _data: speech)
+    engine = server.Engine(EngineSettings(device="cpu", model="m", models_dir=str(tmp_path), log_dir=str(tmp_path),
+                                          vad=False))
+    engine.backend = Mock()
+    engine.backend.generate.return_value = "Hallo Welt."
+    assert engine.transcribe(b"wav", "de") == ("Hallo Welt.", 1.0)  # the duration is the recording's
+    sent = engine.backend.generate.call_args.args[0]
+    assert len(sent) == SAMPLE_RATE + int(TRAILING_SILENCE_S * SAMPLE_RATE)
+    assert np.array_equal(sent[:SAMPLE_RATE], speech) and not sent[SAMPLE_RATE:].any()
+
+
+def test_padding_never_turns_silence_into_speech(tmp_path, monkeypatch):
+    np = pytest.importorskip("numpy")
+    from app.local_engine import server
+
+    monkeypatch.setattr(server, "decode_audio", lambda _data: np.zeros(100, dtype=np.float32))
+    engine = server.Engine(EngineSettings(device="cpu", model="m", models_dir=str(tmp_path), log_dir=str(tmp_path),
+                                          vad=False))
+    engine.backend = Mock()
+    assert engine.transcribe(b"wav", "de")[0] == ""
+    engine.backend.generate.assert_not_called()
+
+
 def test_hallucinations_are_dropped_per_language():
     assert is_hallucination(" Vielen Dank. ", "de")
     assert not is_hallucination("Vielen Dank.", "en")

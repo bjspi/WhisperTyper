@@ -29,7 +29,15 @@ from app.local_engine.catalog import (
     model_downloaded,
     model_files_present,
 )
-from app.local_engine.speech import MIN_SPEECH_SAMPLES, SAMPLE_RATE, decode_audio, is_hallucination, strip_silence
+from app.local_engine.speech import (
+    MIN_SPEECH_SAMPLES,
+    SAMPLE_RATE,
+    TRAILING_SILENCE_S,
+    decode_audio,
+    is_hallucination,
+    strip_silence,
+    with_trailing_silence,
+)
 
 try:  # module level: FastAPI resolves the (string) annotations of the endpoints in this namespace
     from fastapi import UploadFile
@@ -196,11 +204,12 @@ class Engine:
         if len(speech) < MIN_SPEECH_SAMPLES:
             log.info("request #%d: no speech found (%s, %d bytes)", self.requests, timings, len(data))
             return "", duration
-        text = self.backend.generate(speech, language, prompt)
+        text = self.backend.generate(with_trailing_silence(speech), language, prompt)
         t_done = time.perf_counter()
         hallucination = is_hallucination(text, language)
-        log.info("request #%d: language=%s prompt_chars=%d %s generate=%.0fms total=%.0fms chars=%d%s",
-                 self.requests, language or "auto", len(prompt or ""), timings, 1000 * (t_done - t_vad),
+        log.info("request #%d: language=%s prompt_chars=%d %s pad=%.1fs generate=%.0fms total=%.0fms chars=%d%s",
+                 self.requests, language or "auto", len(prompt or ""), timings, TRAILING_SILENCE_S,
+                 1000 * (t_done - t_vad),
                  1000 * (t_done - t0), len(text), " dropped=hallucination" if hallucination else "")
         if not self.settings.redact:
             log.debug("request #%d text: %r", self.requests, text)

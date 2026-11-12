@@ -7,6 +7,9 @@ from typing import Any, List
 SAMPLE_RATE = 16000
 #: Speech shorter than this after silence removal is not transcribed (Whisper invents text for it).
 MIN_SPEECH_SAMPLES = SAMPLE_RATE // 4
+#: Silence appended before the inference. Audio that stops right after the last word (the user ends the
+#: recording while still speaking) makes Whisper drop that word; cloud services pad as well.
+TRAILING_SILENCE_S = 1.0
 
 # Whole-text outputs Whisper is known to invent for (near-)silent audio, per language.
 HALLUCINATIONS = {
@@ -49,6 +52,13 @@ def strip_silence(audio: Any) -> Any:
     if not chunks:
         return np.zeros(0, dtype=np.float32)
     return np.concatenate([audio[chunk["start"]:chunk["end"]] for chunk in chunks])
+
+
+def with_trailing_silence(audio: Any) -> Any:
+    """``audio`` followed by :data:`TRAILING_SILENCE_S` of silence, so its last word is transcribed too."""
+    import numpy as np
+
+    return np.concatenate([audio, np.zeros(int(TRAILING_SILENCE_S * SAMPLE_RATE), dtype=np.float32)])
 
 
 def is_hallucination(text: str, language: str) -> bool:
