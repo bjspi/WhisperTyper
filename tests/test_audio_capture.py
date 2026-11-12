@@ -387,10 +387,24 @@ def test_preroll_is_sized_for_the_rate_the_stream_opened_at():
     assert capture._preroll.maxlen == 11
     capture.start()
     try:
-        wait_for(lambda: stream.blocks > 0)
+        wait_for(lambda: len(capture._preroll) >= 1)
+        assert capture._preroll.maxlen == 35
     finally:
         capture.stop()
-    assert capture._preroll.maxlen == 35 and len(capture._preroll) >= 1
+
+
+def test_preroll_from_before_an_idle_stop_never_starts_a_later_recording():
+    """Regression: after the idle timeout the next take began with audio from before the stop."""
+    stream = CountingStream()
+    idle = threading.Event()
+    capture = HotMicCapture(Microphone(stream), idle_expired=idle.is_set, on_block=lambda _data: None)
+    capture.start()
+    wait_for(lambda: len(capture._preroll) >= 1)
+    idle.set()
+    wait_for(lambda: not capture.running)
+    capture.start_recording()
+    assert capture._frames == []
+    capture.cancel_recording()
 
 
 def test_a_device_name_cut_by_mme_with_a_trailing_space_is_still_found(monkeypatch):

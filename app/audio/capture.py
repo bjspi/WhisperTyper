@@ -421,6 +421,9 @@ class HotMicCapture:
                 self._mic.close()
                 time.sleep(_READ_RETRY_S)
         self._mic.close()
+        with self._lock:
+            # The pre-roll must be the moment before the hotkey, never audio from before the stop.
+            self._preroll.clear()
         logging.info("Background audio capture thread finished.")
 
     def _open_failed(self, error: Exception, failures: int) -> None:
