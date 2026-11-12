@@ -120,12 +120,17 @@ class _Upload:
 
 
 class _TempUpload:
-    """A temporary upload read by ``readers`` requests; the last one to finish removes it."""
+    """A temporary upload read by one or more requests; the last one to finish removes it."""
 
-    def __init__(self, path: Optional[str], readers: int) -> None:
+    def __init__(self, path: Optional[str]) -> None:
         self.path = path
-        self._readers = readers
+        self._readers = 1
         self._lock = threading.Lock()
+
+    def add_reader(self) -> None:
+        """Another request is about to read the file."""
+        with self._lock:
+            self._readers += 1
 
     def release(self) -> None:
         """One request is done with the file; nothing happens for a source file (no temp)."""
@@ -163,17 +168,19 @@ def transcribe(req: TranscriptionRequest, timing: OperationTiming, tr: Translate
         with timing.span("upload_prepare"):
             upload = (_prepare_recording(req, timing, tr, on_compressing) if req.recording_format is not None
                       else _prepare_file(req, on_compressing))
+        # Owned right away, so a failed wait for the local engine removes it too.
+        temp = _TempUpload(upload.temp)
         if req.local_engine_wait_s > 0:
             with timing.span("local_engine_wait"):
                 if _wait_for_local_engine(req, tr, on_engine_loading):
                     on_transcribing()
-        # The parallel second transcription may still be sending the file after a confident first
-        # result returns, so the temporary upload is removed by whichever request finishes last.
-        temp = _TempUpload(upload.temp, readers=2 if req.second_pass == "always" else 1)
         # Pre-processing (extraction or compression) just finished: the upload phase begins.
         if upload.temp is not None:
             on_transcribing()
         if req.second_pass == "always":
+            # The parallel second transcription may still be sending the file after a confident first
+            # result returns, so the temporary upload is removed by whichever request finishes last.
+            temp.add_reader()
             text, details = _transcribe_twice(req, upload, timing, tr, temp.release)
         else:
             text, payload = _send(req, upload, timing, tr)

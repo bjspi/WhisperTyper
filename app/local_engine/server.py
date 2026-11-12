@@ -122,6 +122,8 @@ class Engine:
         self.backend: Optional[Backend] = None
         self.started = time.time()
         self.requests = 0
+        #: Transcriptions in progress; only the event loop changes it, /health reads it.
+        self.busy = 0
         self.download_total = 0
 
     def load(self) -> None:
@@ -179,7 +181,7 @@ class Engine:
         body: Dict[str, Any] = {
             "status": self.status, "model": self.settings.model_path.name, "device": self.settings.device,
             "backend": self.settings.backend, "pid": os.getpid(), "uptime_s": round(time.time() - self.started),
-            "requests": self.requests,
+            "requests": self.requests, "busy": self.busy,
         }
         if self.error:
             body["error"] = self.error
@@ -249,7 +251,8 @@ def create_app(engine: Engine) -> Any:
     @app.get("/health")
     def health(deep: int = 0) -> Dict[str, Any]:
         body = engine.health()
-        if deep and engine.status == "ready":
+        # A deep check would queue behind a running transcription and look like a hang.
+        if deep and engine.status == "ready" and not engine.busy:
             body["deep_s"] = round(engine.deep_check(), 3)
         return body
 
@@ -270,11 +273,14 @@ def create_app(engine: Engine) -> Any:
         if not data:
             raise HTTPException(400, "empty file")
         language = language.strip().lower().split("-")[0]
+        engine.busy += 1
         try:
             text, duration = await run_in_threadpool(engine.transcribe, data, language, prompt)
         except Exception as exc:  # noqa: BLE001 - e.g. undecodable audio
             log.warning("Transcription of %s (%d bytes) failed", file.filename, len(data), exc_info=True)
             raise HTTPException(400, f"transcription failed: {exc}") from exc
+        finally:
+            engine.busy -= 1
         if response_format in ("text", "srt", "vtt"):
             return PlainTextResponse(text)
         if response_format == "verbose_json":

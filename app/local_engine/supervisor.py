@@ -437,6 +437,13 @@ class Supervisor:
             self._set(DOWN, error)
             return
 
+        if health.get("busy"):
+            # A running transcription is use, not idleness, and its inference holds the backend:
+            # a due deep check waits for the next tick instead of mistaking the queue for a hang.
+            self._last_used = time.monotonic()
+            self._set(READY, health=health)
+            return
+
         if self.idle_unload_s > 0 and time.monotonic() - self._last_used > self.idle_unload_s:
             log.info("Local engine idle for %.0f min: unloading", self.idle_unload_s / 60)
             with self._lock:

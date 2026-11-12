@@ -165,6 +165,32 @@ def test_padding_never_turns_silence_into_speech(tmp_path, monkeypatch):
     engine.backend.generate.assert_not_called()
 
 
+def test_health_reports_a_running_transcription_and_skips_the_deep_check(tmp_path, monkeypatch):
+    np = pytest.importorskip("numpy")
+    testclient = pytest.importorskip("fastapi.testclient")
+    from app.local_engine import server
+
+    monkeypatch.setattr(server, "decode_audio", lambda _data: np.ones(server.SAMPLE_RATE, dtype=np.float32))
+    engine = server.Engine(EngineSettings(device="cpu", model="m", models_dir=str(tmp_path), log_dir=str(tmp_path),
+                                          vad=False))
+    engine.status, engine.backend = "ready", Mock()
+    client = testclient.TestClient(server.create_app(engine))
+    seen: list = []
+
+    def generate(*_args):
+        if not seen:  # probe once: a deep check queued in here would call generate again
+            seen.append(None)
+            seen[0] = client.get("/health", params={"deep": 1}).json()
+        return "Hallo Welt."
+
+    engine.backend.generate.side_effect = generate
+    response = client.post("/v1/audio/transcriptions", files={"file": ("a.wav", b"wav")})
+    assert response.json() == {"text": "Hallo Welt."}
+    assert seen[0]["busy"] == 1 and "deep_s" not in seen[0]
+    assert engine.backend.generate.call_count == 1  # no deep-check inference queued behind the request
+    assert client.get("/health").json()["busy"] == 0
+
+
 def test_hallucinations_are_dropped_per_language():
     assert is_hallucination(" Vielen Dank. ", "de")
     assert not is_hallucination("Vielen Dank.", "en")
@@ -325,6 +351,22 @@ def test_idle_unload_ends_the_process(fake_process):
     assert not state["alive"] and sup.status.state == OFF and sup.status.reason == "idle" and not sup.wanted
 
 
+def test_a_busy_engine_is_neither_unloaded_nor_deep_checked(fake_process, monkeypatch):
+    """Regression: a long transcription was unloaded as idle, or restarted as "inference hangs"."""
+    sup, state = fake_process
+    calls = []
+    monkeypatch.setattr(supervisor, "get_health",
+                        lambda *_args, deep=False: calls.append(deep) or {**state["health"], "busy": 1})
+    sup.idle_unload_s = 60
+    sup.set_target(_settings())
+    sup._handle_requests()
+    sup._last_used -= 61
+    sup.request_deep_check()
+    sup.tick()
+    assert state["alive"] and state["started"] == 1 and sup.status.state == READY and sup.wanted
+    assert calls == [False] and sup._deep_due  # the deep check waits until the transcription is done
+
+
 def test_model_error_restarts_with_backoff(fake_process):
     sup, state = fake_process
     state["health"] = {"status": "error", "pid": 1, "error": "RuntimeError: no CUDA"}
@@ -462,6 +504,30 @@ def test_a_download_still_running_at_the_deadline_fails_with_its_hint(monkeypatc
                                                                           json=lambda: {"status": "downloading"}))
     with pytest.raises(TranscriptionError, match="local_engine_downloading_error"):
         transcription._wait_for_local_engine(_engine_wait_request(0), lambda key, **kw: key)
+
+
+@pytest.mark.parametrize("second_pass", ["off", "always"])
+def test_a_failed_wait_for_the_engine_removes_the_prepared_upload(tmp_path, monkeypatch, second_pass):
+    """Regression: an encoded upload stayed in the temp folder when the engine never became ready."""
+    import dataclasses
+
+    from app.core.timing import OperationTiming
+    from app.services import transcription
+
+    prepared = tmp_path / "whispertyper_upload.m4a"
+    prepared.write_bytes(b"aac")
+    upload = transcription._Upload(path=str(prepared), temp=str(prepared), size=3)
+    monkeypatch.setattr(transcription, "_prepare_file", lambda *_args: upload)
+
+    def not_ready(*_args):
+        raise transcription.TranscriptionError("not ready")
+
+    monkeypatch.setattr(transcription, "_wait_for_local_engine", not_ready)
+    request = dataclasses.replace(_engine_wait_request(30), second_pass=second_pass)
+    with pytest.raises(transcription.TranscriptionError):
+        transcription.transcribe(request, OperationTiming(), lambda key, **kw: key, on_compressing=Mock(),
+                                 on_transcribing=Mock())
+    assert not prepared.exists()
 
 
 # --- Settings page ----------------------------------------------------------------------
