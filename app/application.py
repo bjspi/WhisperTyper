@@ -215,7 +215,9 @@ class WhisperTyperApp(QObject):
         except Exception:
             pass
 
-        if not QProcess.startDetached(program, arguments):
+        # PyQt6 returns ``(started, pid)``; the tuple itself is always truthy.
+        started, _pid = QProcess.startDetached(program, arguments)
+        if not started:
             logging.error("Failed to launch a new instance for restart.")
             # This instance keeps running: give it its hotkeys and warm microphone back.
             self.hotkeys.restart()
