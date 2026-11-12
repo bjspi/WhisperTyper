@@ -421,7 +421,8 @@ def test_warmup_replaces_a_connection_that_died_while_idle(monkeypatch):
     assert calls == ["https://api.groq.com/openai/v1/models"] * 2
 
 
-def test_ip_family_restricts_new_connections_and_replaces_pooled_ones(server, traces):
+def test_ip_family_restricts_new_connections_and_replaces_pooled_ones(server, traces, monkeypatch):
+    monkeypatch.setattr(transport, "is_local_endpoint", lambda _url: False)  # the test server stands in for the internet
     try:
         assert transport.request("POST", url(server), content=b"audio").content == b"OK"
         transport.set_ip_family("ipv4")
@@ -435,3 +436,12 @@ def test_ip_family_restricts_new_connections_and_replaces_pooled_ones(server, tr
     finally:
         transport.set_ip_family("auto")
     assert transport.request("POST", url(server), content=b"audio").content == b"OK"
+
+
+def test_ip_family_leaves_an_endpoint_on_this_computer_alone(server):
+    """Regression: "IPv6 only" bound the local engine's IPv4 loopback requests to "::" and broke them."""
+    try:
+        transport.set_ip_family("ipv6")
+        assert transport.request("POST", url(server), content=b"audio").content == b"OK"
+    finally:
+        transport.set_ip_family("auto")

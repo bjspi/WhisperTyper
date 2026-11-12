@@ -35,7 +35,7 @@ _SOCKET_OPTIONS = [(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)]
 #: results to that address family. "auto" lets the OS choose.
 IP_FAMILY_LOCAL_ADDRESSES: dict[str, Optional[str]] = {"auto": None, "ipv4": "0.0.0.0", "ipv6": "::"}
 
-_CLIENTS: dict[tuple[Optional[str], Any], httpx.Client] = {}
+_CLIENTS: dict[tuple[Optional[str], Any, Optional[str]], httpx.Client] = {}
 _CLIENTS_LOCK = threading.Lock()
 _local_address: Optional[str] = None
 _OPERATION_IDS = itertools.count(1)
@@ -237,13 +237,13 @@ def _no_cookie_jar() -> http.cookiejar.CookieJar:
     return http.cookiejar.CookieJar(http.cookiejar.DefaultCookiePolicy(allowed_domains=[]))
 
 
-def _new_client(proxy: Optional[str], verify: Union[bool, str]) -> httpx.Client:
+def _new_client(proxy: Optional[str], verify: Union[bool, str], local_address: Optional[str]) -> httpx.Client:
     """A thread-safe client with its own pool; no retries, no cookie persistence, no netrc."""
     context = _ssl_context(verify)
     # An HTTPS proxy is verified like the origin; httpx rejects a context for plain-HTTP proxies.
     proxy_context = context if isinstance(context, ssl.SSLContext) and proxy and proxy.startswith("https:") else None
     transport = httpx.HTTPTransport(
-        verify=context, limits=_LIMITS, retries=0, socket_options=_SOCKET_OPTIONS, local_address=_local_address,
+        verify=context, limits=_LIMITS, retries=0, socket_options=_SOCKET_OPTIONS, local_address=local_address,
         proxy=httpx.Proxy(proxy, ssl_context=proxy_context) if proxy else None,
     )
     return httpx.Client(
@@ -252,13 +252,13 @@ def _new_client(proxy: Optional[str], verify: Union[bool, str]) -> httpx.Client:
     )
 
 
-def _client(proxy: Optional[str], verify: Union[bool, str]) -> httpx.Client:
+def _client(proxy: Optional[str], verify: Union[bool, str], local_address: Optional[str]) -> httpx.Client:
     """The shared pooled client of a route."""
-    key = (proxy, verify)
+    key = (proxy, verify, local_address)
     with _CLIENTS_LOCK:
         client = _CLIENTS.get(key)
         if client is None:
-            client = _CLIENTS[key] = _new_client(proxy, verify)
+            client = _CLIENTS[key] = _new_client(proxy, verify, local_address)
         return client
 
 
@@ -303,8 +303,11 @@ def request(method: str, url: str, *, timing: OperationTiming = NO_TIMING, stage
     Remaining keyword arguments (headers, data, files, json, auth) go to ``httpx.Client.request``.
     """
     proxy = _select_proxy(url, proxies)
+    # The IP family setting is for the internet; an endpoint on this computer keeps its own address.
+    local_address = None if is_local_endpoint(url) else _local_address
     tracer = _CallTrace(timing, stage, proxied=proxy is not None, on_phase=on_phase)
-    client = _new_client(proxy, verify) if fresh_connection else _client(proxy, verify)
+    client = (_new_client(proxy, verify, local_address) if fresh_connection
+              else _client(proxy, verify, local_address))
     try:
         return client.request(
             method, url, timeout=_timeout(timeout), follow_redirects=follow_redirects,
