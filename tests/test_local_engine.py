@@ -517,7 +517,7 @@ def test_a_failed_wait_for_the_engine_removes_the_prepared_upload(tmp_path, monk
     prepared = tmp_path / "whispertyper_upload.m4a"
     prepared.write_bytes(b"aac")
     upload = transcription._Upload(path=str(prepared), temp=str(prepared), size=3)
-    monkeypatch.setattr(transcription, "_prepare_file", lambda *_args: upload)
+    monkeypatch.setattr(transcription, "_prepare_file", lambda *_args: [upload])
 
     def not_ready(*_args):
         raise transcription.TranscriptionError("not ready")

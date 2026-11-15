@@ -38,20 +38,40 @@ def configured_target(config: Mapping[str, Any]) -> TranscriptionTarget:
     return TranscriptionTarget(endpoint=config["api_endpoint"], model=config["model"])
 
 
-def sent_prompt(config: Mapping[str, Any]) -> str:
-    """The transcription prompt for the configured input language (see ``transcription_prompt_for``)."""
-    return transcription_prompt_for(config["prompt"], config["input_language"])
+def sent_prompt(config: Mapping[str, Any], language: Optional[str] = None) -> str:
+    """The transcription prompt for ``language`` (default: the configured input language).
+
+    See ``transcription_prompt_for``.
+    """
+    return transcription_prompt_for(config["prompt"], config["input_language"] if language is None else language)
+
+
+@dataclass(frozen=True)
+class UploadLimits:
+    """The upload size limit and the lowest bitrate a file may be compressed to before it is split."""
+
+    max_bytes: int
+    min_bitrate_kbps: int
+
+
+def upload_limits(config: Mapping[str, Any]) -> UploadLimits:
+    """The configured upload limits (``max_upload_mb``, ``min_audio_bitrate_kbps``)."""
+    return UploadLimits(max_bytes=int(config.get("max_upload_mb", 24) * 1024 * 1024),
+                        min_bitrate_kbps=int(config.get("min_audio_bitrate_kbps", 80)))
 
 
 def build_request(config: Mapping[str, Any], audio_path: str, target: TranscriptionTarget,
                   keys: GroqKeyRotation, operation_id: str,
-                  recording_format: Optional[str] = None) -> TranscriptionRequest:
+                  recording_format: Optional[str] = None, language: Optional[str] = None) -> TranscriptionRequest:
     """Snapshot ``config`` into the request for ``audio_path``.
 
     ``recording_format`` is set for retained microphone recordings; the worker then resolves
     ffmpeg only if a long recording exceeds the upload limit. Picked files resolve it now, for
-    video extraction and oversized-file compression.
+    video extraction, oversized-file compression and splitting. ``language`` overrides the
+    configured input language for this request ("" detects it).
     """
+    language = config["input_language"] if language is None else language
+    limits = upload_limits(config)
     endpoint, model = target.endpoint, target.model
     provider = provider_for_url(endpoint)
     api_key = keys.next_key(config)
@@ -66,13 +86,13 @@ def build_request(config: Mapping[str, Any], audio_path: str, target: Transcript
     second_pass = _second_pass_mode(config, model, operation_id)
     return TranscriptionRequest(
         api_key=api_key, api_endpoint=endpoint,
-        audio_path=audio_path, prompt=sent_prompt(config),
-        model=model, language=config["input_language"],
+        audio_path=audio_path, prompt=sent_prompt(config, language),
+        model=model, language=language,
         temperature=config["transcription_temperature"],
         proxies=proxies_for(config),
         ffmpeg_path=None if recording_format is not None else resolve_ffmpeg(config.get("ffmpeg_path", "")),
-        max_upload_bytes=int(config.get("max_upload_mb", 24) * 1024 * 1024),
-        min_bitrate_kbps=int(config.get("min_audio_bitrate_kbps", 80)),
+        max_upload_bytes=limits.max_bytes,
+        min_bitrate_kbps=limits.min_bitrate_kbps,
         recording_format=recording_format,
         recording_bitrate_kbps=int(config.get("recording_aac_bitrate_kbps", 64)),
         ffmpeg_setting=config.get("ffmpeg_path", ""),

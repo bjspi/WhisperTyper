@@ -216,6 +216,9 @@ sequenceDiagram
 - **ffmpeg as an optional dependency.** Video containers get their audio extracted, and
   oversized files are re-encoded (mono 16 kHz MP3 — Whisper's internal format, so the
   compression is lossless for transcription quality) to fit the endpoint's upload limit.
+  A file too long for one upload even at the minimum bitrate is split into parts cut at
+  speech pauses (`silencedetect`); `transcribe` sends them one after another and joins the
+  texts, so rephrasing, batches and retries see one transcript.
   Everything degrades gracefully when ffmpeg is absent.
 - **Config self-healing.** `ConfigStore` migrates legacy keys, repairs mojibake from
   historic encoding bugs (via `ftfy`), resets hotkeys polluted by captured control

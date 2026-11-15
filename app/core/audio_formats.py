@@ -48,6 +48,11 @@ def needs_audio_normalization(path: str) -> bool:
     return _extension(path) in NORMALIZED_AUDIO_EXTENSIONS
 
 
+def is_transcoded(path: str) -> bool:
+    """True if FFmpeg re-encodes the file before the upload (a video, or audio the APIs reject)."""
+    return is_video_file(path) or needs_audio_normalization(path)
+
+
 def requires_ffmpeg(path: str) -> bool:
     """True if the file cannot be uploaded at all without FFmpeg (a video the APIs reject)."""
     extension = _extension(path)

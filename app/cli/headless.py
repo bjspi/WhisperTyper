@@ -160,7 +160,7 @@ class HeadlessSession:
     def transcribe(self, path: str, options: TranscribeOptions, on_phase: Optional[PhaseCallback] = None) -> Transcript:
         """Transcribe the audio or video file at ``path`` and post-process it like the tray app.
 
-        ``on_phase`` hears "compressing" (extraction/compression with ffmpeg), "transcribing" and
+        ``on_phase`` hears "compressing" (extraction/compression/splitting with ffmpeg), "transcribing" and
         "rephrasing", for a progress display.
         """
         if not os.path.isfile(path):
@@ -175,7 +175,8 @@ class HeadlessSession:
         try:
             raw_text = transcribe(request, timing, self._translator.tr,
                                   on_compressing=lambda _name: notify("compressing"),
-                                  on_transcribing=lambda: notify("transcribing"))
+                                  on_transcribing=lambda: notify("transcribing"),
+                                  on_splitting=lambda _name, _parts: notify("compressing"))
         except TranscriptionError as error:
             raise HeadlessError(str(error)) from error
         text, rephrased = self._post_process(raw_text, config, options, notify)

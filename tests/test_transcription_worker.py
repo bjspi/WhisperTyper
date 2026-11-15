@@ -246,3 +246,39 @@ def test_second_pass_keeps_the_temp_upload_until_the_background_request_is_done(
     time.sleep(0.05)
     assert not temp.exists() and removed == [str(temp)]
     assert source.read_bytes()  # The retained recording stays.
+
+
+def test_a_split_file_is_transcribed_part_by_part_and_joined(monkeypatch, tmp_path):
+    parts = []
+    for number in range(2):
+        part = tmp_path / f"part{number}.mp3"
+        part.write_bytes(b"mp3")
+        parts.append(service._Upload(str(part), str(part), 3))
+    monkeypatch.setattr(service, "_prepare_file", lambda *_args: parts)
+    texts = iter([" Erster Teil. ", "Zweiter Teil."])
+    monkeypatch.setattr(service, "_send", lambda *_args: (next(texts), {}))
+    request = TranscriptionRequest("key", "https://example.invalid/transcribe", str(tmp_path / "long.mp3"), "",
+                                   "whisper", "de", 0)
+    announced = []
+    text = service.transcribe(request, OperationTiming(), lambda key, **_kw: key, on_compressing=Mock(),
+                              on_transcribing=Mock(), on_part=lambda part, total: announced.append((part, total)))
+    assert text == "Erster Teil. Zweiter Teil."
+    assert announced == [(1, 2), (2, 2)]
+    assert not any(Path(part.path).exists() for part in parts)
+
+
+def test_a_split_part_that_only_echoes_the_prompt_is_left_out(monkeypatch, tmp_path):
+    """Review finding: a silent part's echoed prompt reached the joined transcript."""
+    parts = []
+    for number in range(3):
+        part = tmp_path / f"part{number}.mp3"
+        part.write_bytes(b"mp3")
+        parts.append(service._Upload(str(part), str(part), 3))
+    monkeypatch.setattr(service, "_prepare_file", lambda *_args: parts)
+    texts = iter(["Hallo.", "Ein Diktat.", ""])
+    monkeypatch.setattr(service, "_send", lambda *_args: (next(texts), {}))
+    request = TranscriptionRequest("key", "https://example.invalid/transcribe", str(tmp_path / "long.mp3"),
+                                   "Ein Diktat.", "whisper", "de", 0)
+    text = service.transcribe(request, OperationTiming(), lambda key, **_kw: key, on_compressing=Mock(),
+                              on_transcribing=Mock())
+    assert text == "Hallo."

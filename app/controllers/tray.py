@@ -4,9 +4,10 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Callable, Dict, Optional, Protocol, Tuple
+from concurrent.futures import ThreadPoolExecutor
+from typing import Callable, Dict, List, Optional, Protocol, Tuple
 
-from PyQt6.QtCore import QObject, QPoint, QTimer
+from PyQt6.QtCore import QObject, QPoint, Qt, QTimer
 from PyQt6.QtGui import QAction, QCursor, QIcon
 from PyQt6.QtWidgets import QApplication, QFileDialog, QLabel, QStyle, QSystemTrayIcon, QWidget
 
@@ -25,7 +26,7 @@ from app.core.api_keys import (
     transcription_configured,
     transcription_provider_ready,
 )
-from app.core.audio_formats import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, requires_ffmpeg
+from app.core.audio_formats import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, is_transcoded, requires_ffmpeg
 from app.core.constants import APP_DATA_DIR
 from app.core.env import is_MACOS
 from app.core.expert_mode import expert_mode_shown
@@ -34,13 +35,15 @@ from app.local_engine.supervisor import OFF, READY, EngineStatus
 from app.platform import autostart
 from app.platform.installation import REQUIREMENTS_FILE, repair_command
 from app.services import bad_recordings
-from app.services.ffmpeg import resolve_ffmpeg
+from app.services.ffmpeg import resolve_ffmpeg, upload_parts
 from app.services.gitutil import git_available, release_changes
 from app.services.releases import Release
+from app.services.transcription_requests import upload_limits
 from app.services.updater import GitUpdater
-from app.ui import macos_icons, message_dialog
+from app.ui import macos_icons, message_dialog, theme
 from app.ui.about_dialog import show_about
 from app.ui.durations import BALLOON_INFO_MS, BALLOON_SHORT_MS, BALLOON_WARNING_MS
+from app.ui.file_transcription import SplitFile, ask_language
 from app.ui.line_icons import line_icon
 from app.ui.local_engine_tab import status_text
 from app.ui.package_install import install_requirements
@@ -572,13 +575,41 @@ class TrayController(QObject):
             self._settings.show_window()
             return
 
+        language = self._ask_file_language(paths, ffmpeg_exe)
+        if language is None:
+            return
         self._pipeline.selection_context = ""
         if len(paths) == 1:
-            logging.info(f"Transcribing selected file: {paths[0]}")
-            self._pipeline.start(paths[0], output_mode="clipboard")
+            logging.info("Transcribing selected file: %s language=%s", paths[0], language or "auto")
+            self._pipeline.start(paths[0], output_mode="clipboard", language=language)
         else:
-            logging.info("Transcribing %d selected files as a batch.", len(paths))
-            self._pipeline.start_batch(paths)
+            logging.info("Transcribing %d selected files as a batch, language=%s", len(paths), language or "auto")
+            self._pipeline.start_batch(paths, language)
+
+    def _ask_file_language(self, paths: List[str], ffmpeg_exe: Optional[str]) -> Optional[str]:
+        """The spoken language for the picked files ("" detects it), or None when cancelled.
+
+        The question also names the files that are too long for one upload even at the minimum
+        bitrate and will be split into parts.
+        """
+        config = self._ctx.config
+        limits = upload_limits(config)
+
+        def parts_of(path: str) -> int:
+            return upload_parts(ffmpeg_exe, path, transcode_source=bool(ffmpeg_exe) and is_transcoded(path),
+                                max_bytes=limits.max_bytes, min_bitrate_kbps=limits.min_bitrate_kbps)
+
+        # Videos and voice messages are measured with ffmpeg (~0.1 s each); in parallel, a picked
+        # batch does not hold up the dialog.
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            with ThreadPoolExecutor() as pool:
+                file_parts = list(pool.map(parts_of, paths))
+        finally:
+            QApplication.restoreOverrideCursor()
+        splits = [SplitFile(path, parts) for path, parts in zip(paths, file_parts) if parts > 1]
+        dark = theme.resolve_dark(config.get("color_theme", "system"), QApplication.instance())
+        return ask_language(self._window, self._ctx.tr, paths, config["input_language"], splits, limits, dark)
 
     # --- Self-update (release tags) -------------------------------------------------------
     def check_for_updates(self) -> None:

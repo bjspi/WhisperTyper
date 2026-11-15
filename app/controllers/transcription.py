@@ -82,6 +82,8 @@ class TranscriptionPipeline:
         self._batch_index = 0
         self._batch_results: List[str] = []
         self._batch_active = False
+        #: Spoken language picked for the running batch (None: the one of the settings).
+        self._batch_language: Optional[str] = None
         #: Number of the current batch; its requests carry it, so a hotkey dictation finishing
         #: while a batch runs takes the normal delivery path instead of landing in the batch.
         self._batch_id = 0
@@ -98,7 +100,7 @@ class TranscriptionPipeline:
     def start(self, audio_path: str, output_mode: str = "insert",
               transformation_prompt: Optional[str] = None, timing: Optional[OperationTiming] = None,
               use_auto_prompt: bool = True, instruction_selected: bool = False,
-              batch: Optional[int] = None) -> None:
+              batch: Optional[int] = None, language: Optional[str] = None) -> None:
         """Transcribe ``audio_path`` on a worker thread.
 
         Args:
@@ -110,6 +112,7 @@ class TranscriptionPipeline:
             use_auto_prompt: False when "None" was picked in the palette for this recording.
             instruction_selected: The palette choice was the instruction entry (run as an order).
             batch: The batch this file belongs to (see ``start_batch``); None for single requests.
+            language: Spoken language for this request ("" detects it); None uses the settings.
         """
         config = self._config
         timing = timing or OperationTiming()
@@ -119,7 +122,7 @@ class TranscriptionPipeline:
         # resolves ffmpeg only if a long recording still exceeds the upload limit.
         recording_format = config.get("recording_format", "wav") if self._ctx.recordings.owns(audio_path) else None
         request = build_request(config, audio_path, self._target(), self._key_rotation, timing.operation_id,
-                                recording_format)
+                                recording_format, language)
         extracts_video = bool(request.ffmpeg_path) and is_video_file(audio_path)
         converts_audio = bool(request.ffmpeg_path) and needs_audio_normalization(audio_path)
         # Snapshot the language together with the worker settings. A later settings change must
@@ -146,20 +149,24 @@ class TranscriptionPipeline:
         worker.compressing.connect(self._on_compression_phase_started)
         worker.engine_loading.connect(self._on_engine_loading)
         worker.transcribing.connect(lambda language=lang_code: self._on_transcription_phase_started(language))
+        worker.splitting.connect(self._on_splitting_started)
+        worker.transcribing_part.connect(
+            lambda part, parts, language=lang_code: self._on_part_started(part, parts, language))
         # Bind this request's output mode into the result handlers so a concurrently started
         # request (with a different mode) cannot redirect this one's delivery.
         # Snapshot the automatic prompt too, so editing prompts mid-request cannot change this one.
         auto_prompt = self.auto_prompt() if use_auto_prompt else None
         worker.finished.connect(
             lambda text, mode=output_mode, selected_prompt=transformation_prompt, operation=timing, auto=auto_prompt,
-            instruction=instruction_selected, batch_id=batch:
-                self.on_transcription_finished(text, mode, selected_prompt, operation, auto, instruction, batch_id)
+            instruction=instruction_selected, batch_id=batch, prompt=request.prompt:
+                self.on_transcription_finished(text, mode, selected_prompt, operation, auto, instruction, batch_id,
+                                               prompt)
         )
         worker.error.connect(
             lambda message, path, mode=output_mode, selected_prompt=transformation_prompt, operation=timing,
-            auto=use_auto_prompt, instruction=instruction_selected, batch_id=batch:
+            auto=use_auto_prompt, instruction=instruction_selected, batch_id=batch, spoken=language:
                 self.on_transcription_error(message, path, mode, selected_prompt, operation, auto, instruction,
-                                            batch_id)
+                                            batch_id, spoken)
         )
         self._workers.start(worker, (worker.finished, worker.error),
                             queued=lambda: timing.mark("transcription_worker_queued"))
@@ -233,18 +240,30 @@ class TranscriptionPipeline:
         self._notifier.show(self._batch_progress_prefix() + self._ctx.tr("compressing_audio_message", filename=filename),
                             0, spinner=True)
 
+    def _on_splitting_started(self, filename: str, parts: int) -> None:
+        """Say that a file too long for one upload is being cut into parts."""
+        self._notifier.show(self._batch_progress_prefix()
+                            + self._ctx.tr("splitting_audio_message", filename=filename, parts=parts), 0, spinner=True)
+
+    def _on_part_started(self, part: int, parts: int, lang_code: str) -> None:
+        """Show which part of a split file is being transcribed."""
+        self._notifier.show(self._batch_progress_prefix() + self._ctx.tr(
+            "transcription_part_progress_message", part=part, parts=parts, language=self._language_name(lang_code)),
+            0, spinner=True)
+
     def _on_engine_loading(self) -> None:
         """Say why the recording waits: the local engine is still loading its model."""
         self._notifier.show(self._batch_progress_prefix() + self._ctx.tr("local_engine_loading_message"),
                             0, spinner=True)
 
+    @staticmethod
+    def _language_name(lang_code: str) -> str:
+        """The display name of a language code for the spinner texts."""
+        return next((name for name, code in LANGUAGES.items() if code == lang_code), lang_code or "Detect Language")
+
     def _transcription_progress_message(self, lang_code: str) -> str:
-        """Return the localized spinner text with the configured language display name."""
-        language_name = next(
-            (name for name, code in LANGUAGES.items() if code == lang_code),
-            lang_code or "Detect Language",
-        )
-        return self._ctx.tr("transcription_progress_message", language=language_name)
+        """Return the localized spinner text with the request's language display name."""
+        return self._ctx.tr("transcription_progress_message", language=self._language_name(lang_code))
 
     def _on_transcription_phase_started(self, lang_code: str) -> None:
         """Switch the spinner from the 'extracting…' phase to the 'transcribing…' phase."""
@@ -255,7 +274,7 @@ class TranscriptionPipeline:
                                   transformation_prompt: Optional[str] = None,
                                   timing: Optional[OperationTiming] = None,
                                   auto_prompt: Optional[str] = None, instruction_selected: bool = False,
-                                  batch: Optional[int] = None) -> None:
+                                  batch: Optional[int] = None, sent_prompt: Optional[str] = None) -> None:
         """Handle a successful transcription and route it through rephrasing if configured.
 
         Args:
@@ -266,10 +285,12 @@ class TranscriptionPipeline:
             auto_prompt: The automatic prompt snapshotted when the request started, if any.
             instruction_selected: The palette choice was the instruction entry.
             batch: The batch the request belongs to, if any (see ``start``).
+            sent_prompt: The transcription prompt the request sent (None: the one of the settings);
+                a result that only repeats it counts as no speech.
         """
         timing = timing or OperationTiming("transcription_result")
         timing.mark("transcription_result_received")
-        processed = usable_transcript(text, self._sent_prompt())
+        processed = usable_transcript(text, self._sent_prompt() if sent_prompt is None else sent_prompt)
         if processed is None:
             timing.finish("no_speech")
             if self._in_batch(batch):
@@ -306,8 +327,9 @@ class TranscriptionPipeline:
                                output_mode: str = "insert",
                                transformation_prompt: Optional[str] = None,
                                timing: OperationTiming = NO_TIMING, use_auto_prompt: bool = True,
-                               instruction_selected: bool = False, batch: Optional[int] = None) -> None:
-        """Report a failed transcription and offer a retry (batches skip the file instead)."""
+                               instruction_selected: bool = False, batch: Optional[int] = None,
+                               language: Optional[str] = None) -> None:
+        """Report a failed transcription and offer a retry in the same ``language`` (batches skip the file)."""
         logging.error(f"Transcription error: {error_message}")
         timing.finish("transcription_failed")
         # In a batch, don't block on a modal retry dialog — log, skip this file, and keep going.
@@ -326,7 +348,7 @@ class TranscriptionPipeline:
                 message_dialog.ERROR) == retry:
             self.start(audio_file_path, output_mode=output_mode, transformation_prompt=transformation_prompt,
                        timing=OperationTiming("retry"), use_auto_prompt=use_auto_prompt,
-                       instruction_selected=instruction_selected)
+                       instruction_selected=instruction_selected, language=language)
 
     # --- Rephrasing ----------------------------------------------------------------------
     def start_rephrasing(self, system_prompt: str, user_prompt: str, context: str, timing: Optional[OperationTiming],
@@ -460,8 +482,8 @@ class TranscriptionPipeline:
         self._notifier.show(self._ctx.tr("transcription_copied_message"), BALLOON_SHORT_MS)
 
     # --- Batch file transcription (several picked files -> one joined clipboard result) ---
-    def start_batch(self, paths: List[str]) -> None:
-        """Transcribe several files sequentially and join the results with blank lines.
+    def start_batch(self, paths: List[str], language: Optional[str] = None) -> None:
+        """Transcribe several files sequentially in ``language`` and join the results with blank lines.
 
         Each file runs through the normal transcription (+ optional rephrasing) pipeline; the
         per-file result is captured in ``finalize_output`` instead of being copied, and the
@@ -472,6 +494,7 @@ class TranscriptionPipeline:
         self._batch_index = 0
         self._batch_results = []
         self._batch_active = True
+        self._batch_language = language
         self._batch_id += 1
         self._transcribe_next_in_batch()
 
@@ -484,7 +507,8 @@ class TranscriptionPipeline:
         if self._batch_index >= len(self._batch_files):
             self._finish_batch()
             return
-        self.start(self._batch_files[self._batch_index], output_mode="clipboard", batch=self._batch_id)
+        self.start(self._batch_files[self._batch_index], output_mode="clipboard", batch=self._batch_id,
+                   language=self._batch_language)
 
     def _advance_batch(self, text: Optional[str]) -> None:
         """Record a finished file's text (if non-empty), then move on to the next file."""

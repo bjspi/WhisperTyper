@@ -22,6 +22,7 @@ from app.core import audio_formats
 from app.core.api_keys import auth_headers
 from app.core.models import transcription_form_fields
 from app.core.redaction import LOG_REDACTION_STATE, redact_for_log
+from app.core.rephrase_routing import usable_transcript
 from app.core.textutil import clean_model_name
 from app.core.timing import OperationTiming
 from app.services import ffmpeg, transcription_diagnostics
@@ -148,57 +149,87 @@ _Outcome = Tuple[Optional[Tuple[str, Optional[Dict[str, Any]]]], Optional[Except
 def transcribe(req: TranscriptionRequest, timing: OperationTiming, tr: Translate, *,
                on_compressing: Callable[[str], None], on_transcribing: Callable[[], None],
                on_diagnostics: Optional[Callable[[Dict[str, Any]], None]] = None,
-               on_engine_loading: Optional[Callable[[], None]] = None) -> str:
+               on_engine_loading: Optional[Callable[[], None]] = None,
+               on_splitting: Optional[Callable[[str, int], None]] = None,
+               on_part: Optional[Callable[[int, int], None]] = None) -> str:
     """Upload ``req.audio_path`` and return the transcription text.
 
     ``on_engine_loading`` is called once if the local engine is not ready yet (model loading);
     ``on_transcribing`` follows once it is.
 
+    A picked file too long for one upload even at the minimum bitrate is split at pauses
+    (``on_splitting`` hears the file name and the number of parts). The parts are transcribed one
+    after another, ``on_part`` hearing (part, parts) before each, and their texts are joined.
+
     With ``req.diagnostics``, the response's confidence details are logged. ``req.second_pass``
     adds a second transcription (see there). The details of the returned text go to
-    ``on_diagnostics`` first.
+    ``on_diagnostics`` first (single uploads only).
 
     Raises:
         TranscriptionError: For conditions with a translated, user-facing explanation.
     """
     if req.local_engine_error:
         raise TranscriptionError(req.local_engine_error)
-    temp: Optional[_TempUpload] = None
+    temps: List[_TempUpload] = []
+    results: List[Tuple[str, Optional[Dict[str, Any]]]] = []
     try:
         with timing.span("upload_prepare"):
-            upload = (_prepare_recording(req, timing, tr, on_compressing) if req.recording_format is not None
-                      else _prepare_file(req, on_compressing))
-        # Owned right away, so a failed wait for the local engine removes it too.
-        temp = _TempUpload(upload.temp)
+            uploads = ([_prepare_recording(req, timing, tr, on_compressing)] if req.recording_format is not None
+                       else _prepare_file(req, on_compressing, on_splitting))
+        # Owned right away, so a failed wait for the local engine removes them too.
+        temps = [_TempUpload(upload.temp) for upload in uploads]
         if req.local_engine_wait_s > 0:
             with timing.span("local_engine_wait"):
                 if _wait_for_local_engine(req, tr, on_engine_loading):
                     on_transcribing()
-        # Pre-processing (extraction or compression) just finished: the upload phase begins.
-        if upload.temp is not None:
-            on_transcribing()
-        if req.second_pass == "always":
-            # The parallel second transcription may still be sending the file after a confident first
-            # result returns, so the temporary upload is removed by whichever request finishes last.
-            temp.add_reader()
-            text, details = _transcribe_twice(req, upload, timing, tr, temp.release)
-        else:
-            text, payload = _send(req, upload, timing, tr)
-            details = _details(payload, timing) if req.wants_details else None
-            if req.second_pass == "doubtful" and _doubtful(req, text, details):
-                text, details = _choose(req, timing, text, details, _second_pass(req, upload, timing, tr))
+        for number, (upload, temp) in enumerate(zip(uploads, temps), start=1):
+            # Pre-processing (extraction, compression or splitting) is done: this upload begins.
+            if len(uploads) > 1 and on_part is not None:
+                on_part(number, len(uploads))
+            elif upload.temp is not None:
+                on_transcribing()
+            results.append(_transcribe_upload(req, upload, temp, timing, tr))
     finally:
-        # Remove only the temporary upload; the original recording/file stays for retries.
-        if temp is not None:
+        # Remove only the temporary uploads; the original recording/file stays for retries.
+        for temp in temps:
             temp.release()
-    average = _average_logprob(details)
-    if average is not None:
-        timing.notes["avg_logprob"] = average
+    averages = [average for average in (_average_logprob(details) for _text, details in results)
+                if average is not None]
+    if averages:
+        timing.notes["avg_logprob"] = sum(averages) / len(averages)
     if req.diagnostics:
-        _log_diagnostics(details, timing)
+        for _text, details in results:
+            _log_diagnostics(details, timing)
+    if len(results) > 1:
+        return _join_parts([text for text, _details in results], req.prompt)
+    text, details = results[0]
     if details is not None and on_diagnostics is not None:
         on_diagnostics(details)
     return text
+
+
+def _transcribe_upload(req: TranscriptionRequest, upload: _Upload, temp: _TempUpload, timing: OperationTiming,
+                       tr: Translate) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """Send one upload, with the configured second transcription; its text and confidence details."""
+    if req.second_pass == "always":
+        # The parallel second transcription may still be sending the file after a confident first
+        # result returns, so the temporary upload is removed by whichever request finishes last.
+        temp.add_reader()
+        return _transcribe_twice(req, upload, timing, tr, temp.release)
+    text, payload = _send(req, upload, timing, tr)
+    details = _details(payload, timing) if req.wants_details else None
+    if req.second_pass == "doubtful" and _doubtful(req, text, details):
+        text, details = _choose(req, timing, text, details, _second_pass(req, upload, timing, tr))
+    return text, details
+
+
+def _join_parts(texts: List[str], prompt: str) -> str:
+    """The texts of a split file's parts as one transcript; the cuts sit in pauses, so a space joins them.
+
+    A part without speech (empty, or only the echoed prompt) is left out, as a single upload would be.
+    """
+    usable = [usable_transcript(text, prompt) for text in texts]
+    return " ".join(text.strip() for text in usable if text and text.strip())
 
 
 def _wait_for_local_engine(req: TranscriptionRequest, tr: Translate,
@@ -446,10 +477,18 @@ def _prepare_recording(req: TranscriptionRequest, timing: OperationTiming, tr: T
     return _Upload(compressed, compressed_temp, size)
 
 
-def _prepare_file(req: TranscriptionRequest, on_compressing: Callable[[str], None]) -> _Upload:
-    """Picked files: extract a video's audio, convert rejected audio formats, compress above the limit."""
-    transcode = bool(req.ffmpeg_path) and (audio_formats.is_video_file(req.audio_path)
-                                           or audio_formats.needs_audio_normalization(req.audio_path))
+def _prepare_file(req: TranscriptionRequest, on_compressing: Callable[[str], None],
+                  on_splitting: Optional[Callable[[str, int], None]]) -> List[_Upload]:
+    """Picked files: extract a video's audio, convert rejected audio formats, compress or split above the limit."""
+    transcode = bool(req.ffmpeg_path) and audio_formats.is_transcoded(req.audio_path)
+    parts = ffmpeg.upload_parts(req.ffmpeg_path, req.audio_path, transcode_source=transcode,
+                                max_bytes=req.max_upload_bytes, min_bitrate_kbps=req.min_bitrate_kbps)
+    if req.ffmpeg_path and parts > 1:
+        if on_splitting is not None:
+            on_splitting(os.path.basename(req.audio_path), parts)
+        paths = ffmpeg.split_upload(req.ffmpeg_path, req.audio_path, parts=parts,
+                                    max_bytes=req.max_upload_bytes, min_bitrate_kbps=req.min_bitrate_kbps)
+        return [_Upload(path, path, _file_size(path)) for path in paths]
     if not transcode and _file_size(req.audio_path) > req.max_upload_bytes:
         on_compressing(os.path.basename(req.audio_path))
     path, temp = ffmpeg.prepare_upload(
@@ -457,7 +496,7 @@ def _prepare_file(req: TranscriptionRequest, on_compressing: Callable[[str], Non
         transcode_source=transcode,
         max_bytes=req.max_upload_bytes, min_bitrate_kbps=req.min_bitrate_kbps,
     )
-    return _Upload(path, temp, _file_size(path))
+    return [_Upload(path, temp, _file_size(path))]
 
 
 def _file_size(path: str) -> int:

@@ -23,6 +23,10 @@ class TranscriptionWorker(QObject):
     compressing = pyqtSignal(str)
     # The local engine is still loading its model; the recording waits (``transcribing`` follows).
     engine_loading = pyqtSignal()
+    # A picked file too long for one upload is being split: (file name, number of parts).
+    splitting = pyqtSignal(str, int)
+    # One part of a split file is being transcribed: (part, parts), instead of ``transcribing``.
+    transcribing_part = pyqtSignal(int, int)
     # Confidence details of the response (see transcription_diagnostics), emitted before ``finished``.
     diagnostics = pyqtSignal(object)
 
@@ -48,7 +52,8 @@ class TranscriptionWorker(QObject):
         try:
             text = transcribe(self.request, self.timing, self.tr,
                               on_compressing=self.compressing.emit, on_transcribing=self.transcribing.emit,
-                              on_diagnostics=self.diagnostics.emit, on_engine_loading=self.engine_loading.emit)
+                              on_diagnostics=self.diagnostics.emit, on_engine_loading=self.engine_loading.emit,
+                              on_splitting=self.splitting.emit, on_part=self.transcribing_part.emit)
         except TranscriptionError as e:
             self._fail(str(e))
             return

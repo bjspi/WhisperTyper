@@ -45,6 +45,8 @@ class FakeWorker(QObject):
     transcribing = pyqtSignal()
     compressing = pyqtSignal(str)
     engine_loading = pyqtSignal()
+    splitting = pyqtSignal(str, int)
+    transcribing_part = pyqtSignal(int, int)
     diagnostics = pyqtSignal(object)
 
     def __init__(self, request, timing=None, tr=None):
@@ -99,9 +101,9 @@ def test_start_binds_the_batch_into_the_result_handlers(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline_module, "TranscriptionWorker", FakeWorker)
     monkeypatch.setattr(transcription_requests, "resolve_ffmpeg", lambda _setting: None)
     received = []
-    monkeypatch.setattr(pipeline, "on_transcription_finished", lambda text, *args: received.append((text, args[-1])))
+    monkeypatch.setattr(pipeline, "on_transcription_finished", lambda text, *args: received.append((text, args[5])))
     monkeypatch.setattr(pipeline, "on_transcription_error",
-                        lambda message, path, *args: received.append((message, args[-1])))
+                        lambda message, path, *args: received.append((message, args[5])))
 
     pipeline.start("one.wav", output_mode="clipboard", batch=3)
     pipeline.start("dictation.wav")
