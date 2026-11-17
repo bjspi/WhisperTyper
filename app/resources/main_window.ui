@@ -569,7 +569,7 @@
        <item>
         <widget class="QCheckBox" name="recording_prompt_overlay_digit_keys_checkbox">
          <property name="text">
-          <string>Pick prompts with the number keys while the mouse is over the palette</string>
+          <string>Use shortcut keys while the mouse is over the palette</string>
          </property>
         </widget>
        </item>

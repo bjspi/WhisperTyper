@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QPushButton,
     QSizePolicy,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -67,6 +68,15 @@ class _PromptCard(QWidget):
     #: The card grows with its chips up to this width, then the chips wrap.
     MAX_CARD_WIDTH = 460
     _CARD_PADDING = 12
+
+    def hideEvent(self, event: Any) -> None:  # noqa: N802 - Qt API
+        """Take an open tooltip of the card along.
+
+        The palettes never take the focus, so Qt does not hide a tooltip of theirs by itself: closed
+        by a click or a key (trash button, Delete), its tooltip would stay on the screen.
+        """
+        QToolTip.hideText()
+        super().hideEvent(event)
 
     def _build_card(self, object_name: str, dark: Optional[bool]) -> Tuple[QVBoxLayout, bool]:
         """Create the card, its shadow, the shared chip styling and the chip flow.
@@ -536,9 +546,10 @@ class RecordingPaletteTexts:
     instruction_tooltip: str = ""
 
 
-#: First id of the overlay's digit hotkeys (application ids are 0x0000-0xBFFF).
+#: First id of the overlay's key hotkeys (application ids are 0x0000-0xBFFF); the id adds the key code.
 _DIGIT_HOTKEY_BASE = 0xB000
 _VK_0, _VK_NUMPAD0 = 0x30, 0x60
+_VK_DELETE, _VK_R = 0x2E, 0x52
 
 
 class RecordingPromptOverlay(_PromptCard):
@@ -574,8 +585,8 @@ class RecordingPromptOverlay(_PromptCard):
         ``on_restart`` / ``on_cancel`` add header buttons to start the take over or discard it.
         ``on_pause`` adds a pause/resume button; the app reports the state back via ``set_paused``.
         ``digit_keys`` (Windows): while the mouse is over the palette, the number keys pick the chips
-        in their shown order (1 is "None", 0 the tenth chip, as on the keyboard); the keys are
-        registered as hotkeys, so the focus stays where it is.
+        in their shown order (1 is "None", 0 the tenth chip, as on the keyboard), Delete discards
+        and R restarts the take; the keys are registered as hotkeys, so the focus stays where it is.
         A palette placed near the cursor can be dragged by its card; a handle in the bottom-right
         corner shows that.
         ``level_feed`` returns the dBFS levels captured since its last call; with it, a live waveform
@@ -773,7 +784,7 @@ class RecordingPromptOverlay(_PromptCard):
         self.move_handle: Optional[_MoveHandle] = None
         self._grab_offset: Optional[QPoint] = None
         self._digit_keys = digit_keys and is_WINDOWS
-        self._registered_hotkeys: List[int] = []
+        self._registered_hotkeys: Dict[int, Callable[[], None]] = {}
         if not self._position_for_platform(use_system_position, system_anchor):
             self.move_handle = _MoveHandle(self._icon_color, self._texts.move_tooltip, self.card)
             # The whole card drags; buttons and chips keep their own pointing-hand cursor.
@@ -818,19 +829,25 @@ class RecordingPromptOverlay(_PromptCard):
         super().mouseReleaseEvent(event)
 
     def enterEvent(self, event: Any) -> None:  # noqa: N802 - Qt API
-        """Take the digit keys for the chips while the mouse is over the palette."""
+        """Take the digit keys for the chips, Delete and R for the take while the mouse is over the palette."""
         super().enterEvent(event)
         # An Enter queued just before the palette closed must not register keys nothing releases:
-        # the number keys would stay dead in every other application.
+        # the keys would stay dead in every other application.
         if not self._digit_keys or self._registered_hotkeys or not self.isVisible():
             return
-        hwnd = int(self.winId())
-        for index in range(min(10, len(self._prompt_buttons))):
+        actions: Dict[int, Callable[[], None]] = {}
+        for index, button in enumerate(self._prompt_buttons[:10]):
             digit = (index + 1) % 10
-            for vk in (_VK_0 + digit, _VK_NUMPAD0 + digit):
-                hotkey_id = _DIGIT_HOTKEY_BASE + vk
-                if register_window_hotkey(hwnd, hotkey_id, vk):
-                    self._registered_hotkeys.append(hotkey_id)
+            actions[_VK_0 + digit] = actions[_VK_NUMPAD0 + digit] = button.click
+        if self.cancel_button is not None:
+            actions[_VK_DELETE] = self.cancel_button.click
+        if self.restart_button is not None:
+            actions[_VK_R] = self.restart_button.click
+        hwnd = int(self.winId())
+        for vk, action in actions.items():
+            hotkey_id = _DIGIT_HOTKEY_BASE + vk
+            if register_window_hotkey(hwnd, hotkey_id, vk):
+                self._registered_hotkeys[hotkey_id] = action
 
     def leaveEvent(self, event: Any) -> None:  # noqa: N802 - Qt API
         """Give the digit keys back to the other applications."""
@@ -838,19 +855,20 @@ class RecordingPromptOverlay(_PromptCard):
         self._release_digit_keys()
 
     def _release_digit_keys(self) -> None:
-        """Unregister every digit hotkey of this palette."""
+        """Unregister every key hotkey of this palette."""
         if not self._registered_hotkeys:
             return
         hwnd = int(self.winId())
         for hotkey_id in self._registered_hotkeys:
             unregister_window_hotkey(hwnd, hotkey_id)
-        self._registered_hotkeys = []
+        self._registered_hotkeys = {}
 
     def nativeEvent(self, event_type: Any, message: Any) -> Any:  # noqa: N802 - Qt API
-        """Pick the chip of a pressed digit key."""
+        """Run the action of a pressed palette key: pick a chip, discard or restart the take."""
         hotkey_id = hotkey_id_of(event_type, message) if self._registered_hotkeys else None
-        if hotkey_id is not None and hotkey_id in self._registered_hotkeys:
-            self.select_by_digit((hotkey_id - _DIGIT_HOTKEY_BASE) % 0x10)
+        action = self._registered_hotkeys.get(hotkey_id) if hotkey_id is not None else None
+        if action is not None:
+            action()
             return True, 0
         # QWidget's own implementation only reports "not handled"; calling it from PyQt6 crashes.
         return False, 0

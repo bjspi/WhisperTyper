@@ -207,6 +207,30 @@ def test_digit_keys_are_taken_only_while_the_mouse_is_over_the_palette(qapp, mon
     assert registered == {}
 
 
+def test_delete_discards_and_r_restarts_while_the_mouse_is_over_the_palette(qapp, monkeypatch):
+    registered: dict[int, int] = {}
+    monkeypatch.setattr(floating_buttons, "is_WINDOWS", True)
+    monkeypatch.setattr(floating_buttons, "register_window_hotkey",
+                        lambda _hwnd, hotkey_id, vk: registered.setdefault(hotkey_id, vk) is not None)
+    monkeypatch.setattr(floating_buttons, "unregister_window_hotkey",
+                        lambda _hwnd, hotkey_id: registered.pop(hotkey_id))
+    taken: list = []
+    palette = RecordingPromptOverlay([], "Recording…", "None", lambda _prompt: None,
+                                     use_system_position=False, digit_keys=True,
+                                     on_cancel=lambda: taken.append("cancel"),
+                                     on_restart=lambda: taken.append("restart"))
+    monkeypatch.setattr(palette, "isVisible", lambda: True)
+    QtWidgets.QApplication.sendEvent(palette, QtGui.QEnterEvent(QtCore.QPointF(), QtCore.QPointF(), QtCore.QPointF()))
+    # No prompts, so no digit keys; Delete and R still control the take.
+    assert sorted(registered.values()) == [0x2E, 0x52]
+    for hotkey_id in list(registered):
+        monkeypatch.setattr(floating_buttons, "hotkey_id_of", lambda *_args, hotkey_id=hotkey_id: hotkey_id)
+        assert palette.nativeEvent(b"windows_generic_MSG", 1) == (True, 0)
+    assert sorted(taken) == ["cancel", "restart"]
+    QtWidgets.QApplication.sendEvent(palette, QtCore.QEvent(QtCore.QEvent.Type.Leave))
+    assert registered == {}
+
+
 def test_digit_keys_stay_free_when_disabled(qapp, monkeypatch):
     monkeypatch.setattr(floating_buttons, "is_WINDOWS", True)
     monkeypatch.setattr(floating_buttons, "register_window_hotkey", lambda *_args: pytest.fail("registered"))
@@ -245,3 +269,12 @@ def test_an_elided_chip_keeps_its_prompt_tooltip(qapp):
     chip = palette._prompt_buttons[1]
     assert chip.text() != caption.strip()
     assert chip.toolTip() == "Rephrase with " + caption.strip()
+
+
+def test_hiding_the_palette_takes_its_tooltip_along(qapp, monkeypatch):
+    hidden: list = []
+    monkeypatch.setattr(floating_buttons.QToolTip, "hideText", lambda: hidden.append(True))
+    palette = RecordingPromptOverlay(PROMPTS, "Recording…", "None", lambda _prompt: None, use_system_position=False)
+    # The fixture keeps the palette off the screen; a closing palette gets this Hide event.
+    QtWidgets.QApplication.sendEvent(palette, QtGui.QHideEvent())
+    assert hidden
