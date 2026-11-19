@@ -69,13 +69,21 @@ class _PromptCard(QWidget):
     MAX_CARD_WIDTH = 460
     _CARD_PADDING = 12
 
+    def showEvent(self, event: Any) -> None:  # noqa: N802 - Qt API
+        """Show tooltips again although the palette never becomes the active window."""
+        self.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips, True)
+        super().showEvent(event)
+
     def hideEvent(self, event: Any) -> None:  # noqa: N802 - Qt API
-        """Take an open tooltip of the card along.
+        """Take an open tooltip of the card along and keep a pending one from opening.
 
         The palettes never take the focus, so Qt does not hide a tooltip of theirs by itself: closed
-        by a click or a key (trash button, Delete), its tooltip would stay on the screen.
+        by a click or a key (trash button, Delete), its tooltip would stay on the screen. Qt's
+        tooltip timer of the last hover also still fires after the close; without the attribute it
+        skips the hidden, inactive window instead of opening the tooltip under the resting mouse.
         """
         QToolTip.hideText()
+        self.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips, False)
         super().hideEvent(event)
 
     def _build_card(self, object_name: str, dark: Optional[bool]) -> Tuple[QVBoxLayout, bool]:

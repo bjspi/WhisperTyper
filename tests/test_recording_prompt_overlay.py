@@ -231,6 +231,17 @@ def test_delete_discards_and_r_restarts_while_the_mouse_is_over_the_palette(qapp
     assert registered == {}
 
 
+def test_a_pending_tooltip_does_not_open_once_the_palette_is_hidden(qapp):
+    palette = overlay([])
+    always = QtCore.Qt.WidgetAttribute.WA_AlwaysShowToolTips
+    assert palette.testAttribute(always)  # The palette never takes the focus.
+    palette.hideEvent(QtGui.QHideEvent())
+    # Qt's tooltip timer of the last hover skips an inactive window without the attribute.
+    assert not palette.testAttribute(always)
+    palette.showEvent(QtGui.QShowEvent())
+    assert palette.testAttribute(always)
+
+
 def test_digit_keys_stay_free_when_disabled(qapp, monkeypatch):
     monkeypatch.setattr(floating_buttons, "is_WINDOWS", True)
     monkeypatch.setattr(floating_buttons, "register_window_hotkey", lambda *_args: pytest.fail("registered"))
