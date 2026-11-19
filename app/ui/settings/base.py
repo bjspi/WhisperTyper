@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from app.controllers.recording import RecordingController
     from app.ui.api_keys import ApiKeysTab
     from app.ui.local_engine_tab import LocalEngineTab
+    from app.ui.multi_select_combo import MultiSelectComboBox
     from app.ui.replacements import ReplacementsTab
     from app.ui.settings.collapsible import CollapsibleSection
     from app.ui.settings.modern_rows import SettingRow
@@ -161,6 +162,9 @@ class SettingsWindowBase(QWidget):
     recording_bitrate_selector: QComboBox
     input_language_label: QLabel
     language_input: QComboBox
+    recording_palette_language_switch_checkbox: QCheckBox
+    recording_palette_languages_label: QLabel
+    recording_palette_languages_selector: MultiSelectComboBox
     gain_label: QLabel
     gain_input: QLineEdit
     gain_normalize_checkbox: QCheckBox

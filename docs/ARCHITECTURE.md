@@ -100,7 +100,7 @@ component's constructor documents its dependencies and tests can build it in iso
 
 | Component | Owns | Reports through |
 |---|---|---|
-| `RecordingController` | microphone, warm-mic and on-demand capture, macOS recorder, prompt palette, push-to-talk flag | `state_changed(bool)` (tray icon, cancel action) |
+| `RecordingController` | microphone, warm-mic and on-demand capture, macOS recorder, prompt palette, push-to-talk flag | `state_changed(bool)` (tray icon, cancel action), `input_language_changed(str)` (settings form) |
 | `TranscriptionPipeline` | transcription/rephrasing requests, rephrase routing, replacements, batch, last result | direct calls into `TextOutput` |
 | `TextOutput` | SendInput / clipboard paste, delayed clipboard restore, selection reading | return values |
 | `HotkeyController` | pynput / Win32 listeners, bindings, "Set hotkey" capture | `action_triggered(action, detected_ns)` |
@@ -138,6 +138,10 @@ signal reaches `RecordingController`, which stops capture (retaining the in-flig
 writes the WAV and calls `TranscriptionPipeline.start`; the worker's result handler calls
 `TextOutput.insert`. Signals are used only where a thread boundary or a UI reaction (tray
 icon, menus) requires them, so component boundaries add no queued hop or wait.
+
+The optional language switch in the recording palette saves the selected input language for
+future takes and updates the settings form. When the take stops, the transcription request
+uses the selected language.
 
 ## Threading model
 

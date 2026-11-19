@@ -170,6 +170,7 @@ QComboBox QAbstractItemView {
 QComboBox QAbstractItemView::item { min-height: 26px; padding: 2px 8px; border-radius: 6px; color: %(text)s; }
 QComboBox QAbstractItemView::item:hover { background: %(hover)s; }
 QComboBox QAbstractItemView::item:selected { background: %(accent)s; color: %(on_accent)s; }
+QComboBox QAbstractItemView::item:disabled { color: %(muted)s; }
 
 QPushButton {
     background: %(panel2)s; color: %(text)s; border: 1px solid %(border)s;

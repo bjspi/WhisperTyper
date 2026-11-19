@@ -149,6 +149,41 @@ def test_rows_follow_their_control_and_toggle_on_click(window):
     assert not row.title.isEnabled()
 
 
+def test_palette_language_dropdown_stays_open_and_enforces_the_limit(qapp, tmp_path):
+    window = _make_window(tmp_path, expert_mode=False, input_language="de", recording_palette_languages=["de", "en"])
+    switch = window.recording_palette_language_switch_checkbox
+    selector = window.recording_palette_languages_selector
+    row = next(row for row in window._rows if row.follow is selector)
+    assert row.isHidden() and not selector.isEnabled()
+    switch.click()
+    assert not row.isHidden() and selector.isEnabled()
+    assert selector._summary == "EN, DE" and window.recording_group.isAncestorOf(row)
+
+    def enabled(code):
+        return selector.model().item(selector.findData(code)).isEnabled()
+
+    def click(code):
+        view = selector.view()
+        index = selector.model().index(selector.findData(code), 0)
+        view.scrollTo(index)
+        rect = view.visualRect(index)
+        QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=rect.center())
+
+    assert "de" in selector.checked_values() and not enabled("de")
+    selector.showPopup()
+    try:
+        for code in ("", "fr", "es"):
+            click(code)
+            assert selector.view().isVisible() and code in selector.checked_values()
+        assert selector._summary == "Auto, EN, DE, FR, ES"
+        assert selector.itemText(selector.findData("")) == "Detect language"
+        assert not enabled("it")
+        click("en")
+        assert selector.view().isVisible() and "en" not in selector.checked_values() and enabled("it")
+    finally:
+        selector.hidePopup()
+
+
 def test_the_prompts_page_adds_a_prompt_and_paints_every_row(window):
     count = window.post_rp_list.count()
     window.post_rp_add_btn.click()

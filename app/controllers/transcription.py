@@ -164,7 +164,7 @@ class TranscriptionPipeline:
         )
         worker.error.connect(
             lambda message, path, mode=output_mode, selected_prompt=transformation_prompt, operation=timing,
-            auto=use_auto_prompt, instruction=instruction_selected, batch_id=batch, spoken=language:
+            auto=use_auto_prompt, instruction=instruction_selected, batch_id=batch, spoken=lang_code:
                 self.on_transcription_error(message, path, mode, selected_prompt, operation, auto, instruction,
                                             batch_id, spoken)
         )

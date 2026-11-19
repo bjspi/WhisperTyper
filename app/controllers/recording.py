@@ -22,6 +22,7 @@ from app.controllers.warmup import WarmupScheduler
 from app.core import dsp
 from app.core.api_keys import rephrasing_configured, transcription_configured
 from app.core.env import is_MACOS, is_WINDOWS
+from app.core.input_languages import DETECT_LANGUAGE, palette_languages
 from app.core.prompts import INSTRUCTION, auto_apply_prompt, instruction_entry, recording_prompt_entries
 from app.core.redaction import redact_for_log
 from app.core.timing import NO_TIMING, OperationTiming
@@ -34,7 +35,14 @@ from app.ui.durations import (
     BALLOON_SHORT_MS,
     BALLOON_WARNING_MS,
 )
-from app.ui.floating_buttons import RecordingPaletteTexts, RecordingPromptOverlay, overlay_opacity
+from app.ui.floating_buttons import (
+    LanguageSwitch,
+    PaletteLanguage,
+    RecordingPaletteTexts,
+    RecordingPromptOverlay,
+    overlay_opacity,
+)
+from app.ui.language_names import language_name
 from app.ui.tooltip import MouseFollowerTooltip
 
 #: Sample rate of uploaded recordings.
@@ -53,6 +61,8 @@ class RecordingController(QObject):
 
     #: True when a recording starts, False when it stops, is cancelled or fails to start.
     state_changed = pyqtSignal(bool)
+    #: A palette pick changed the saved input language; keep the settings form in sync.
+    input_language_changed = pyqtSignal(str)
     # The capture thread reports that the stream could not be opened for a take; the recording ends on the GUI thread.
     _capture_failed = pyqtSignal(int)
     # The capture thread reports the first recorded block of a take; the palette opens on the GUI thread.
@@ -703,6 +713,7 @@ class RecordingController(QObject):
             # The native macOS recorder always uses the system default microphone.
             devices=None if self.mac_recorder.active else self._device_menu_entries,
             on_device_selected=None if self.mac_recorder.active else self.switch_input_device,
+            language_switch=self._language_switch(),
             texts=RecordingPaletteTexts(
                 status_text=tr("recording_running_message"), none_text=tr("recording_prompt_none"),
                 paused_text=tr("recording_paused_message"), cancel_tooltip=tr("recording_cancel_tooltip"),
@@ -728,6 +739,28 @@ class RecordingController(QObject):
         if use_system_position and (is_WINDOWS or is_MACOS):
             self._notifier.show(self._ctx.tr("recording_running_message"), BALLOON_PERSISTENT_MS)
             self._palette_status = MouseFollowerTooltip._instance
+
+    def _language_switch(self) -> Optional[LanguageSwitch]:
+        """Build the palette's spoken-language choices from the saved settings."""
+        if not self._config.get("recording_palette_language_switch", False):
+            return None
+        current = self._config["input_language"]
+        codes = palette_languages(self._config["recording_palette_languages"], current)
+        tr = self._ctx.tr
+        languages = tuple(
+            PaletteLanguage(code, tr("recording_language_auto"), tr("input_language_detect"))
+            if code == DETECT_LANGUAGE else PaletteLanguage(code, code.upper(), language_name(code))
+            for code in codes
+        )
+        return LanguageSwitch(languages, current, self.switch_input_language)
+
+    def switch_input_language(self, code: str) -> None:
+        """Save the palette pick for this take's request and subsequent recordings."""
+        previous = self._config["input_language"]
+        self._config["input_language"] = code
+        self._ctx.save_config_keys("input_language")
+        logging.info("Input language switched from %r to %r in the recording palette.", previous, code)
+        self.input_language_changed.emit(code)
 
     def _on_prompt_selected(self, prompt: Optional[Dict[str, Any]]) -> None:
         """Remember the clicked palette choice until this recording is stopped.

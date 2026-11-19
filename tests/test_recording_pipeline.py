@@ -131,6 +131,7 @@ def test_hotkey_stop_reaches_output_with_ordered_milestones(api, tmp_path, monke
         # The automatic prompt drives the rephrase branch (preselected in the recording palette).
         post_rephrasing_entries=[{"caption": "Fix", "text": "Fix it", "auto_apply": True}] if rephrase else [],
         windows_keep_mic_hot=True,
+        input_language="en",
         # Mark the macOS permission hints as shown; their modal dialogs would block the test.
         macos_microphone_info_shown=True, macos_accessibility_info_shown=True,
     )
@@ -147,6 +148,7 @@ def test_hotkey_stop_reaches_output_with_ordered_milestones(api, tmp_path, monke
     monkeypatch.setattr(recording_module, "OperationTiming", RecordedTiming)
 
     ctx = AppContext(MemoryConfigStore(config), RecordingStore(str(tmp_path)))
+    monkeypatch.setattr(ctx, "save_config_keys", Mock())
     workers = WorkerThreads()
     warmup = WarmupScheduler(config, is_recording=lambda: False, rephrasing_first=lambda: False)
     warmup.http.schedule = Mock()
@@ -166,6 +168,9 @@ def test_hotkey_stop_reaches_output_with_ordered_milestones(api, tmp_path, monke
         assert recording.is_recording and states == [True]
         warmup.http.schedule.assert_called()  # Prewarm on recording start.
         time.sleep(0.15)
+        recording.switch_input_language("de")
+        assert recording.is_recording and states == [True]
+        ctx.save_config_keys.assert_called_once_with("input_language")
         detected_ns = time.perf_counter_ns()
         recording.toggle(detected_ns=detected_ns)
         deadline = time.monotonic() + 10
@@ -182,6 +187,8 @@ def test_hotkey_stop_reaches_output_with_ordered_milestones(api, tmp_path, monke
     expected_text = "REPHRASED" if rephrase else "hello world"
     assert output.keys == ["v"] and pasted == [expected_text]
     assert pipeline.last_transcription == expected_text
+    request = pipeline.recording_request(ctx.recordings.latest())
+    assert request["form_fields"]["language"] == "de"
     assert states == [True, False] and FakeApi.uploads
     start, stop = operations
     assert start.source == "recording_start" and stop.source == "recording"
@@ -266,6 +273,34 @@ def test_palette_clicks_decide_between_explicit_automatic_and_raw():
     recording._on_prompt_selected({"text": "Carry it out", "kind": "instruction"})  # The instruction runs as an order.
     assert (recording.current_prompt, recording.current_prompt_is_instruction) == ("Carry it out", True)
     assert recording._warmup.schedule.call_count == 2
+
+
+def test_recording_palette_offers_language_choices_only_when_enabled(tmp_path, monkeypatch):
+    config = {**DEFAULT_CONFIG, "input_language": "de", "ui_language": "en", "recording_palette_languages": ["en", ""]}
+    ctx = AppContext(MemoryConfigStore(config), RecordingStore(str(tmp_path)))
+    monkeypatch.setattr(ctx, "save_config_keys", Mock())
+    overlay = Mock(_instance=None)
+    monkeypatch.setattr(recording_module, "RecordingPromptOverlay", overlay)
+    recording = RecordingController(ctx, permissions=Mock(), warmup=Mock(), output=Mock(), pipeline=Mock(),
+                                     sounds=Mock(), open_settings=Mock(), palette_anchor=lambda: None)
+    picks = []
+    recording.input_language_changed.connect(picks.append)
+
+    recording.show_prompt_palette([])
+    assert overlay.call_args.kwargs["language_switch"] is None
+    config["recording_palette_language_switch"] = True
+    recording.show_prompt_palette([])
+    switch = overlay.call_args.kwargs["language_switch"]
+    assert switch.current == "de"
+    assert [(option.code, option.caption, option.tooltip) for option in switch.languages] == [
+        ("", "Auto", "Detect language"), ("en", "EN", "English"), ("de", "DE", "Deutsch"),
+    ]
+
+    switch.on_selected("")
+    assert config["input_language"] == "" and picks == [""]
+    ctx.save_config_keys.assert_called_once_with("input_language")
+    recording.show_prompt_palette([])
+    assert overlay.call_args.kwargs["language_switch"].current == ""
 
 
 class GatedMicrophone(FakeMicrophone):

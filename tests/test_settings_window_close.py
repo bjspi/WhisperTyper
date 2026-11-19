@@ -112,6 +112,29 @@ def test_save_keeps_detect_language(make_window):
     assert on_disk(path)["input_language"] == ""
 
 
+def test_save_normalizes_palette_languages_and_keeps_the_palette_pick(make_window):
+    window, path = make_window(input_language="de", recording_palette_language_switch=True,
+                               recording_palette_languages=["fr", "de", "fr", False, "unknown", "en"])
+    window.language_input.setCurrentIndex(window.language_input.findData("it"))
+    selector = window.recording_palette_languages_selector
+
+    def enabled(code):
+        return selector.model().item(selector.findData(code)).isEnabled()
+
+    assert "it" in selector.checked_values() and not enabled("it")
+
+    window.select_input_language("")
+    assert window.language_input.currentData() == ""
+    assert "" in selector.checked_values() and not enabled("")
+    assert "it" in selector.checked_values() and enabled("it")
+    with patch.object(window, "_collect_validation_warnings", return_value=[]):
+        window.save_settings()
+    saved = on_disk(path)
+    assert saved["input_language"] == ""
+    assert saved["recording_palette_language_switch"] is True
+    assert saved["recording_palette_languages"] == ["", "en", "de", "fr", "it"]
+
+
 def test_ffmpeg_probe_runs_once_in_the_background_and_retranslates_from_its_cache(make_window, qapp):
     probing_threads = []
 

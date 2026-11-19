@@ -23,6 +23,7 @@ from PyQt6.QtGui import (
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
@@ -45,6 +46,9 @@ from app.ui.flow_layout import FlowLayout
 
 #: Lowest palette opacity; anything fainter is hard to read over a busy window.
 _MIN_OPACITY_PERCENT = 30
+_DEVICE_BUTTON_HORIZONTAL_PADDING = 2
+_DEVICE_LANGUAGE_SPACING = 8
+_LANGUAGE_PILL_SPACING = 3
 
 
 def overlay_opacity(config: Dict[str, Any]) -> float:
@@ -162,13 +166,26 @@ class _PromptCard(QWidget):
                 background-color: transparent;
                 border: none;
                 border-radius: 6px;
-                padding: 1px 2px;
+                padding: 1px {_DEVICE_BUTTON_HORIZONTAL_PADDING}px;
                 min-height: 0px;
                 font-size: 12px;
                 color: {pal['muted']};
                 text-align: left;
             }}
             QPushButton[role="device"]:hover {{ color: {pal['accent']}; }}
+            QPushButton[role="language"] {{
+                border-radius: 10px;
+                padding: 1px 6px;
+                min-height: 16px;
+                font-size: 11px;
+                font-weight: 600;
+                color: {pal['muted']};
+            }}
+            QPushButton[role="language"]:checked {{
+                background-color: {pal['accent']};
+                border-color: {pal['accent']};
+                color: {pal['on_accent']};
+            }}
             QPushButton[role="icon"][danger="true"]:hover {{
                 background-color: {danger_tint}; border-color: {danger};
             }}
@@ -554,6 +571,24 @@ class RecordingPaletteTexts:
     instruction_tooltip: str = ""
 
 
+@dataclass(frozen=True)
+class PaletteLanguage:
+    """One spoken-language pill, with its short caption and full name."""
+
+    code: str
+    caption: str
+    tooltip: str
+
+
+@dataclass(frozen=True)
+class LanguageSwitch:
+    """The options and selection callback for the recording palette's spoken language."""
+
+    languages: Tuple[PaletteLanguage, ...]
+    current: str
+    on_selected: Callable[[str], None]
+
+
 #: First id of the overlay's key hotkeys (application ids are 0x0000-0xBFFF); the id adds the key code.
 _DIGIT_HOTKEY_BASE = 0xB000
 _VK_0, _VK_NUMPAD0 = 0x30, 0x60
@@ -584,7 +619,8 @@ class RecordingPromptOverlay(_PromptCard):
                  devices: Optional[Callable[[], List[Tuple[str, str]]]] = None,
                  on_device_selected: Optional[Callable[[str], None]] = None,
                  device_tooltip: str = "",
-                 texts: Optional[RecordingPaletteTexts] = None) -> None:
+                 texts: Optional[RecordingPaletteTexts] = None,
+                 language_switch: Optional[LanguageSwitch] = None) -> None:
         """Build the palette by the system status area or near the cursor without taking focus.
 
         The prompt marked ``auto_apply`` starts selected (otherwise "None"); only clicks report
@@ -602,6 +638,7 @@ class RecordingPromptOverlay(_PromptCard):
         ``device_name`` returns the microphone being recorded from, shown in a muted line; with
         ``devices`` (``(label, config value)`` pairs) and ``on_device_selected`` that line opens a
         menu to switch the microphone.
+        ``language_switch`` shows spoken-language choices alongside the microphone.
         The captions and tooltips can come bundled as ``texts``; without it the single string
         parameters make up the bundle.
         """
@@ -637,7 +674,9 @@ class RecordingPromptOverlay(_PromptCard):
         self._icon_color = theme.overlay_palette(dark)["muted"]
 
         top = self._build_header(on_pause, on_restart, on_cancel, level_feed)
-        self._build_device_line(top, device_name, devices, on_device_selected)
+        self._build_device_button(device_name, devices, on_device_selected)
+        self._language_segment = self._build_language_segment(language_switch)
+        self._add_device_line(top)
         card_layout.addLayout(top)
         self._build_chips(card_layout, prompts)
 
@@ -649,7 +688,7 @@ class RecordingPromptOverlay(_PromptCard):
         self._clock.start()
 
         self._fit_card(card_layout, top)
-        self._update_device_name(refit=True)
+        self._update_device_name()
         self._finish_placement(use_system_position, system_anchor, digit_keys)
         self.show()
 
@@ -725,10 +764,10 @@ class RecordingPromptOverlay(_PromptCard):
         top.addLayout(header)
         return top
 
-    def _build_device_line(self, top: QVBoxLayout, device_name: Optional[Callable[[], str]],
-                           devices: Optional[Callable[[], List[Tuple[str, str]]]],
-                           on_device_selected: Optional[Callable[[str], None]]) -> None:
-        """The muted microphone line below the header; with a device list it opens the switch menu."""
+    def _build_device_button(self, device_name: Optional[Callable[[], str]],
+                             devices: Optional[Callable[[], List[Tuple[str, str]]]],
+                             on_device_selected: Optional[Callable[[str], None]]) -> None:
+        """Show the microphone in use and offer a switch menu when devices are selectable."""
         self._device_name = device_name
         self._devices = devices
         self._on_device_selected = on_device_selected
@@ -744,10 +783,49 @@ class RecordingPromptOverlay(_PromptCard):
             self.device_button.clicked.connect(lambda _checked=False: self._show_device_menu())
         else:
             self.device_button.setEnabled(False)
-        # The line takes the width the header and the chips give the card; it never widens it.
+        # The device name is elided to the width the layout leaves it.
         self.device_button.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
-        top.addWidget(self.device_button)
-        self._update_device_name()
+
+    def _build_language_segment(self, switch: Optional[LanguageSwitch]) -> Optional[QHBoxLayout]:
+        """Use exclusive, mouse-only pills that report only changes to the selection."""
+        if switch is None or not switch.languages:
+            return None
+        segment = QHBoxLayout()
+        segment.setSpacing(_LANGUAGE_PILL_SPACING)
+        group = QButtonGroup(self)
+        group.setExclusive(True)
+        for language in switch.languages:
+            button = QPushButton(language.caption, self.card)
+            button.setProperty("role", "language")
+            button.setCheckable(True)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setToolTip(language.tooltip)
+            group.addButton(button)
+            button.setChecked(language.code == switch.current)
+            button.toggled.connect(partial(self._on_language_toggled, switch.on_selected, language.code))
+            segment.addWidget(button)
+        return segment
+
+    @staticmethod
+    def _on_language_toggled(on_selected: Callable[[str], None], code: str, checked: bool) -> None:
+        """Report the newly checked pill; the exclusive group unchecks the previous one silently."""
+        if checked:
+            on_selected(code)
+
+    def _add_device_line(self, top: QVBoxLayout) -> None:
+        """Place the language segment at the right edge, also when there is no device label."""
+        if self.device_button is None and self._language_segment is None:
+            return
+        row = QHBoxLayout()
+        row.setSpacing(_DEVICE_LANGUAGE_SPACING)
+        if self.device_button is None:
+            row.addStretch()
+        else:
+            row.addWidget(self.device_button, 1)
+        if self._language_segment is not None:
+            row.addLayout(self._language_segment)
+        top.addLayout(row)
 
     def _build_chips(self, card_layout: QVBoxLayout, prompts: List[Dict[str, Any]]) -> None:
         """The "None" chip and one chip per prompt; the ``auto_apply`` prompt starts selected.
@@ -921,23 +999,21 @@ class RecordingPromptOverlay(_PromptCard):
         seconds = int(end - self._started - self._paused_total)
         self.timer_label.setText(f"{seconds // 60}:{seconds % 60:02d}")
 
-    def _update_device_name(self, refit: bool = False) -> None:
-        """Show the microphone in use; it may change once the stream is (re)opened.
-
-        ``refit`` shortens the name again for the card width the fitting settled on.
-        """
+    def _update_device_name(self) -> None:
+        """Show the live microphone name in the space left by the language pills."""
         if self.device_button is None or self._device_name is None:
             return
         name = self._device_name() or "…"
-        if name == self.device_button.property("device") and not refit:
+        if name == self.device_button.property("device"):
             return
         self.device_button.setProperty("device", name)
         arrow = " ▾" if self.device_button.isEnabled() else ""
-        # Before the card is fitted the line may use the full card width; afterwards the fitted width.
-        padding = 2 * self._CARD_PADDING + 2 * self.card.frameWidth()
-        card_width = self.card.width() if self.card.width() > 100 else self.MAX_CARD_WIDTH
-        max_width = card_width - padding - 24  # room for the menu arrow
-        caption = self.device_button.fontMetrics().elidedText(name, Qt.TextElideMode.ElideMiddle, max_width)
+        metrics = self.device_button.fontMetrics()
+        padding = 2 * (self._CARD_PADDING + self.card.frameWidth() + _DEVICE_BUTTON_HORIZONTAL_PADDING)
+        max_width = self.card.width() - padding - metrics.horizontalAdvance(arrow)
+        if self._language_segment is not None:
+            max_width -= self._language_segment.sizeHint().width() + _DEVICE_LANGUAGE_SPACING
+        caption = metrics.elidedText(name, Qt.TextElideMode.ElideMiddle, max(0, max_width))
         self.device_button.setText(caption + arrow)
         if not self.device_button.isEnabled():
             self.device_button.setToolTip(name)

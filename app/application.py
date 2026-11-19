@@ -109,6 +109,7 @@ class WhisperTyperApp(QObject):
         self.settings.appearance_changed.connect(self.tray.build)
         self.settings.system_integration_changed.connect(lambda: self.system_integration.apply(report=True))
         self.settings.transcription_provider_switched.connect(self._on_transcription_provider_switched)
+        self.recording.input_language_changed.connect(self.settings.select_input_language)
         # A local transcription loads the engine while the user still speaks (on demand, after an idle unload).
         self.recording.state_changed.connect(self._on_recording_state_changed)
 

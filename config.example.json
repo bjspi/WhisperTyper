@@ -8,6 +8,8 @@
   "prompt": "Das Folgende ist eine Transkription einer Spracheingabe. Die Transkription sollte nahezu perfekt mit dem Original übereinstimmen, lediglich Füllwörter und Pausen/Leerstellen sollten entfernt werden. Bitte achten Sie auf Rechtschreibung, Großschreibung und sinnvolle Zeichensetzung, einschließlich Punkte und Kommas. Ich verwende auch \"denglische\" (eingedeutschte) englische Begriffe, insbesondere aus dem Technologie- und IT-Bereich, aus den Bereichen Gadgets, Smartphones, KI und Python-Programmierung.",
   "hotkey": "<f9>",
   "input_language": "de",
+  "recording_palette_language_switch": false,
+  "recording_palette_languages": ["", "de"],
   "ui_language": "de",
   "restore_clipboard": false,
   "recording_prompt_overlay_system_position": true,

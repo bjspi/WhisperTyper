@@ -5,12 +5,12 @@ from typing import List, Tuple
 
 from PyQt6.QtCore import QLocale
 
-from app.core.constants import LANGUAGES
+from app.core.input_languages import DETECT_LANGUAGE as DETECT_LANGUAGE
+from app.core.input_languages import LANGUAGES
 
 #: Qt names the regional default of these languages ("American English", "Español de España").
 _PLAIN_NAMES = {"en": "English", "es": "Español", "pt": "Português"}
-#: The stored value of "detect the language"; its caption is translated by whoever shows the list.
-DETECT_LANGUAGE = ""
+_ENGLISH_NAMES = {code: name for name, code in LANGUAGES.items()}
 
 
 def _own_name(english_name: str, code: str) -> str:
@@ -26,5 +26,12 @@ def _own_name(english_name: str, code: str) -> str:
 
 def input_language_items() -> List[Tuple[str, str]]:
     """(caption, language code) pairs in the catalog's order."""
-    return [(english_name if code == DETECT_LANGUAGE else _own_name(english_name, code), code)
-            for english_name, code in LANGUAGES.items()]
+    return [(language_name(code), code) for code in _ENGLISH_NAMES]
+
+
+def language_name(code: str) -> str:
+    """The native caption of a language code, falling back to the code if unknown."""
+    english_name = _ENGLISH_NAMES.get(code)
+    if english_name is None or code == DETECT_LANGUAGE:
+        return english_name or code
+    return _own_name(english_name, code)

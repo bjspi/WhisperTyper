@@ -28,7 +28,6 @@ from app.core.replacements import ReplacementError, Replacements
 from app.ui import message_dialog, theme
 from app.ui.api_keys import ApiKeysTab
 from app.ui.connection_tester import ConnectionTester
-from app.ui.language_names import DETECT_LANGUAGE
 from app.ui.local_engine_tab import LocalEngineTab
 from app.ui.replacements import ReplacementsTab
 from app.ui.settings.api_page import ApiPage
@@ -376,7 +375,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         tr = self.translator.tr
         self.setWindowTitle(tr("window_title"))
         apply_texts(self, tr)
-        self.language_input.setItemText(self.language_input.findData(DETECT_LANGUAGE), tr("input_language_detect"))
+        self._retranslate_recording_controls()
         self.transformations_info_label.setText(tr("transformations_info", max_entries=self._transformations.max_entries))
         self._transformations.retranslate()
         self._api_keys_tab.retranslate_ui()

@@ -490,6 +490,8 @@ class ModernChrome(SettingsWindowBase):
         self._rebuild(self.recording_group, [
             row(self.input_device_label, self.input_device_selector),
             row(self.input_language_label, self.language_input),
+            switch(self.recording_palette_language_switch_checkbox),
+            row(self.recording_palette_languages_label, self.recording_palette_languages_selector),
             row(self.gain_label, self.gain_input, expert=True),
             switch(self.gain_normalize_checkbox, expert=True),
             switch(self.play_sounds_checkbox),

@@ -112,3 +112,20 @@ def test_start_binds_the_batch_into_the_result_handlers(tmp_path, monkeypatch):
     dictation_worker.finished.emit("dictated")
     batch_worker.error.emit("boom", "one.wav")
     assert received == [("batch text", 3), ("dictated", None), ("boom", 3)]
+
+
+@pytest.mark.parametrize("language", ["de", ""])
+def test_retry_uses_the_requests_language_after_the_setting_changes(tmp_path, monkeypatch, language):
+    pipeline, _output = make_pipeline(tmp_path)
+    monkeypatch.setattr(pipeline_module, "TranscriptionWorker", FakeWorker)
+    monkeypatch.setattr(transcription_requests, "resolve_ffmpeg", lambda _setting: None)
+    monkeypatch.setattr(pipeline_module.message_dialog, "show_dialog", lambda *_args: pipeline._ctx.tr("retry_button"))
+
+    pipeline._config["input_language"] = language
+    pipeline.start("dictation.wav")
+    original = pipeline._workers.start.call_args.args[0]
+    pipeline._config["input_language"] = "fr"
+    original.error.emit("boom", "dictation.wav")
+    retry = pipeline._workers.start.call_args.args[0]
+    assert retry is not original
+    assert retry.request.language == original.request.language == language

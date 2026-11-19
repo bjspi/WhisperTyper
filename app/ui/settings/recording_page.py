@@ -4,11 +4,14 @@ from __future__ import annotations
 import logging
 import threading
 
+from PyQt6.QtCore import QSignalBlocker
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QHBoxLayout, QLabel, QSpinBox, QWidget
 
 from app.audio.aac_encoder import available_aac_bitrates, warm_up_encoder
 from app.core.env import is_WINDOWS
+from app.core.input_languages import DETECT_LANGUAGE, MAX_PALETTE_LANGUAGES, palette_languages
 from app.ui.language_names import input_language_items
+from app.ui.multi_select_combo import MultiSelectComboBox
 from app.ui.settings.base import SettingsWindowBase
 
 
@@ -69,8 +72,25 @@ class RecordingPage(SettingsWindowBase):
 
         for name, code in input_language_items():
             self.language_input.addItem(name, code)
-        self.language_input.setCurrentIndex(max(0, self.language_input.findData(self.config["input_language"].lower())))
+        language = self.config["input_language"]
+        code = language.lower() if isinstance(language, str) else DETECT_LANGUAGE
+        self.language_input.setCurrentIndex(max(0, self.language_input.findData(code)))
+        self._build_palette_language_controls()
         self.gain_input.setText(str(self.config["gain_db"]))
+
+    def _build_palette_language_controls(self) -> None:
+        """The palette switch and the dropdown of languages the palette offers."""
+        self.recording_palette_language_switch_checkbox = QCheckBox(self)
+        self.recording_group_layout.addWidget(self.recording_palette_language_switch_checkbox)
+        self.recording_palette_languages_label = QLabel(self)
+        self.recording_palette_languages_selector = MultiSelectComboBox(self)
+        self._add_row(self.recording_palette_languages_label, self.recording_palette_languages_selector)
+        for caption, code in input_language_items():
+            self.recording_palette_languages_selector.add_choice(caption, code)
+        self.recording_palette_languages_selector.set_checked_values(
+            palette_languages(self.config["recording_palette_languages"], self._input_language()))
+        self.recording_palette_languages_selector.selection_changed.connect(self._update_palette_languages)
+        self._update_palette_languages()
 
     def _add_row(self, *widgets: QWidget) -> None:
         """Append a left-aligned row of widgets to the recording card."""
@@ -82,12 +102,59 @@ class RecordingPage(SettingsWindowBase):
 
     def _connect_recording_controls(self) -> None:
         """Live enable/visibility updates once the saved values are loaded."""
+        self.recording_palette_language_switch_checkbox.toggled.connect(self._update_palette_language_row)
+        self.language_input.currentIndexChanged.connect(self._update_palette_languages)
+        self._update_palette_language_row()
         self.windows_keep_mic_hot_checkbox.stateChanged.connect(self._update_windows_keep_mic_hot_ui_state)
         self.recording_format_selector.currentIndexChanged.connect(self._update_recording_format_controls)
         self.transcription_hedging_checkbox.stateChanged.connect(self._update_hedging_ui_state)
         self._update_windows_keep_mic_hot_ui_state()
         self._update_hedging_ui_state()
         self._update_recording_format_controls()
+
+    def _input_language(self) -> str:
+        """Read the form's spoken language, including the empty code for detection."""
+        language = self.language_input.currentData()
+        return language if isinstance(language, str) else "en"
+
+    def _selected_palette_languages(self, current: str) -> list[str]:
+        """The ticked languages, with the form's current language always among them."""
+        return palette_languages(self.recording_palette_languages_selector.checked_values(), current)
+
+    def _update_palette_languages(self) -> None:
+        """Tick the form's input language (it cannot be unticked), stop at the limit and show the summary."""
+        selector = self.recording_palette_languages_selector
+        current = self._input_language()
+        selected = self._selected_palette_languages(current)
+        selector.set_checked_values(selected)
+        has_room = len(selected) < MAX_PALETTE_LANGUAGES
+        selector.set_enabled_values({code: code != current and (code in selected or has_room)
+                                     for _caption, code in input_language_items()})
+        auto = self.translator.tr("recording_language_auto")
+        selector.set_summary(", ".join(auto if code == DETECT_LANGUAGE else code.upper() for code in selected))
+
+    def _update_palette_language_row(self) -> None:
+        """Offer the language choice only while the palette switch is on (the row follows the button)."""
+        enabled = self.recording_palette_language_switch_checkbox.isChecked()
+        self.recording_palette_languages_selector.setEnabled(enabled)
+        self.recording_palette_languages_selector.setVisible(enabled)
+
+    def select_input_language(self, code: str) -> None:
+        """Reflect a saved palette pick in the form so a later Save keeps the chosen language."""
+        index = self.language_input.findData(code)
+        if index < 0:
+            return
+        with QSignalBlocker(self.language_input):
+            self.language_input.setCurrentIndex(index)
+        self._update_palette_languages()
+        self.swap_default_transcription_prompt(code, self.config.get("ui_language", "en"))
+
+    def _retranslate_recording_controls(self) -> None:
+        """Translate the automatic choice in both controls and refresh the summary."""
+        detect = self.translator.tr("input_language_detect")
+        self.language_input.setItemText(self.language_input.findData(DETECT_LANGUAGE), detect)
+        self.recording_palette_languages_selector.set_caption(DETECT_LANGUAGE, detect)
+        self._update_palette_languages()
 
     def _update_windows_keep_mic_hot_ui_state(self) -> None:
         """The idle timeout only applies while the warm microphone is enabled."""
@@ -147,9 +214,9 @@ class RecordingPage(SettingsWindowBase):
 
     def _save_recording_controls(self) -> None:
         """Store the values that need conversion or validation."""
-        # "" is the valid "detect language" entry; only a missing selection falls back to English.
-        language = self.language_input.currentData()
-        self.config["input_language"] = "en" if language is None else language
+        current = self._input_language()
+        self.config["input_language"] = current
+        self.config["recording_palette_languages"] = self._selected_palette_languages(current)
         try:
             self.config["gain_db"] = float(self.gain_input.text() or 0)
         except (ValueError, TypeError):

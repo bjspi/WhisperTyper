@@ -9,7 +9,7 @@ QtGui = pytest.importorskip("PyQt6.QtGui")
 QtTest = pytest.importorskip("PyQt6.QtTest")
 
 from app.ui import floating_buttons  # noqa: E402
-from app.ui.floating_buttons import RecordingPaletteTexts, RecordingPromptOverlay  # noqa: E402
+from app.ui.floating_buttons import LanguageSwitch, PaletteLanguage, RecordingPaletteTexts, RecordingPromptOverlay  # noqa: E402
 from app.ui.flow_layout import FlowLayout  # noqa: E402
 
 PROMPTS = [
@@ -44,6 +44,54 @@ def test_without_prompts_the_palette_only_shows_the_recording(qapp):
     palette = overlay([], prompts=[])
     assert palette._prompt_buttons == []
     assert palette.card.height() < overlay([]).card.height()
+
+
+def language_switch(selected):
+    return LanguageSwitch((PaletteLanguage("", "Auto", "Detect language"),
+                           PaletteLanguage("en", "EN", "English"),
+                           PaletteLanguage("de", "DE", "Deutsch")), "de", selected.append)
+
+
+def language_pills(palette):
+    return [button for button in palette.findChildren(QtWidgets.QPushButton) if button.property("role") == "language"]
+
+
+def test_language_pills_show_and_change_the_selection_without_taking_focus(qapp):
+    selected = []
+    palette = RecordingPromptOverlay([], "Recording…", language_switch=language_switch(selected))
+    pills = language_pills(palette)
+    assert [button.text() for button in pills] == ["Auto", "EN", "DE"]
+    assert [button.toolTip() for button in pills] == ["Detect language", "English", "Deutsch"]
+    assert all(button.focusPolicy() == QtCore.Qt.FocusPolicy.NoFocus for button in pills)
+    assert palette.windowFlags() & QtCore.Qt.WindowType.WindowDoesNotAcceptFocus
+    assert palette.device_button is None
+    assert [button.isChecked() for button in pills] == [False, False, True]
+    assert selected == []
+
+    pills[2].click()
+    assert selected == []
+    QtTest.QTest.mouseClick(pills[0], QtCore.Qt.MouseButton.LeftButton)
+    assert selected == [""]
+    assert [button.isChecked() for button in pills] == [True, False, False]
+    pills[0].click()
+    assert selected == [""]
+
+
+def test_language_pills_are_omitted_without_a_switch_and_leave_room_for_the_device_label(qapp):
+    long_name = "Headset with a very long manufacturer, product name and device identifier (123456789)"
+    kwargs = {"device_name": lambda: long_name, "devices": list, "on_device_selected": lambda _name: None}
+    plain = RecordingPromptOverlay(PROMPTS, "Recording…", **kwargs)
+    assert language_pills(plain) == []
+    without_pills = plain.device_button.text()
+
+    palette = RecordingPromptOverlay(PROMPTS, "Recording…", language_switch=language_switch([]), **kwargs)
+    palette.layout().activate()
+    palette.card.layout().activate()
+    device = palette.device_button
+    assert device.text().endswith(" ▾") and "…" in device.text()
+    assert len(device.text()) < len(without_pills)
+    assert device.fontMetrics().horizontalAdvance(device.text()) <= device.width()
+    assert device.geometry().right() < language_pills(palette)[0].geometry().left()
 
 
 def test_auto_apply_prompt_is_preselected_without_reporting_a_choice(qapp):

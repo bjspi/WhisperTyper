@@ -14,6 +14,8 @@ from typing import Any, Dict
 
 from app.core.env import is_MACOS, is_WINDOWS
 from app.core.expert_settings import EXPERT_KEY, expert_defaults
+from app.core.input_languages import LANGUAGES as LANGUAGES
+from app.core.input_languages import default_palette_languages
 from app.core.models import DEFAULT_REPHRASING_MODEL, DEFAULT_TRANSCRIPTION_MODEL
 from app.core.prompts import (
     DEFAULT_TRANSCRIPTION_PROMPTS,
@@ -24,22 +26,6 @@ from app.platform.system import system_language_2char
 SYS_LANG = system_language_2char()
 logging.info(f"Detected system language: {SYS_LANG}")
 
-
-# Map display names to ISO 639-1 codes
-LANGUAGES = {
-    "Detect Language": "",
-    "English": "en", "German": "de", "French": "fr", "Spanish": "es", "Italian": "it", "Dutch": "nl",
-    "Afrikaans": "af", "Arabic": "ar", "Armenian": "hy", "Azerbaijani": "az", "Belarusian": "be",
-    "Bosnian": "bs", "Bulgarian": "bg", "Catalan": "ca", "Chinese": "zh", "Croatian": "hr",
-    "Czech": "cs", "Danish": "da", "Estonian": "et", "Finnish": "fi", "Galician": "gl",
-    "Greek": "el", "Hebrew": "he", "Hindi": "hi", "Hungarian": "hu", "Icelandic": "is",
-    "Indonesian": "id", "Japanese": "ja", "Kannada": "kn", "Kazakh": "kk", "Korean": "ko",
-    "Latvian": "lv", "Lithuanian": "lt", "Macedonian": "mk", "Malay": "ms", "Marathi": "mr",
-    "Maori": "mi", "Nepali": "ne", "Norwegian": "no", "Persian": "fa", "Polish": "pl",
-    "Portuguese": "pt", "Romanian": "ro", "Russian": "ru", "Serbian": "sr", "Slovak": "sk",
-    "Slovenian": "sl", "Swahili": "sw", "Swedish": "sv", "Tagalog": "tl", "Tamil": "ta",
-    "Thai": "th", "Turkish": "tr", "Ukrainian": "uk", "Urdu": "ur", "Vietnamese": "vi", "Welsh": "cy"
-}
 
 USER_HOME_DIR = os.path.expanduser("~")
 APP_DATA_DIR = os.path.join(USER_HOME_DIR, ".WhisperTyper")
@@ -55,6 +41,7 @@ UI_LANG_FILES = [
 
 # Default UI language used to pick the initial default prompts.
 _DEFAULT_UI_LANG = SYS_LANG if SYS_LANG in UI_LANG_FILES else "en"
+_DEFAULT_INPUT_LANGUAGE = SYS_LANG if SYS_LANG in LANGUAGES.values() else "en"
 
 CONFIG_SCHEMA_VERSION = 4
 
@@ -146,7 +133,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "microphone_signal_confirmed": False,
     "recording_format": "wav",
     "recording_aac_bitrate_kbps": 64,
-    "input_language": SYS_LANG if SYS_LANG in LANGUAGES.values() else "en",
+    "input_language": _DEFAULT_INPUT_LANGUAGE,
+    "recording_palette_language_switch": False,
+    "recording_palette_languages": default_palette_languages(_DEFAULT_INPUT_LANGUAGE),
     "ui_language": _DEFAULT_UI_LANG,
     "restore_clipboard": True,
     "debug_logging": True,
