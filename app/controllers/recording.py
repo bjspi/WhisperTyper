@@ -562,7 +562,7 @@ class RecordingController(QObject):
                          recording_prompt, use_auto_prompt, instruction_selected, timing)
 
     def cancel(self) -> None:
-        """Stops the current recording without processing it."""
+        """Stops the current recording without processing it and without the stop sound."""
         if not self.is_recording:
             return
 
@@ -587,8 +587,8 @@ class RecordingController(QObject):
         timing.finish("cancelled")
 
         self.state_changed.emit(False)
+        # No stop sound: the take was thrown away, not finished.
         self._notifier.show(self._ctx.tr("recording_canceled_message"), BALLOON_SHORT_MS)
-        self._sounds.play('sound_end.wav')
 
     # --- Recorded audio ------------------------------------------------------------------
     def _min_recording_seconds(self) -> float:

@@ -308,8 +308,9 @@ def test_palette_waits_for_audio_and_its_buttons_restart_and_cancel(api, tmp_pat
     permissions = MacPermissions(ctx, dialog_parent=lambda: None)
     output = Paster(config, ctx.tr, ctx.notifier.show, permissions.warn)
     pipeline = TranscriptionPipeline(ctx, output, warmup, workers)
+    sounds = Mock()
     recording = RecordingController(ctx, permissions=permissions, warmup=warmup, output=output, pipeline=pipeline,
-                                    sounds=Mock(), open_settings=Mock(), palette_anchor=lambda: None)
+                                    sounds=sounds, open_settings=Mock(), palette_anchor=lambda: None)
     recording._capture_selection_context = Mock()
     microphone = GatedMicrophone()
     recording.hot_mic = HotMicCapture(microphone, idle_expired=lambda: False,
@@ -371,6 +372,7 @@ def test_palette_waits_for_audio_and_its_buttons_restart_and_cancel(api, tmp_pat
 
     assert states == [True, False]
     assert len(FakeApi.uploads) == uploads  # Cancelled: nothing was sent.
+    assert [c.args for c in sounds.play.call_args_list] == [("sound_start.wav",)]  # No stop sound on discard.
 
 
 class UnopenableMicrophone(FakeMicrophone):
