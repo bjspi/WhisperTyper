@@ -7,8 +7,20 @@ API keys or file paths. Existing log redaction still applies to other messages.
 
 Each recording, file transcription, retry or standalone rephrasing request gets
 its own `op` ID. Filter by that ID to follow a request through the workers and text
-delivery, including any rephrasing fallback. `latency_event` records each milestone;
-`latency_summary` records the outcome and durations in milliseconds.
+delivery, including any rephrasing fallback. `latency_summary` records the outcome
+and durations in milliseconds, one line per operation.
+
+The individual milestones are kept in memory and written as one `latency_trace` line
+(`phase=ms` since the operation start, in time order, plus `start_at_ms`) only when
+they can explain something:
+
+- the outcome is not `ok`/`batch_buffered` (failures, cancellations, silence, …);
+- the run was slow: a recording over 1500 ms from stop to text, a recording start
+  over 300 ms from hotkey to feedback, any other operation over 5 s
+  (`TRACE_SLOWER_THAN_MS` in `app/core/timing.py`);
+- the operation is still open 30 s after it started when the next one begins, or when
+  the app exits (`outcome=pending`, the timeline up to that point), so a hang still
+  shows the last milestone it reached.
 
 For a recording, the most useful measurements are:
 
@@ -46,10 +58,10 @@ For a recording, the most useful measurements are:
 | `output_ms` | Copy or paste routine, including its UI feedback |
 | `total_ms` | Operation start → completion or failure |
 
-Times use a monotonic clock. `elapsed_ms` is relative to the operation start;
-`at_ms` is the captured time mapped to Unix epoch milliseconds. The normal log-line
-date reflects background writing time and can be later. Use the captured values
-for analysis, rather than subtracting log-line dates.
+Times use a monotonic clock. Trace phases are relative to the operation start;
+`start_at_ms` is that start mapped to Unix epoch milliseconds (for a recording the
+stop, for a recording start the hotkey detection). Use the captured values for
+analysis, rather than subtracting log-line dates.
 
 Hotkey measurements start when the listener receives the event; they cannot
 measure the delay before the operating system delivers it. Button/tray stops start
@@ -158,9 +170,9 @@ failures retain the milestones actually reached, without invented durations.
 | `error_cause` | Only on failure: innermost exception class with the TLS reason or OS error number, e.g. `SSLCertVerificationError/unable_to_get_local_issuer_certificate` or `ConnectionRefusedError/10061` |
 | `upload_bytes` / `response_body_bytes` | Request `Content-Length` / raw response body bytes received |
 
-Transport milestones also appear as `latency_event` phases such as
+Transport milestones also appear as `latency_trace` phases such as
 `transcription_http_request_sent` and `transcription_http_first_byte` for operations
-with timing state. Use their captured `at_ms` to determine when the POST finished
+with timing state. Use their captured offsets to determine when the POST finished
 sending, rather than the log writer's line date. New connections have TCP/TLS
 fields; reused ones omit them (`reused=True` means no connect step in this exchange,
 also for HTTPS). `tls_setup_ms` intentionally includes certificate verification,

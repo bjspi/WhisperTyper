@@ -296,8 +296,10 @@ def _second_pass(req: TranscriptionRequest, upload: _Upload, timing: OperationTi
         logging.info("transcription_second_pass op=%s finished avg_logprob=%s words=%s", timing.operation_id,
                      _average_logprob(details), len(text.split()))
     except Exception as error:
+        second_timing.finish("transcription_failed")
         logging.warning("transcription_second_pass op=%s failed error=%s", timing.operation_id, error)
         return None, error
+    second_timing.finish("ok")
     return (text, details), None
 
 

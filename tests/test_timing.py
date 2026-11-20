@@ -4,11 +4,18 @@ from __future__ import annotations
 import logging
 import subprocess
 import sys
+import weakref
 from pathlib import Path
 
 import pytest
 
 from app.core import log_queue, timing
+
+
+@pytest.fixture(autouse=True)
+def isolated_open_operations(monkeypatch):
+    """Operations left open by other tests must not be reported as pending here."""
+    monkeypatch.setattr(timing, "_OPEN", weakref.WeakValueDictionary())
 
 
 def test_recording_summary_uses_detection_time_and_monotonic_durations(monkeypatch, caplog):
@@ -32,7 +39,8 @@ def test_recording_summary_uses_detection_time_and_monotonic_durations(monkeypat
     assert "transcription_request_ms=1.000" in summary
     assert "output_ms=1.000" in summary
     assert "total_ms=5.000" in summary
-    assert "at_ms=1700000000003.000" in summary
+    assert "at_ms" not in summary  # The log line's own timestamp tells when the operation ended.
+    assert not any(line.startswith("latency_trace") for line in caplog.messages)  # Fast and ok: no timeline.
     assert "ttfb" not in summary  # A complete requests.post response is not a first byte.
 
 
@@ -69,6 +77,57 @@ def test_interleaved_jobs_have_independent_milestones(caplog):
     assert "rephrase_request_ms=" in first_summary
     assert "transcription_request_ms=" not in first_summary
     assert "rephrase_request_ms=" not in second_summary
+
+
+def _traces(caplog):
+    return [line for line in caplog.messages if line.startswith("latency_trace")]
+
+
+def test_unusual_outcome_logs_the_timeline_in_time_order(caplog):
+    with caplog.at_level(logging.INFO):
+        operation = timing.OperationTiming("recording", 10_000_000)
+        operation.mark("transcription_request_start", 13_000_000)
+        operation.mark("stop_handled", 11_000_000)
+        operation.finish("transcription_failed")
+        assert log_queue.flush()
+    (trace,) = _traces(caplog)
+    assert trace.startswith(f"latency_trace op={operation.operation_id} source=recording outcome=transcription_failed ")
+    assert "start_at_ms=" in trace
+    assert trace.index("stop=0.000") < trace.index("stop_handled=1.000") < trace.index("transcription_request_start=3.000")
+
+
+def test_routine_run_logs_the_timeline_only_when_slow(monkeypatch, caplog):
+    monkeypatch.setitem(timing.TRACE_SLOWER_THAN_MS, "recording", 1000.0)
+    with caplog.at_level(logging.INFO):
+        fast = timing.OperationTiming("recording")
+        fast.finish("ok")
+        slow = timing.OperationTiming("recording", 0)  # Started at the clock's origin: long ago.
+        slow.finish("ok")
+        assert log_queue.flush()
+    assert [trace.split()[1] for trace in _traces(caplog)] == [f"op={slow.operation_id}"]
+
+
+def test_operation_kept_open_by_a_hang_is_reported_once_when_the_next_starts(monkeypatch, caplog):
+    monkeypatch.setattr(timing, "PENDING_REPORT_AFTER_S", 0.0)
+    with caplog.at_level(logging.INFO):
+        stuck = timing.OperationTiming("recording", 0)
+        stuck.mark("output_start")
+        timing.OperationTiming("recording_start")
+        timing.OperationTiming("recording_start")
+        assert log_queue.flush()
+    pending = [trace for trace in _traces(caplog) if f"op={stuck.operation_id}" in trace]
+    assert len(pending) == 1
+    assert "outcome=pending" in pending[0] and "output_start=" in pending[0]
+
+
+def test_unfinished_operations_are_reported_at_exit_but_finished_ones_are_not(caplog):
+    with caplog.at_level(logging.INFO):
+        running = timing.OperationTiming("file")
+        done = timing.OperationTiming("file")
+        done.finish("ok")
+        timing.report_open_operations()
+        assert log_queue.flush()
+    assert [trace.split()[1] for trace in _traces(caplog)] == [f"op={running.operation_id}"]
 
 
 @pytest.mark.parametrize("stall", ["handler_lock", "slow_emit"])
@@ -138,7 +197,7 @@ summaries = [line for line in records if line.startswith("latency_summary")]
 assert len(summaries) == 1
 assert any(line.startswith("http_transport") for line in records)
 assert "sensitive-content" not in summaries[0]
-assert sum("phase=stop_handled " in line for line in records) == 1
+assert not any(line.startswith(("latency_event", "latency_trace")) for line in records)
 '''
     result = subprocess.run(
         [sys.executable, "-c", script, stall], cwd=Path(__file__).resolve().parents[1],

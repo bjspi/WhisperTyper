@@ -1,19 +1,37 @@
 """Per-operation, monotonic latency measurements without recording user content.
 
-Milestones are plain log records on the ``whispertyper.timing`` logger. With the queued
-logging from :mod:`app.core.log_queue` they cost the producer one enqueue; durations are
-computed lazily when the listener formats the record.
+Milestones are kept in memory; each operation logs one ``latency_summary`` on the
+``whispertyper.timing`` logger. The complete milestone timeline (``latency_trace``) is logged
+only when it can explain something: an unusual outcome, a slow run, or an operation still open
+when the next one starts or the app exits. With the queued logging from
+:mod:`app.core.log_queue` a record costs the producer one enqueue; durations are computed
+lazily when the listener formats it.
 """
 from __future__ import annotations
 
+import atexit
 import logging
+import threading
 import time
 import uuid
+import weakref
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any, Callable, Optional
 
 _LOG = logging.getLogger("whispertyper.timing")
+
+#: Outcomes of a normal run; any other outcome logs the operation's timeline.
+_ROUTINE_OUTCOMES = frozenset({"ok", "batch_buffered"})
+#: A routine run logs its timeline only above this total, per source (typical: a recording takes
+#: ~0.5 s from stop to text, a recording start ~50 ms from hotkey to feedback).
+TRACE_SLOWER_THAN_MS = {"recording": 1500.0, "recording_start": 300.0}
+DEFAULT_TRACE_SLOWER_THAN_MS = 5000.0
+#: An operation still open this long is logged as pending when the next one starts (hang diagnosis).
+PENDING_REPORT_AFTER_S = 30.0
+
+_OPEN: "weakref.WeakValueDictionary[str, OperationTiming]" = weakref.WeakValueDictionary()
+_OPEN_LOCK = threading.Lock()
 
 # Transport milestones (app.services.http_transport) and the durations derived from them.
 _HTTP_DURATIONS = {
@@ -47,6 +65,20 @@ class _Durations:
             f"{label}={(events[end] - events[start]) / 1_000_000:.3f}"
             for label, (start, end) in self._table.items() if start in events and end in events
         )
+
+
+class _Timeline:
+    """Render ``phase=ms`` pairs in time order, relative to the operation start, when formatted."""
+
+    def __init__(self, events: Mapping[str, int], started_ns: int) -> None:
+        """Keep references; a finished operation's events no longer change."""
+        self._events = events
+        self._started_ns = started_ns
+
+    def __str__(self) -> str:
+        """Every milestone once, earliest first."""
+        ordered = sorted(self._events.items(), key=lambda item: item[1])
+        return " ".join(f"{phase}={(at - self._started_ns) / 1_000_000:.3f}" for phase, at in ordered)
 
 
 def queue_http_timing(metadata: dict[str, Any], events: dict[str, int]) -> None:
@@ -127,19 +159,22 @@ class OperationTiming:
         self._finished = False
         #: Facts about how the result came about, shown with it (e.g. confidence, second request).
         self.notes: dict[str, Any] = {}
+        self._pending_reported = False
         if source == "recording":
             self.mark("stop", self._started_ns)
+        _open_operation(self)
 
     def mark(self, phase: str, at_ns: Optional[int] = None) -> None:
-        """Record a milestone once and log its offset from the operation's start."""
+        """Record a milestone once; it is logged with the timeline if the operation needs one."""
         now = at_ns if at_ns is not None else time.perf_counter_ns()
         if self._finished or phase in self._events:
             return
         self._events[phase] = now
-        elapsed_ns = now - self._started_ns
-        _LOG.info("latency_event op=%s source=%s phase=%s at_ms=%.3f elapsed_ms=%.3f",
-                  self.operation_id, self.source, phase,
-                  (self._epoch_ns + elapsed_ns) / 1_000_000, elapsed_ns / 1_000_000)
+
+    @property
+    def open_s(self) -> float:
+        """Seconds since the operation started."""
+        return (time.perf_counter_ns() - self._started_ns) / 1_000_000_000
 
     @contextmanager
     def span(self, name: str) -> Iterator[None]:
@@ -164,12 +199,33 @@ class OperationTiming:
         if self._finished:
             return
         self._finished = True
-        now = time.perf_counter_ns()
-        self._events["operation_end"] = now
-        _LOG.info("latency_summary op=%s source=%s outcome=%s at_ms=%.3f %s",
-                  self.operation_id, self.source, outcome,
-                  (self._epoch_ns + now - self._started_ns) / 1_000_000,
+        self._events["operation_end"] = time.perf_counter_ns()
+        with _OPEN_LOCK:
+            _OPEN.pop(self.operation_id, None)
+        _LOG.info("latency_summary op=%s source=%s outcome=%s %s", self.operation_id, self.source, outcome,
                   _Durations(self._events, self._DURATIONS))
+        if self._needs_trace(outcome):
+            self._log_trace(outcome, self._events)
+
+    def report_pending(self) -> None:
+        """Log the timeline so far of an operation that has not finished (at most once)."""
+        if self._pending_reported or self._finished:
+            return
+        self._pending_reported = True
+        # A snapshot: the operation's own thread may still add milestones while the line is formatted.
+        self._log_trace("pending", dict(self._events))
+
+    def _needs_trace(self, outcome: str) -> bool:
+        """An unusual outcome or a slow run is worth the full timeline."""
+        if outcome not in _ROUTINE_OUTCOMES:
+            return True
+        total_ms = (self._events["operation_end"] - self._started_ns) / 1_000_000
+        return total_ms > TRACE_SLOWER_THAN_MS.get(self.source, DEFAULT_TRACE_SLOWER_THAN_MS)
+
+    def _log_trace(self, outcome: str, events: Mapping[str, int]) -> None:
+        """One line with every milestone; ``start_at_ms`` maps the start to Unix epoch milliseconds."""
+        _LOG.info("latency_trace op=%s source=%s outcome=%s start_at_ms=%.3f %s", self.operation_id, self.source,
+                  outcome, self._epoch_ns / 1_000_000, _Timeline(events, self._started_ns))
 
 
 class _NoTiming(OperationTiming):
@@ -181,7 +237,28 @@ class _NoTiming(OperationTiming):
         self.source = "none"
         self._events = {}
         self._finished = True
+        self._pending_reported = True
         self.notes = {}
+
+
+def _open_operation(timing: OperationTiming) -> None:
+    """Track an operation until it finishes; report the ones a hang has kept open too long."""
+    with _OPEN_LOCK:
+        stalled = [operation for operation in _OPEN.values() if operation.open_s > PENDING_REPORT_AFTER_S]
+        _OPEN[timing.operation_id] = timing
+    for operation in stalled:
+        operation.report_pending()
+
+
+def report_open_operations() -> None:
+    """Log the timeline of every unfinished operation, e.g. when the app exits during a transcription."""
+    with _OPEN_LOCK:
+        operations = list(_OPEN.values())
+    for operation in operations:
+        operation.report_pending()
+
+
+atexit.register(report_open_operations)
 
 
 #: Shared default for optional timing parameters; avoids ``if timing:`` guards at every milestone.
