@@ -24,14 +24,12 @@ def simulate_shortcut(char: str, *, alt_lib: bool, fast: bool = False) -> bool:
     if is_MACOS and _system_events_shortcut(char):
         return True
     if alt_lib:
-        logging.debug("Using pyautogui for key simulation.")
         try:
             pyautogui.hotkey('command' if is_MACOS else 'ctrl', char, **({"_pause": False} if fast else {}))
             return True
         except Exception as e:
             logging.error(f"pyautogui key simulation failed: {e}")
             return False
-    logging.debug("Using pynput for key simulation.")
     global _controller
     try:
         _controller = _controller or keyboard.Controller()

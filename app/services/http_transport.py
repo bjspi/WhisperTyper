@@ -31,9 +31,14 @@ _LIMITS = httpx.Limits(max_connections=None, max_keepalive_connections=8, keepal
 # OS-level keepalive on top of httpcore's built-in TCP_NODELAY.
 _SOCKET_OPTIONS = [(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)]
 
+#: A warm-up probe on a reused connection is logged only above this duration. Fast reused probes
+#: (every 20 s per origin) carry no news; failures, new connections and stalls are always logged.
+PREWARM_SLOW_MS = 300.0
+
 #: Connection setting -> local bind address; binding to an IPv4/IPv6 wildcard restricts DNS
 #: results to that address family. "auto" lets the OS choose.
 IP_FAMILY_LOCAL_ADDRESSES: dict[str, Optional[str]] = {"auto": None, "ipv4": "0.0.0.0", "ipv6": "::"}
+_IP_FAMILY_NAMES: dict[Optional[str], str] = {address: name for name, address in IP_FAMILY_LOCAL_ADDRESSES.items()}
 
 _CLIENTS: dict[tuple[Optional[str], Any, Optional[str]], httpx.Client] = {}
 _CLIENTS_LOCK = threading.Lock()
@@ -63,6 +68,41 @@ def _error_name(error: BaseException) -> str:
     return "SSLError" if is_tls_failure(error) else type(error).__name__
 
 
+def _root_cause(error: BaseException) -> BaseException:
+    """The innermost exception of the chain, e.g. the OSError or SSLError below httpx's ConnectError."""
+    current = error
+    while current.__cause__ is not None or current.__context__ is not None:
+        current = current.__cause__ or current.__context__  # type: ignore[assignment]
+    return current
+
+
+def _error_cause(error: BaseException) -> str:
+    """Structured root cause without free exception text: class plus TLS reason or OS error number.
+
+    ``SSLCertVerificationError/unable_to_get_local_issuer_certificate`` or
+    ``ConnectionRefusedError/10061`` tell a certificate or routing problem apart at a glance.
+    """
+    cause = _root_cause(error)
+    detail: object = None
+    if isinstance(cause, ssl.SSLCertVerificationError):
+        detail = cause.verify_message or cause.reason
+    elif isinstance(cause, ssl.SSLError):
+        detail = cause.reason
+    elif isinstance(cause, OSError):
+        detail = getattr(cause, "winerror", None) or cause.errno
+    name = type(cause).__name__
+    return f"{name}/{str(detail).replace(' ', '_')}" if detail else name
+
+
+def _peer_address(stream: Any) -> Optional[str]:
+    """IP address of the connected server (the proxy on a proxied route), if the socket still has one."""
+    try:
+        address = stream.get_extra_info("server_addr")
+    except (AttributeError, OSError):
+        return None
+    return str(address[0]) if isinstance(address, tuple) and address else None
+
+
 class _Exchange:
     """One wire request/response; a redirect starts the next exchange of the same call."""
 
@@ -75,6 +115,7 @@ class _Exchange:
         self.metadata: dict[str, Any] = {
             "op": call.operation_id, "stage": call.stage, "exchange": self.number,
             "method": request.method, "host": request.url.host, "route": "proxy" if call.proxied else "direct",
+            "ip_family": call.ip_family, "peer": "unknown",
             "connection": "unknown", "reused": "unknown", "status": "none",
             "upload_bytes": int(request.headers.get("content-length", 0) or 0), "response_body_bytes": 0,
         }
@@ -91,8 +132,13 @@ class _Exchange:
         if self.call.on_phase is not None:
             self.call.on_phase(phase)
 
-    def finish(self, error: str = "none") -> None:
-        """Queue the exchange with partial measurements on failure; never exception text."""
+    def note_peer(self, stream: Any) -> None:
+        """Remember which server address the exchange's socket is connected to."""
+        if self.metadata["peer"] == "unknown":
+            self.metadata["peer"] = _peer_address(stream) or "unknown"
+
+    def finish(self, error: str = "none", cause: Optional[str] = None) -> None:
+        """Queue the exchange with partial measurements on failure; never free exception text."""
         if self.finished:
             return
         self.metadata["last_phase"] = next(reversed(self.events))
@@ -100,20 +146,30 @@ class _Exchange:
             self.metadata["response_body_bytes"] = self.response.num_bytes_downloaded
         self.mark("end")
         self.metadata["error"] = error
+        if cause is not None:
+            self.metadata["error_cause"] = cause
         self.finished = True
-        queue_http_timing(self.metadata, self.events)
+        if not self._is_routine_prewarm():
+            queue_http_timing(self.metadata, self.events)
+
+    def _is_routine_prewarm(self) -> bool:
+        """A fast, successful warm-up over an already open connection: nothing worth a log line."""
+        total_ms = (self.events["end"] - self.events["start"]) / 1_000_000
+        return (self.call.stage == "prewarm" and self.metadata["reused"] is True
+                and self.metadata["error"] == "none" and total_ms <= PREWARM_SLOW_MS)
 
 
 class _CallTrace:
     """httpx ``trace`` callback for one logical API call (all its redirects)."""
 
-    def __init__(self, timing: OperationTiming, stage: str, proxied: bool,
+    def __init__(self, timing: OperationTiming, stage: str, proxied: bool, ip_family: str,
                  on_phase: Optional[PhaseCallback] = None) -> None:
         """Bind milestones to the caller's operation, or to a transport-only id."""
         self.timing = timing
         self.on_phase = on_phase
         self.stage = stage
         self.proxied = proxied
+        self.ip_family = ip_family
         self.operation_id = timing.operation_id if timing is not NO_TIMING else f"http{next(_OPERATION_IDS)}"
         self.start_ns = time.perf_counter_ns()
         self.exchanges: list[_Exchange] = []
@@ -142,6 +198,7 @@ class _CallTrace:
         exchange.metadata["status"] = response.status_code
         stream = response.extensions.get("network_stream")
         if stream is not None:
+            exchange.note_peer(stream)
             try:
                 if stream not in _STREAM_IDS:
                     _STREAM_IDS[stream] = next(_CONNECTION_IDS)
@@ -166,6 +223,8 @@ class _CallTrace:
                 exchange.mark("tcp_start")  # Includes DNS: httpcore resolves inside connect_tcp.
             elif state == "complete":
                 exchange.mark("tcp_end")
+                # Known before TLS, so a failed handshake still names the address (IPv4 or IPv6).
+                exchange.note_peer(info.get("return_value"))
         elif step in ("connection.start_tls", "proxy.start_tls"):
             # The first TLS on a proxied route is to the proxy itself; proxy.start_tls is the origin.
             prefix = "proxy_tls" if step == "connection.start_tls" and self.proxied else "tls"
@@ -200,10 +259,13 @@ class _CallTrace:
         elif step == "http11.receive_response_body" and state == "complete" and not tunnel:
             exchange.mark("body_end")
 
-    def finish(self, error: str = "none") -> None:
+    def finish(self, error: str = "none", cause: Optional[str] = None) -> None:
         """Close every exchange of this call exactly once."""
         for exchange in self.exchanges:
-            exchange.finish(error if exchange is self.current else "none")
+            if exchange is self.current:
+                exchange.finish(error, cause)
+            else:
+                exchange.finish()
 
 
 def _on_request(request: httpx.Request) -> None:
@@ -305,7 +367,8 @@ def request(method: str, url: str, *, timing: OperationTiming = NO_TIMING, stage
     proxy = _select_proxy(url, proxies)
     # The IP family setting is for the internet; an endpoint on this computer keeps its own address.
     local_address = None if is_local_endpoint(url) else _local_address
-    tracer = _CallTrace(timing, stage, proxied=proxy is not None, on_phase=on_phase)
+    tracer = _CallTrace(timing, stage, proxied=proxy is not None, ip_family=_IP_FAMILY_NAMES[local_address],
+                        on_phase=on_phase)
     client = (_new_client(proxy, verify, local_address) if fresh_connection
               else _client(proxy, verify, local_address))
     try:
@@ -314,7 +377,7 @@ def request(method: str, url: str, *, timing: OperationTiming = NO_TIMING, stage
             extensions={"trace": tracer}, **kwargs,
         )
     except Exception as error:
-        tracer.finish(_error_name(error))
+        tracer.finish(_error_name(error), _error_cause(error))
         raise
     finally:
         tracer.finish()

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import wave
 from unittest.mock import Mock
 
@@ -28,6 +29,18 @@ class TestResolveProxies:
         assert net.proxies_for({"proxy_url": " http://corp:3128 ", "use_local_px_proxy": True})["https"] == "http://corp:3128"
         assert net.proxies_for({"proxy_url": "", "use_local_px_proxy": True})["https"] == net.build_proxies(net.PX_PROXY_URL)["https"]
         assert net.proxies_for({}) is None
+
+
+    def test_px_route_is_logged_only_when_it_changes(self, monkeypatch, caplog):
+        monkeypatch.setattr(net, "_px_route_logged", None)
+        running = [True, True, False, False, True]
+        monkeypatch.setattr(net, "is_px_running", lambda: running.pop(0))
+        with caplog.at_level(logging.INFO):
+            routes = [net.resolve_proxies("", use_px=True) for _ in range(5)]
+        assert [route is not None for route in routes] == [True, True, False, False, True]
+        px_lines = [message for message in caplog.messages if "px proxy" in message]
+        assert len(px_lines) == 3
+        assert px_lines[0].startswith("Routing") and px_lines[1].startswith("Local px") and px_lines[2].startswith("Routing")
 
 
 class TestGenerateTestWav:

@@ -47,7 +47,6 @@ class TranscriptionWorker(QObject):
 
     def run(self) -> None:
         """Execute the transcription and emit ``finished`` or ``error``."""
-        logging.info("TranscriptionWorker started.")
         self.timing.mark("transcription_worker_start")
         try:
             text = transcribe(self.request, self.timing, self.tr,

@@ -521,9 +521,7 @@ def _send(req: TranscriptionRequest, upload: _Upload, timing: OperationTiming, t
     log_data = dict(data)
     if "prompt" in log_data:
         log_data["prompt"] = redact_for_log(log_data["prompt"])
-    logging.debug(f"API endpoint: {req.api_endpoint}")
     logging.debug(f"Request data: {log_data}")
-    logging.debug(f"Audio file path: {upload.path}")
 
     send_timeout, read_timeout = _timeouts(upload.size)
     content_type = audio_formats.upload_content_type(upload.path)
@@ -551,7 +549,6 @@ def _send(req: TranscriptionRequest, upload: _Upload, timing: OperationTiming, t
 
 def _parse(response: httpx.Response, tr: Translate) -> _Parsed:
     """The text and JSON body of a complete response; any non-200 status is a user-facing error."""
-    logging.debug(f"API response status: {response.status_code}")
     if response.status_code != 200:
         raise TranscriptionError(tr("transcription_api_error", status=response.status_code,
                                     details=api_error_details(response)))

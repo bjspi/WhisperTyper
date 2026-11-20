@@ -36,7 +36,6 @@ class WorkerThreads:
         """Drop the references of a finished worker so both objects can be collected."""
         if (thread, worker) in self._running:
             self._running.remove((thread, worker))
-        logging.info("%s thread cleaned up.", type(worker).__name__)
 
     @property
     def running(self) -> List[QThread]:

@@ -152,7 +152,10 @@ failures retain the milestones actually reached, without invented durations.
 | `response_body_ms` | Complete headers → complete consumed/decompressed response body |
 | `total_ms` | API call start → complete response or failure |
 | `connection` / `reused` | Socket identity / whether this exchange reused an existing socket |
+| `ip_family` | Effective connection setting for this request: `auto`, `ipv4` or `ipv6` (endpoints on this computer are always `auto`) |
+| `peer` | IP address the socket is connected to (the proxy on `route=proxy`); IPv4 or IPv6 shows which family was used. Known from the TCP step, so a failed TLS handshake still names it |
 | `error` / `last_phase` | Exception class (without private exception text) / last milestone reached before completion or failure |
+| `error_cause` | Only on failure: innermost exception class with the TLS reason or OS error number, e.g. `SSLCertVerificationError/unable_to_get_local_issuer_certificate` or `ConnectionRefusedError/10061` |
 | `upload_bytes` / `response_body_bytes` | Request `Content-Length` / raw response body bytes received |
 
 Transport milestones also appear as `latency_event` phases such as
@@ -170,6 +173,11 @@ DNS is not measured separately from TCP. Sending completion means the OS accepte
 the bytes, not that the server acknowledged reading all of them.
 `after_upload_wait_ms` combines transit and provider processing; the client cannot
 split the provider's queue from inference without server-side timing data.
+
+The `httpx` and `httpcore` loggers are kept at WARNING, also with debug logging on:
+their per-request DEBUG lines (connection steps, complete response headers,
+`HTTP Request: …`) repeat what `http_transport` records, and the header dumps do not
+belong in a log file.
 
 ## Persistent connections and background warming
 
@@ -196,7 +204,9 @@ queries, API keys and audio are excluded; httpx never adds netrc credentials. Re
 disabled. A 401/404/405 still proves that the connection reached the server.
 Warm-up has short timeouts and never delays capture, upload or shutdown waiting
 for completion. The server can still close idle connections; httpcore detects that
-and reconnects. There is no guarantee of reuse during overlapping requests.
+and reconnects. A warm-up over a reused connection that finishes without error within
+300 ms (`PREWARM_SLOW_MS`) writes no `http_transport` line; failed, new-connection and
+slow warm-ups are always logged, so a connection that died while idle stays visible. There is no guarantee of reuse during overlapping requests.
 
 ## Parallel second attempt on a stalled connection
 

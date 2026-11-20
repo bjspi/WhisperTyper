@@ -10,11 +10,17 @@ from app.core import log_queue
 from app.core.constants import LOG_FILE_PATH
 from app.core.redaction import LOG_REDACTION_STATE
 
+#: HTTP library loggers kept at WARNING. Their DEBUG/INFO lines (connection steps, full response
+#: headers, "HTTP Request: ...") repeat what the own ``http_transport`` line records per exchange.
+_QUIET_HTTP_LOGGERS = ("httpx", "httpcore")
+
 
 def apply_logging_config(config: Mapping[str, Any],
                          file_handler: Optional[logging.Handler]) -> Optional[logging.Handler]:
     """Reconfigure logging from ``config``; returns the new file handler (or None) to keep."""
     logging.getLogger().setLevel(logging.DEBUG if config["debug_logging"] else logging.INFO)
+    for name in _QUIET_HTTP_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
     # Shared redaction switch, honored by every log site including worker threads.
     LOG_REDACTION_STATE["enabled"] = bool(config.get("redact_transcription_in_log", True))
 

@@ -445,3 +445,58 @@ def test_ip_family_leaves_an_endpoint_on_this_computer_alone(server):
         assert transport.request("POST", url(server), content=b"audio").content == b"OK"
     finally:
         transport.set_ip_family("auto")
+
+
+def test_exchange_names_ip_family_and_connected_peer(server, traces, monkeypatch):
+    monkeypatch.setattr(transport, "is_local_endpoint", lambda _url: False)  # the test server stands in for the internet
+    try:
+        transport.set_ip_family("ipv4")
+        assert transport.request("POST", url(server), content=b"audio").content == b"OK"
+        assert transport.request("POST", url(server), content=b"audio").content == b"OK"
+    finally:
+        transport.set_ip_family("auto")
+    assert [(metadata["ip_family"], metadata["peer"]) for metadata, _ in traces] == [("ipv4", "127.0.0.1")] * 2
+
+
+def test_failure_names_its_structured_root_cause(server, traces, monkeypatch):
+    def refuse(*_args, **_kwargs):
+        raise ConnectionRefusedError(10061, "synthetic refusal")
+
+    monkeypatch.setattr(socket, "create_connection", refuse)
+    with pytest.raises(httpx.ConnectError):
+        transport.request("POST", url(server), content=b"audio")
+    metadata, _events = traces[0]
+    assert metadata["error_cause"] == "ConnectionRefusedError/10061"
+    assert metadata["peer"] == "unknown"
+
+
+def test_tls_failure_cause_names_the_verification_reason(server, traces):
+    https = ThreadingHTTPServer(("127.0.0.1", 0), API)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(CERT, KEY)
+    https.socket = context.wrap_socket(https.socket, server_side=True)
+    thread = threading.Thread(target=https.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(httpx.ConnectError):
+            transport.request("HEAD", f"https://127.0.0.1:{https.server_port}/", timeout=3)
+    finally:
+        https.shutdown()
+        https.server_close()
+    metadata, _events = traces[0]
+    assert metadata["error"] == "SSLError"
+    assert metadata["error_cause"].startswith("SSLCertVerificationError/")
+    assert metadata["peer"] == "127.0.0.1"  # Known from the TCP step although the handshake failed.
+
+
+def test_routine_warmup_on_a_reused_connection_writes_no_log_line(server, traces):
+    for _ in range(3):
+        transport.request("HEAD", url(server), stage="prewarm")
+    assert [metadata["reused"] for metadata, _ in traces] == [False]
+
+
+def test_slow_warmup_on_a_reused_connection_is_logged(server, traces, monkeypatch):
+    transport.request("HEAD", url(server), stage="prewarm")
+    monkeypatch.setattr(transport, "PREWARM_SLOW_MS", -1.0)
+    transport.request("HEAD", url(server), stage="prewarm")
+    assert [metadata["reused"] for metadata, _ in traces] == [False, True]

@@ -22,16 +22,33 @@ from app.services.netutil import (
     tcp_check,
 )
 
+#: Last logged px state (True: routing through px, False: px not reachable, None: px not in use).
+_px_route_logged: Optional[bool] = None
+
 
 def resolve_proxies(proxy_url: str, use_px: bool) -> Optional[Dict[str, str]]:
     """Explicit proxy URL wins; else a running local px proxy (if opted in); else system/env."""
     proxy_url = (proxy_url or "").strip()
     if proxy_url:
         return build_proxies(proxy_url)
-    if use_px and is_px_running():
+    if not use_px:
+        _log_px_route(None)
+        return None
+    px_running = is_px_running()
+    _log_px_route(px_running)
+    return build_proxies(PX_PROXY_URL) if px_running else None
+
+
+def _log_px_route(routed: Optional[bool]) -> None:
+    """Log the px route only when it changes; it is resolved for every request and warm-up."""
+    global _px_route_logged
+    if routed == _px_route_logged:
+        return
+    _px_route_logged = routed
+    if routed:
         logging.info("Routing requests through local px proxy at %s", PX_PROXY_URL)
-        return build_proxies(PX_PROXY_URL)
-    return None
+    elif routed is False:
+        logging.info("Local px proxy at %s is not reachable; using the system/environment proxy", PX_PROXY_URL)
 
 
 def proxies_for(config: Mapping[str, Any]) -> Optional[Dict[str, str]]:
