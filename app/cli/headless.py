@@ -26,7 +26,7 @@ from app.core.constants import APP_DATA_DIR, CONFIG_FILE
 from app.core.hotkeys import normalize_hotkey_string
 from app.core.i18n import TranslationManager
 from app.core.models import LOCAL_TRANSCRIPTION_MODEL
-from app.core.prompts import INSTRUCTION, auto_apply_prompt, captioned_transformations
+from app.core.prompts import INSTRUCTION, auto_apply_prompt, captioned_transformations, switch_transcription_prompt
 from app.core.rephrase_routing import RephrasePlan, plan_rephrase, usable_transcript
 from app.core.replacements import ReplacementError, Replacements
 from app.core.timing import OperationTiming
@@ -188,7 +188,7 @@ class HeadlessSession:
         """The saved configuration with this call's language and model."""
         config = dict(self.config)
         if options.language is not None:
-            config["input_language"] = "" if options.language == AUTO_LANGUAGE else options.language
+            switch_transcription_prompt(config, "" if options.language == AUTO_LANGUAGE else options.language)
         if options.model:
             config["model"] = options.model
         return config

@@ -314,6 +314,7 @@ class SettingsWindow(ApiPage, TranscriptionPage, RecordingPage, GeneralPage, The
         self.config["replacements_enabled"] = self._replacements_tab.enabled.isChecked()
         self.config["replacements_rules"] = raw_rules
         save_bindings(self, self.config)
+        self._save_transcription_prompts()
         self._local_engine_tab.save(self.config)
         self._save_recording_controls()
         self._sync_transformations_to_config()

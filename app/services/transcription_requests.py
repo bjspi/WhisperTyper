@@ -13,7 +13,7 @@ from typing import Any, Mapping, Optional
 
 from app.core.api_keys import GroqKeyRotation, is_local_endpoint, provider_for_url
 from app.core.models import transcription_reports_confidence
-from app.core.prompts import transcription_prompt_for
+from app.core.prompts import stored_transcription_prompt, transcription_prompt_for
 from app.services.ffmpeg import resolve_ffmpeg
 from app.services.net import proxies_for
 from app.services.transcription import DEFAULT_HEDGE_RESPONSE_WAIT_S, TranscriptionRequest
@@ -41,9 +41,14 @@ def configured_target(config: Mapping[str, Any]) -> TranscriptionTarget:
 def sent_prompt(config: Mapping[str, Any], language: Optional[str] = None) -> str:
     """The transcription prompt for ``language`` (default: the configured input language).
 
-    See ``transcription_prompt_for``.
+    Another language than the configured one (a file's own choice) gets its own saved prompt or
+    default. See ``transcription_prompt_for``.
     """
-    return transcription_prompt_for(config["prompt"], config["input_language"] if language is None else language)
+    if language is None or language == config["input_language"]:
+        return transcription_prompt_for(config["prompt"], config["input_language"])
+    prompt = stored_transcription_prompt(config.get("transcription_prompts") or {}, language,
+                                         config.get("ui_language", "en"))
+    return transcription_prompt_for(prompt, language)
 
 
 @dataclass(frozen=True)

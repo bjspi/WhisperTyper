@@ -45,10 +45,14 @@ def test_the_transcription_prompt_follows_the_spoken_language(config):
     assert config["prompt"] == DEFAULT_TRANSCRIPTION_PROMPTS["fr"].strip()
 
 
-def test_an_edited_prompt_stays(config):
+def test_an_edited_prompt_stays_with_its_input_language(config):
+    config["input_language"] = "en"
     config["prompt"] = "My own words"
-    apply_languages(config, "de", "de")
+    apply_languages(config, "de", "en")
     assert config["prompt"] == "My own words"
+    apply_languages(config, "de", "de")
+    assert config["prompt"] == DEFAULT_TRANSCRIPTION_PROMPTS["de"].strip()
+    assert config["transcription_prompts"] == {"en": "My own words"}
 
 
 def test_api_transcription_with_rephrasing_switched_off(config):

@@ -23,7 +23,13 @@ from app.core import dsp
 from app.core.api_keys import rephrasing_configured, transcription_configured
 from app.core.env import is_MACOS, is_WINDOWS
 from app.core.input_languages import DETECT_LANGUAGE, palette_languages
-from app.core.prompts import INSTRUCTION, auto_apply_prompt, instruction_entry, recording_prompt_entries
+from app.core.prompts import (
+    INSTRUCTION,
+    auto_apply_prompt,
+    instruction_entry,
+    recording_prompt_entries,
+    switch_transcription_prompt,
+)
 from app.core.redaction import redact_for_log
 from app.core.timing import NO_TIMING, OperationTiming
 from app.platform.windows import is_console_foreground_window
@@ -757,8 +763,8 @@ class RecordingController(QObject):
     def switch_input_language(self, code: str) -> None:
         """Save the palette pick for this take's request and subsequent recordings."""
         previous = self._config["input_language"]
-        self._config["input_language"] = code
-        self._ctx.save_config_keys("input_language")
+        switch_transcription_prompt(self._config, code)
+        self._ctx.save_config_keys("input_language", "prompt", "transcription_prompts")
         logging.info("Input language switched from %r to %r in the recording palette.", previous, code)
         self.input_language_changed.emit(code)
 

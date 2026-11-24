@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Optional
+from typing import Dict, Optional
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy
@@ -15,7 +15,12 @@ from app.core.models import (
     transcription_supports_prompt,
     transcription_supports_temperature,
 )
-from app.core.prompts import default_transcription_prompt, is_default_transcription_prompt
+from app.core.prompts import (
+    default_transcription_prompt,
+    is_default_transcription_prompt,
+    stash_transcription_prompt,
+    stored_transcription_prompt,
+)
 from app.core.textutil import estimate_tokens
 from app.services.ffmpeg import probe_version, resolve_ffmpeg
 from app.ui.settings.base import SettingsWindowBase
@@ -89,9 +94,11 @@ class TranscriptionPage(SettingsWindowBase):
     def _connect_transcription_page(self) -> None:
         """Live updates once the saved values are loaded."""
         self.prompt_input.textChanged.connect(self._update_prompt_token_counter)
+        # The editor holds the prompt of the selected input language; the others wait here until Save.
+        self._transcription_prompts: Dict[str, str] = dict(self.config.get("transcription_prompts") or {})
+        self._prompt_language: str = self.language_input.currentData() or ""
         self.language_input.currentIndexChanged.connect(
-            lambda _index: self.swap_default_transcription_prompt(self.language_input.currentData() or "",
-                                                                  self.config.get("ui_language", "en")))
+            lambda _index: self.switch_transcription_prompt_language(self.language_input.currentData() or ""))
         self.ffmpeg_path_input.textChanged.connect(lambda _text: self._ffmpeg_status_debounce.start())
         self.second_pass_mode_selector.currentIndexChanged.connect(self._update_second_pass_controls)
         self._update_second_pass_controls()
@@ -142,6 +149,23 @@ class TranscriptionPage(SettingsWindowBase):
         """Put the default prompt for the selected input language (else the UI language) into the editor."""
         self.prompt_input.setPlainText(default_transcription_prompt(self.language_input.currentData() or "",
                                                                     self.config.get("ui_language", "en")))
+
+    def switch_transcription_prompt_language(self, language: str) -> None:
+        """Keep the editor's prompt for its input language and show the one of ``language``.
+
+        Edited prompts are kept per input language; a language without one shows its default.
+        """
+        if language == self._prompt_language:
+            return
+        stash_transcription_prompt(self._transcription_prompts, self._prompt_language, self.prompt_input.toPlainText())
+        self._prompt_language = language
+        self.prompt_input.setPlainText(stored_transcription_prompt(self._transcription_prompts, language,
+                                                                   self.config.get("ui_language", "en")))
+        self._transcription_prompts.pop(language, None)
+
+    def _save_transcription_prompts(self) -> None:
+        """Store the edited prompts of the other input languages (the editor's own goes to "prompt")."""
+        self.config["transcription_prompts"] = dict(self._transcription_prompts)
 
     def swap_default_transcription_prompt(self, input_language: str, ui_language: str) -> None:
         """Replace an unedited default prompt with the default for the given languages; edited prompts stay."""

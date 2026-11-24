@@ -147,7 +147,7 @@ class RecordingPage(SettingsWindowBase):
         with QSignalBlocker(self.language_input):
             self.language_input.setCurrentIndex(index)
         self._update_palette_languages()
-        self.swap_default_transcription_prompt(code, self.config.get("ui_language", "en"))
+        self.switch_transcription_prompt_language(code)
 
     def _retranslate_recording_controls(self) -> None:
         """Translate the automatic choice in both controls and refresh the summary."""

@@ -49,7 +49,7 @@ _REPLACE_ATTEMPTS = 10
 _REPLACE_RETRY_S = 0.1
 
 _EXPECTED_TYPES: Dict[str, Any] = {
-    "prompt": str, "hotkey": str, "post_rephrase_hotkey": str, "ui_language": str,
+    "prompt": str, "transcription_prompts": dict, "hotkey": str, "post_rephrase_hotkey": str, "ui_language": str,
     "api_endpoint": str, "rephrasing_api_url": str, "post_rephrasing_entries": list,
     "config_schema_version": int, "window_width": (int, float), "window_height": (int, float),
 }

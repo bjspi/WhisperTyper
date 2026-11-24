@@ -306,6 +306,14 @@ class SettingsWindowBase(QWidget):
         """Whether expert settings are on screen."""
         raise NotImplementedError
 
+    def switch_transcription_prompt_language(self, language: str) -> None:
+        """Show the transcription prompt of ``language``, keeping the edited one of the previous language."""
+        raise NotImplementedError
+
+    def _save_transcription_prompts(self) -> None:
+        """Store the edited prompts of the other input languages."""
+        raise NotImplementedError
+
     def swap_default_transcription_prompt(self, input_language: str, ui_language: str) -> None:
         """Replace an unedited default transcription prompt with the default for these languages."""
         raise NotImplementedError

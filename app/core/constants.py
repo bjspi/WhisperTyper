@@ -84,6 +84,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # exceed max_upload_mb; if even this won't fit, the file is rejected with an error.
     "min_audio_bitrate_kbps": 80,
     "prompt": _default_prompt_for(DEFAULT_TRANSCRIPTION_PROMPTS, _DEFAULT_UI_LANG),
+    # Edited transcription prompts of the other input languages ("" = auto-detect); "prompt" is
+    # the one of the selected language. Switching the language swaps them (see app/core/prompts.py).
+    "transcription_prompts": {},
     # Stored in canonical token form (see app/core/hotkeys.py) so a fresh config
     # loads without an immediate normalization rewrite.
     "hotkey": "<ctrl>+x" if is_MACOS else "<caps_lock>+<ctrl>",

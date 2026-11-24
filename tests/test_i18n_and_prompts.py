@@ -165,6 +165,75 @@ class TestPreviousTranscriptionPrompts:
         assert updated_default_transcription_prompt(DEFAULT_TRANSCRIPTION_PROMPTS["de"]) is None
         assert updated_default_transcription_prompt("edited") is None
 
+    def test_a_default_with_other_quotes_or_whitespace_still_counts_as_unedited(self):
+        from app.core.prompts import PREVIOUS_TRANSCRIPTION_PROMPTS, is_default_transcription_prompt, updated_default_transcription_prompt
+        variant = PREVIOUS_TRANSCRIPTION_PROMPTS["de"].replace("„", '"').replace("“", '"') + " "
+        assert variant.strip() != PREVIOUS_TRANSCRIPTION_PROMPTS["de"].strip()
+        assert is_default_transcription_prompt(variant)
+        assert updated_default_transcription_prompt(variant) == DEFAULT_TRANSCRIPTION_PROMPTS["de"].strip()
+        assert transcription_prompt_for(variant, "en") == DEFAULT_TRANSCRIPTION_PROMPTS["en"].strip()
+        rewrapped = DEFAULT_TRANSCRIPTION_PROMPTS["de"].replace(". ", ".\n  ")
+        assert transcription_prompt_for(rewrapped, "en") == DEFAULT_TRANSCRIPTION_PROMPTS["en"].strip()
+
     def test_the_defaults_ask_for_every_word(self):
         assert "wortgetreue" in DEFAULT_TRANSCRIPTION_PROMPTS["de"]
         assert all("Füllwörter" not in prompt and "filler" not in prompt for prompt in DEFAULT_TRANSCRIPTION_PROMPTS.values())
+
+
+class TestPromptPerInputLanguage:
+    """An edited transcription prompt belongs to its input language; the others keep theirs or the default."""
+
+    def _config(self, **values):
+        return {"input_language": "de", "ui_language": "de", "prompt": "Meine Begriffe: Groq.",
+                "transcription_prompts": {}, **values}
+
+    def test_switching_keeps_the_edited_prompt_and_loads_the_default_of_the_new_language(self):
+        from app.core.prompts import switch_transcription_prompt
+        config = self._config()
+        switch_transcription_prompt(config, "en")
+        assert config["input_language"] == "en"
+        assert config["prompt"] == DEFAULT_TRANSCRIPTION_PROMPTS["en"].strip()
+        assert config["transcription_prompts"] == {"de": "Meine Begriffe: Groq."}
+
+    def test_switching_back_restores_the_edited_prompt(self):
+        from app.core.prompts import switch_transcription_prompt
+        config = self._config()
+        switch_transcription_prompt(config, "en")
+        switch_transcription_prompt(config, "de")
+        assert config["prompt"] == "Meine Begriffe: Groq."
+        assert config["transcription_prompts"] == {}
+
+    def test_an_edited_prompt_of_the_new_language_is_loaded(self):
+        from app.core.prompts import switch_transcription_prompt
+        config = self._config(transcription_prompts={"en": "My terms: Groq."})
+        switch_transcription_prompt(config, "en")
+        assert config["prompt"] == "My terms: Groq."
+        assert config["transcription_prompts"] == {"de": "Meine Begriffe: Groq."}
+
+    def test_an_unedited_default_is_not_stored(self):
+        from app.core.prompts import switch_transcription_prompt
+        config = self._config(prompt=DEFAULT_TRANSCRIPTION_PROMPTS["de"])
+        switch_transcription_prompt(config, "en")
+        assert config["transcription_prompts"] == {}
+
+    def test_an_emptied_prompt_counts_as_edited(self):
+        from app.core.prompts import switch_transcription_prompt
+        config = self._config(prompt="")
+        switch_transcription_prompt(config, "en")
+        switch_transcription_prompt(config, "de")
+        assert config["prompt"] == ""
+
+    def test_a_shallow_copy_switches_without_touching_the_original(self):
+        from app.core.prompts import switch_transcription_prompt
+        config = self._config()
+        copy = dict(config)
+        switch_transcription_prompt(copy, "en")
+        assert config["transcription_prompts"] == {} and config["prompt"] == "Meine Begriffe: Groq."
+
+    def test_a_file_language_gets_its_own_prompt(self):
+        from app.services.transcription_requests import sent_prompt
+        config = self._config(transcription_prompts={"fr": "Mes termes : Groq."})
+        assert sent_prompt(config) == "Meine Begriffe: Groq."
+        assert sent_prompt(config, "de") == "Meine Begriffe: Groq."
+        assert sent_prompt(config, "fr") == "Mes termes : Groq."
+        assert sent_prompt(config, "en") == DEFAULT_TRANSCRIPTION_PROMPTS["en"].strip()

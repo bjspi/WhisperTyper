@@ -1,7 +1,7 @@
-"""Default prompts per UI language + swap helpers. Pure data/logic."""
+"""Default prompts per UI language, swap helpers and per-language transcription prompts. Pure data/logic."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, MutableMapping, Optional
 
 # --- Default Prompts ---
 # Each default prompt is provided per UI language. When the user switches the UI language
@@ -129,10 +129,20 @@ def _default_prompt_for(prompt_map: Dict[str, str], lang_code: str) -> str:
     return prompt_map.get(lang_code, prompt_map["en"]).strip()
 
 
+#: Quote variants an editor or a copy may substitute; compared as one plain quote each.
+_QUOTE_VARIANTS = str.maketrans({"„": '"', "“": '"', "”": '"', "«": '"', "»": '"',
+                                 "‚": "'", "‘": "'", "’": "'"})
+
+
+def _comparable(text: str) -> str:
+    """``text`` with quote variants unified and whitespace collapsed, for spotting an unedited default."""
+    return " ".join((text or "").translate(_QUOTE_VARIANTS).split())
+
+
 def _is_known_default_prompt(prompt_map: Dict[str, str], text: str) -> bool:
     """Return True if the given text matches one of the known default prompts (any language)."""
-    normalized = (text or "").strip()
-    return any(normalized == value.strip() for value in prompt_map.values())
+    comparable = _comparable(text)
+    return any(comparable == _comparable(value) for value in prompt_map.values())
 
 
 def is_default_transcription_prompt(text: str) -> bool:
@@ -143,9 +153,9 @@ def is_default_transcription_prompt(text: str) -> bool:
 
 def updated_default_transcription_prompt(text: str) -> str | None:
     """The current default for an earlier default prompt, in the same language; None for any other text."""
-    normalized = (text or "").strip()
+    comparable = _comparable(text)
     for language, previous in PREVIOUS_TRANSCRIPTION_PROMPTS.items():
-        if normalized == previous.strip():
+        if comparable == _comparable(previous):
             return DEFAULT_TRANSCRIPTION_PROMPTS[language].strip()
     return None
 
@@ -169,6 +179,36 @@ def transcription_prompt_for(prompt: str, input_language: str) -> str:
     if language in DEFAULT_TRANSCRIPTION_PROMPTS and is_default_transcription_prompt(prompt):
         return DEFAULT_TRANSCRIPTION_PROMPTS[language].strip()
     return prompt
+
+
+def stash_transcription_prompt(prompts: Dict[str, str], language: str, prompt: str) -> None:
+    """Keep an edited ``prompt`` as the one for ``language``; an unedited default is not stored."""
+    if is_default_transcription_prompt(prompt):
+        prompts.pop(language, None)
+    else:
+        prompts[language] = prompt
+
+
+def stored_transcription_prompt(prompts: Mapping[str, str], language: str, ui_language: str) -> str:
+    """The user's prompt for ``language``, else that language's default."""
+    if language in prompts:
+        return prompts[language]
+    return default_transcription_prompt(language, ui_language)
+
+
+def switch_transcription_prompt(config: MutableMapping[str, Any], language: str) -> None:
+    """Set the input language; the prompt of the old one is kept, the new one's is loaded.
+
+    ``config["prompt"]`` is the prompt of the selected input language, ``transcription_prompts``
+    holds the edited prompts of the others. The mapping is replaced, not changed in place, so a
+    shallow copy of the config can switch without touching the saved one.
+    """
+    prompts = dict(config.get("transcription_prompts") or {})
+    stash_transcription_prompt(prompts, config.get("input_language", ""), config.get("prompt", ""))
+    config["transcription_prompts"] = prompts
+    config["input_language"] = language
+    config["prompt"] = stored_transcription_prompt(prompts, language, config.get("ui_language", "en"))
+    prompts.pop(language, None)
 
 
 #: Entry kinds: a template that rewrites the text, and the instruction (LivePrompt) entry that

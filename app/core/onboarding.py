@@ -12,7 +12,12 @@ from app.core.models import (
     REPHRASING_MODEL_OPTIONS,
     TRANSCRIPTION_MODEL_OPTIONS,
 )
-from app.core.prompts import default_transcription_prompt, is_default_transcription_prompt, localize_unedited_entry
+from app.core.prompts import (
+    default_transcription_prompt,
+    is_default_transcription_prompt,
+    localize_unedited_entry,
+    switch_transcription_prompt,
+)
 
 #: The provider whose models the app's default model names already are.
 _DEFAULT_MODELS_PROVIDER = "openai"
@@ -41,8 +46,9 @@ class OnboardingChoices:
 def apply_languages(config: Dict[str, Any], ui_language: str, input_language: str) -> None:
     """Set both languages; prompts the user never edited follow them, as they do in the settings."""
     config["ui_language"] = ui_language
-    config["input_language"] = input_language
-    if is_default_transcription_prompt(config.get("prompt", "")):
+    if config.get("input_language") != input_language:
+        switch_transcription_prompt(config, input_language)
+    elif is_default_transcription_prompt(config.get("prompt", "")):
         config["prompt"] = default_transcription_prompt(input_language, ui_language)
     for entry in config.get("post_rephrasing_entries", []):
         localize_unedited_entry(entry, ui_language)

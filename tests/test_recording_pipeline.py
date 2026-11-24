@@ -170,7 +170,7 @@ def test_hotkey_stop_reaches_output_with_ordered_milestones(api, tmp_path, monke
         time.sleep(0.15)
         recording.switch_input_language("de")
         assert recording.is_recording and states == [True]
-        ctx.save_config_keys.assert_called_once_with("input_language")
+        ctx.save_config_keys.assert_called_once_with("input_language", "prompt", "transcription_prompts")
         detected_ns = time.perf_counter_ns()
         recording.toggle(detected_ns=detected_ns)
         deadline = time.monotonic() + 10
@@ -298,7 +298,7 @@ def test_recording_palette_offers_language_choices_only_when_enabled(tmp_path, m
 
     switch.on_selected("")
     assert config["input_language"] == "" and picks == [""]
-    ctx.save_config_keys.assert_called_once_with("input_language")
+    ctx.save_config_keys.assert_called_once_with("input_language", "prompt", "transcription_prompts")
     recording.show_prompt_palette([])
     assert overlay.call_args.kwargs["language_switch"].current == ""
 
