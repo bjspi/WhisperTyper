@@ -336,3 +336,5 @@ Please follow the standard GitHub workflow: fork the repository, make your chang
 Released under the [MIT License](LICENSE).
 
 Bundled third-party font: [Noto Color Emoji](https://github.com/googlefonts/noto-emoji) (COLRv1) by Google, licensed under the [SIL Open Font License 1.1](app/resources/fonts/NotoColorEmoji-OFL.txt). On Windows and Linux it provides colour emoji, including flags, in the app's UI; macOS uses its own Apple Color Emoji.
+
+Bundled language flags: [flag-icons](https://github.com/lipis/flag-icons) by Panayiotis Lipiridis, licensed under the [MIT License](app/resources/flags/LICENSE.txt). They show the spoken languages in the recording palette and the settings.

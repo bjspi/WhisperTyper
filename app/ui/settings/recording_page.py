@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QHBoxLayout, Q
 from app.audio.aac_encoder import available_aac_bitrates, warm_up_encoder
 from app.core.env import is_WINDOWS
 from app.core.input_languages import DETECT_LANGUAGE, MAX_PALETTE_LANGUAGES, palette_languages
+from app.ui.language_flags import flag_pixmap
 from app.ui.language_names import input_language_items
 from app.ui.multi_select_combo import MultiSelectComboBox
 from app.ui.settings.base import SettingsWindowBase
@@ -131,7 +132,8 @@ class RecordingPage(SettingsWindowBase):
         selector.set_enabled_values({code: code != current and (code in selected or has_room)
                                      for _caption, code in input_language_items()})
         auto = self.translator.tr("recording_language_auto")
-        selector.set_summary(", ".join(auto if code == DETECT_LANGUAGE else code.upper() for code in selected))
+        selector.set_summary([auto if code == DETECT_LANGUAGE else flag_pixmap(code) or code.upper()
+                              for code in selected])
 
     def _update_palette_language_row(self) -> None:
         """Offer the language choice only while the palette switch is on (the row follows the button)."""

@@ -43,6 +43,7 @@ from app.platform.macos import frontmost_window_center, make_nonactivating
 from app.platform.windows import hotkey_id_of, register_window_hotkey, unregister_window_hotkey
 from app.ui import theme
 from app.ui.flow_layout import FlowLayout
+from app.ui.language_flags import FLAG_HEIGHT, FLAG_WIDTH, flag_icon, has_flag
 
 #: Lowest palette opacity; anything fainter is hard to read over a busy window.
 _MIN_OPACITY_PERCENT = 30
@@ -103,6 +104,9 @@ class _PromptCard(QWidget):
         pal = theme.overlay_palette(dark)
         danger = pal["danger"]
         danger_tint = "rgba(255, 90, 82, 0.18)" if dark else "rgba(229, 72, 77, 0.12)"
+        # A soft accent behind the checked language pill; full accent would clash with blue flags.
+        accent = QColor(pal["accent"])
+        accent_tint = f"rgba({accent.red()}, {accent.green()}, {accent.blue()}, {0.30 if dark else 0.20})"
         self._danger_color = danger
         self._prompt_buttons: List[QPushButton] = []
 
@@ -182,9 +186,9 @@ class _PromptCard(QWidget):
                 color: {pal['muted']};
             }}
             QPushButton[role="language"]:checked {{
-                background-color: {pal['accent']};
+                background-color: {accent_tint};
                 border-color: {pal['accent']};
-                color: {pal['on_accent']};
+                color: {pal['accent']};
             }}
             QPushButton[role="icon"][danger="true"]:hover {{
                 background-color: {danger_tint}; border-color: {danger};
@@ -797,6 +801,12 @@ class RecordingPromptOverlay(_PromptCard):
         for language in switch.languages:
             button = QPushButton(language.caption, self.card)
             button.setProperty("role", "language")
+            if has_flag(language.code):
+                # The flag replaces the code: grey while unchecked, in colour on the accent pill when checked.
+                button.setText("")
+                button.setAccessibleName(language.caption)
+                button.setIcon(flag_icon(language.code))
+                button.setIconSize(QSize(FLAG_WIDTH, FLAG_HEIGHT))
             button.setCheckable(True)
             button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             button.setCursor(Qt.CursorShape.PointingHandCursor)

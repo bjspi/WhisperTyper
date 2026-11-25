@@ -16,6 +16,7 @@ from app.context import AppContext  # noqa: E402
 from app.core.config_store import ConfigStore  # noqa: E402
 from app.core.env import is_WINDOWS  # noqa: E402
 from app.core.hotkeys import normalize_hotkey_string  # noqa: E402
+from app.ui.language_flags import flag_pixmap  # noqa: E402
 from app.ui.settings.collapsible import CollapsibleSection  # noqa: E402
 from app.ui.settings.modern_chrome import CHROME_WIDTH  # noqa: E402
 from app.ui.settings.window import SettingsWindow  # noqa: E402
@@ -157,7 +158,7 @@ def test_palette_language_dropdown_stays_open_and_enforces_the_limit(qapp, tmp_p
     assert row.isHidden() and not selector.isEnabled()
     switch.click()
     assert not row.isHidden() and selector.isEnabled()
-    assert selector._summary == "EN, DE" and window.recording_group.isAncestorOf(row)
+    assert selector._summary == [flag_pixmap("en"), flag_pixmap("de")] and window.recording_group.isAncestorOf(row)
 
     def enabled(code):
         return selector.model().item(selector.findData(code)).isEnabled()
@@ -175,7 +176,7 @@ def test_palette_language_dropdown_stays_open_and_enforces_the_limit(qapp, tmp_p
         for code in ("", "fr", "es"):
             click(code)
             assert selector.view().isVisible() and code in selector.checked_values()
-        assert selector._summary == "Auto, EN, DE, FR, ES"
+        assert selector._summary == ["Auto", *(flag_pixmap(code) for code in ("en", "de", "fr", "es"))]
         assert selector.itemText(selector.findData("")) == "Detect language"
         assert not enabled("it")
         click("en")

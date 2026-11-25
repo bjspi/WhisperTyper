@@ -1,9 +1,9 @@
 """A dropdown whose entries are ticked on and off, looking like every other dropdown of the app."""
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence, Union
 
-from PyQt6.QtCore import QEvent, QModelIndex, QObject, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QModelIndex, QObject, QPointF, QRect, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QMouseEvent, QPalette, QPixmap, QStandardItemModel
 from PyQt6.QtWidgets import QComboBox, QStyle, QStyleOptionComboBox, QStylePainter, QWidget
 
@@ -15,6 +15,11 @@ _MAX_VISIBLE_ENTRIES = 12
 _TICK_SIZE = 16
 #: Item data role holding whether an entry is ticked.
 _CHECKED_ROLE = Qt.ItemDataRole.UserRole + 1
+#: Gap between the pieces of a summary made of flags and captions.
+_SUMMARY_SPACING = 6
+
+#: One piece of the closed box's summary: a caption or a small picture such as a flag.
+SummaryPart = Union[str, QPixmap]
 
 
 class MultiSelectComboBox(QComboBox):
@@ -32,7 +37,7 @@ class MultiSelectComboBox(QComboBox):
         """An empty dropdown; fill it with ``add_choice``."""
         super().__init__(parent)
         self.setMaxVisibleItems(_MAX_VISIBLE_ENTRIES)
-        self._summary = ""
+        self._summary: List[SummaryPart] = []
         self._tick = QIcon()
         blank = QPixmap(_TICK_SIZE, _TICK_SIZE)
         blank.fill(Qt.GlobalColor.transparent)
@@ -67,9 +72,9 @@ class MultiSelectComboBox(QComboBox):
         if index >= 0:
             self.setItemText(index, caption)
 
-    def set_summary(self, text: str) -> None:
-        """The text the closed box shows, e.g. the chosen entries in short."""
-        self._summary = text
+    def set_summary(self, parts: Sequence[SummaryPart]) -> None:
+        """What the closed box shows, e.g. the chosen entries in short: captions and pictures in a row."""
+        self._summary = list(parts)
         self.update()
 
     # --- Behaviour ------------------------------------------------------------------------
@@ -100,10 +105,31 @@ class MultiSelectComboBox(QComboBox):
         painter = QStylePainter(self)
         option = QStyleOptionComboBox()
         self.initStyleOption(option)
-        option.currentText = self._summary
+        option.currentText = ""
         option.currentIcon = QIcon()
         painter.drawComplexControl(QStyle.ComplexControl.CC_ComboBox, option)
-        painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, option)
+        style = self.style()
+        if style is None:
+            return
+        field = style.subControlRect(QStyle.ComplexControl.CC_ComboBox, option,
+                                     QStyle.SubControl.SC_ComboBoxEditField, self)
+        self._paint_summary(painter, field)
+
+    def _paint_summary(self, painter: QStylePainter, field: QRect) -> None:
+        """Draw the summary's captions and pictures left to right, vertically centred in ``field``."""
+        painter.setClipRect(field)
+        painter.setPen(self.palette().color(QPalette.ColorRole.ButtonText))
+        x = field.left()
+        for part in self._summary:
+            if isinstance(part, QPixmap):
+                size = part.deviceIndependentSize()
+                painter.drawPixmap(QPointF(x, field.top() + (field.height() - size.height()) / 2), part)
+                x += round(size.width())
+            else:
+                width = self.fontMetrics().horizontalAdvance(part)
+                painter.drawText(QRect(x, field.top(), width, field.height()), Qt.AlignmentFlag.AlignVCenter, part)
+                x += width
+            x += _SUMMARY_SPACING
 
     # --- Internals ------------------------------------------------------------------------
     def _set_checked(self, index: int, checked: bool) -> None:

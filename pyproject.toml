@@ -92,7 +92,7 @@ include = ["app*"]
 
 [tool.setuptools.package-data]
 # Translations, icons, sounds and the settings form are read at runtime (app/core/paths.py).
-app = ["lang/*.json", "resources/*", "resources/fonts/*", "resources/icons/*"]
+app = ["lang/*.json", "resources/*", "resources/fonts/*", "resources/icons/*", "resources/flags/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

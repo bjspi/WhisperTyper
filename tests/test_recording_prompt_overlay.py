@@ -11,6 +11,7 @@ QtTest = pytest.importorskip("PyQt6.QtTest")
 from app.ui import floating_buttons  # noqa: E402
 from app.ui.floating_buttons import LanguageSwitch, PaletteLanguage, RecordingPaletteTexts, RecordingPromptOverlay  # noqa: E402
 from app.ui.flow_layout import FlowLayout  # noqa: E402
+from app.ui.language_flags import _FLAG_FILES, flag_pixmap  # noqa: E402
 
 PROMPTS = [
     {"caption": "✨ Instruction", "text": "RUN", "kind": "instruction"},
@@ -60,7 +61,9 @@ def test_language_pills_show_and_change_the_selection_without_taking_focus(qapp)
     selected = []
     palette = RecordingPromptOverlay([], "Recording…", language_switch=language_switch(selected))
     pills = language_pills(palette)
-    assert [button.text() for button in pills] == ["Auto", "EN", "DE"]
+    assert [button.text() for button in pills] == ["Auto", "", ""]
+    assert [button.accessibleName() for button in pills[1:]] == ["EN", "DE"]
+    assert pills[0].icon().isNull() and not any(button.icon().isNull() for button in pills[1:])
     assert [button.toolTip() for button in pills] == ["Detect language", "English", "Deutsch"]
     assert all(button.focusPolicy() == QtCore.Qt.FocusPolicy.NoFocus for button in pills)
     assert palette.windowFlags() & QtCore.Qt.WindowType.WindowDoesNotAcceptFocus
@@ -337,3 +340,8 @@ def test_hiding_the_palette_takes_its_tooltip_along(qapp, monkeypatch):
     # The fixture keeps the palette off the screen; a closing palette gets this Hide event.
     QtWidgets.QApplication.sendEvent(palette, QtGui.QHideEvent())
     assert hidden
+
+
+def test_every_mapped_flag_file_renders(qapp):
+    assert all(flag_pixmap(code) is not None and flag_pixmap(code, muted=True) is not None for code in _FLAG_FILES)
+    assert flag_pixmap("ar") is None
